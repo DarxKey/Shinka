@@ -100,7 +100,7 @@ for (const [nome, larghezza] of [["largo", 1400], ["telefono", 390]] as const) {
     await scheda.getByText("claude-opus-5-5").waitFor();
     await scheda.getByText("Contesto: 78%").waitFor();
     await scheda.getByText("Riserva per la compattazione").waitFor();
-    await scheda.getByText("Un file da rivedere.").waitFor();
+    await scheda.getByText("Un file cambiato.").waitFor();
     await scheda.locator(".attivita.in-corso", { hasText: "Cerca dove si salta" }).getByText("ora: Grep").waitFor();
     await scheda.locator(".attivita", { hasText: "npm test" }).getByRole("button", { name: "Mostra l'uscita" }).click();
     await scheda.getByText("✔ 42 test superati").waitFor();
