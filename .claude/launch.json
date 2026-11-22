@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "centro",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file-if-exists=.env.locale", "src/centro/avvio.ts"],
+      "port": 7850
+    },
+    {
+      "name": "gateway",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file-if-exists=.env.gateway-locale", "src/gateway/avvio.ts"],
+      "port": 7851
+    },
+    {
+      "name": "telegram-di-prova",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["src/prove/telegram-locale.ts"],
+      "port": 7853
+    }
+  ]
+}

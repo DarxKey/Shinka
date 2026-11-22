@@ -1,0 +1,56 @@
+# Shinka: il centro e il gateway. Si avvia con ./installa.sh, che prepara il file .env.
+# I dati stanno in due volumi: il centro non vede quello del gateway.
+name: shinka
+
+services:
+  centro:
+    build:
+      context: .
+      dockerfile: Dockerfile.centro
+    image: shinka-centro:locale
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    environment:
+      SHINKA_AMBIENTE_NOME: ${SHINKA_AMBIENTE_NOME:-Server}
+      SHINKA_MOTORE: ${SHINKA_MOTORE:-claude}
+      SHINKA_GATEWAY: http://gateway:7851
+      SHINKA_GATEWAY_GETTONE: ${SHINKA_GATEWAY_GETTONE:?manca il gettone: lancia ./installa.sh}
+      SHINKA_GATEWAY_PAGINA: http://${SHINKA_SERVER:?manca l'indirizzo del server: lancia ./installa.sh}:7851
+      # Quando una scelta vuole un riavvio (l'HTTPS), il centro si spegne e Docker lo riaccende.
+      SHINKA_RIPARTE_DA_SOLO: "1"
+    ports:
+      - "${SHINKA_ASCOLTO:-0.0.0.0}:7850:7850"
+      - "${SHINKA_ASCOLTO:-0.0.0.0}:7852:7852"
+    volumes:
+      - centro:/home/node
+    mem_limit: 4g
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    image: shinka-gateway:locale
+    restart: unless-stopped
+    environment:
+      SHINKA_GATEWAY_GETTONE: ${SHINKA_GATEWAY_GETTONE:?manca il gettone: lancia ./installa.sh}
+      SHINKA_GATEWAY_PAGINA: http://${SHINKA_SERVER:?manca l'indirizzo del server: lancia ./installa.sh}:7851
+    # Il gettone con cui il centro si presenta: il gateway lo tiene in un file tra i suoi dati.
+    command: ["sh", "-c", "umask 077; [ -s /dati/gettone.txt ] || printf '%s\\n' \"$$SHINKA_GATEWAY_GETTONE\" > /dati/gettone.txt; exec node src/gateway/avvio.ts"]
+    ports:
+      - "${SHINKA_ASCOLTO:-0.0.0.0}:7851:7851"
+    volumes:
+      - gateway:/dati
+    # Il recinto di Chromium: le regole seccomp di Playwright e una sola capacità.
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_CHROOT
+    security_opt:
+      - seccomp=./seccomp-chromium.json
+    shm_size: 1gb
+    mem_limit: 2g
+
+volumes:
+  centro:
+  gateway:

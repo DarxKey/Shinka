@@ -1,0 +1,16 @@
+# Il gateway di Shinka: il vault, le credenziali usate per nome, il browser, Telegram.
+# Gira con un utente suo e con una cartella di dati che il centro non vede.
+FROM mcr.microsoft.com/playwright:v1.65.0-noble
+
+WORKDIR /opt/shinka
+COPY package.json package-lock.json ./
+# Al gateway non servono i programmi da compilare: si saltano gli script delle dipendenze.
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+COPY . .
+RUN mkdir -p /dati && chown pwuser:pwuser /dati
+
+USER pwuser
+ENV SHINKA_GATEWAY_DATI=/dati \
+    SHINKA_GATEWAY_INDIRIZZO=0.0.0.0
+EXPOSE 7851
+CMD ["node", "src/gateway/avvio.ts"]

@@ -1,0 +1,691 @@
+/**
+ * La Home vista dal centro: una conversazione fatta di argomenti, di cui uno solo è aperto.
+ *
+ * Ogni argomento ha il suo archivio, la sua cartella di lavoro e la sua conversazione con
+ * l'harness, che parte a contesto pulito. Quando si passa da un argomento a un altro, quello
+ * che si chiude viene archiviato con titolo e riassunto e chi guarda la Home vede quello nuovo.
+ */
+
+import { mkdirSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import type { Allegato } from "../protocollo/allegati.ts";
+import type { VoceArgomento } from "../protocollo/argomenti.ts";
+import { CARTELLA_HOME } from "../protocollo/azioni.ts";
+import type {
+  AnteprimaRiavvolgimento,
+  DecisionePermesso,
+  RispostaAlleDomande,
+  EventoArchiviato,
+  EventoConversazione,
+  OrigineMessaggio,
+  PortaConversazione,
+  RispostaAParte,
+  UscitaAttivita,
+} from "../protocollo/eventi.ts";
+import type { ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
+import type { Argomento, Ramo, RegistroArgomenti } from "./argomenti.ts";
+import { Canale } from "./canale.ts";
+import type { CustodiaImmagini } from "./immagini.ts";
+import { messaggiDelProprietario, type Cercabile } from "./storia.ts";
+
+/** Sotto questo nome il centro custodisce le immagini di tutti gli argomenti della Home. */
+export const CUSTODIA_HOME = "home";
+
+/** Ciò che serve per aprire la conversazione di un argomento. */
+export interface AperturaArgomento {
+  cartella: string;
+  idSessione: string | undefined;
+  alEvento(evento: EventoConversazione): void;
+  alIdSessione(id: string): void;
+}
+
+export interface OpzioniHome {
+  argomenti: RegistroArgomenti;
+  immagini: CustodiaImmagini;
+  /** Cartella in cui il centro archivia le conversazioni degli argomenti. */
+  cartellaArchivi: string;
+  /** Cartella dei progetti dell'ambiente del centro: lì dentro stanno le cartelle degli argomenti. */
+  radiceProgetti: string;
+  /** Modello, impegno e permessi scelti per la Home, chiesti nel momento in cui servono. */
+  impostazioni(): ImpostazioniConversazione;
+  /** Come si apre la conversazione di un argomento. Nei test se ne mette una finta. */
+  apri(apertura: AperturaArgomento): PortaConversazione;
+  /**
+   * Ciò che la conversazione di un argomento deve sapere prima del prossimo messaggio del
+   * proprietario, se c'è: è così che le arriva la memoria.
+   */
+  notaPrimaDelMessaggio?(idArgomento: string): string | undefined;
+}
+
+/** Ciò che la Home chiede a Claude quando è il proprietario a chiudere l'argomento. */
+const ISTRUZIONE_ARCHIVIA =
+  "[Shinka] Il proprietario passa a un altro argomento. Chiama `cambia_argomento` con il titolo e il " +
+  "riassunto di questo argomento, senza indicare `riprendi` e senza scrivere altro.";
+
+/**
+ * Quanto si aspetta, dopo che Claude ha chiesto il cambio, prima di fermare il turno:
+ * il tempo che la risposta dello strumento arrivi all'harness e resti nella conversazione.
+ */
+const ATTESA_PRIMA_DI_FERMARE_MS = 400;
+
+const NOTA_RIAPERTO = "[Shinka] Questo argomento era archiviato: il proprietario lo ha ripreso adesso.";
+
+/** Ciò che la conversazione di un ramo deve sapere prima del messaggio da cui prende un'altra strada. */
+function notaDelRamo(titolo: string | undefined): string {
+  return (
+    "[Shinka] Il proprietario ha fatto nascere un argomento nuovo da un suo messaggio: la conversazione riprende da " +
+    "prima di quello, e il messaggio che segue lo sostituisce. Ciò che era venuto dopo resta nell'argomento archiviato" +
+    (titolo === undefined ? "" : ` «${titolo}»`) +
+    ", e i file della cartella sono com'erano lì: non sono tornati indietro."
+  );
+}
+
+/**
+ * Ciò che la conversazione deve sapere di un messaggio arrivato da Telegram: il proprietario
+ * leggerà lì solo il testo con cui il turno si chiude.
+ */
+const NOTA_TELEGRAM =
+  "[Shinka] Il messaggio che segue arriva da Telegram: il proprietario è al telefono e riceverà lì il testo con cui chiudi il turno, le foto scritte nel testo e, come allegati, i file che mostri con mostra_elaborato.";
+
+interface Messaggio {
+  testo: string;
+  allegati: Allegato[];
+  origine?: OrigineMessaggio;
+}
+
+interface Passaggio {
+  verso: "nuovo" | string | Ramo;
+  /** In un ramo, la storia dell'argomento di prima fino al messaggio da cui nasce. */
+  storia?: readonly EventoArchiviato[];
+  /** Mancano finché Claude non li ha scritti. */
+  titolo?: string;
+  riassunto?: string;
+  /** Vero se l'argomento che si chiude non conteneva nulla da conservare. */
+  daDimenticare: boolean;
+  /** Il messaggio che ha fatto cambiare argomento: avrà risposta in quello nuovo. */
+  ripeti?: Messaggio;
+  /**
+   * Dove comincia, nella storia dell'argomento che si chiude, quel messaggio con il turno che lo ha
+   * seguito: passa all'argomento nuovo, e da quello vecchio si toglie.
+   */
+  togliDa?: number;
+}
+
+interface Seguace {
+  ricevi(archiviato: EventoArchiviato): void;
+  azzera(): void;
+  /** La storia è stata rimandata tutta: da qui in poi arrivano solo eventi nuovi. */
+  storiaInviata(): void;
+  scollega(): void;
+}
+
+/** Perché un passaggio di argomento chiesto dal proprietario non si può fare adesso. */
+export type RifiutoPassaggio = "occupata" | "non-trovato";
+
+/** La condizione della Home, con le stesse parole dei progetti. */
+export type CondizioneDellaHome = "al-lavoro" | "aspetta-te" | "fermo";
+
+export class Home implements PortaConversazione {
+  readonly #o: OpzioniHome;
+  readonly #canali = new Map<string, Canale>();
+  readonly #seguaci = new Set<Seguace>();
+  #canale: Canale;
+  #porta: PortaConversazione;
+  #passaggio: Passaggio | undefined;
+  /** Vero mentre un passaggio si sta compiendo. */
+  #inPassaggio = false;
+  /** Vero se il turno in corso è stato fermato dalla Home perché l'argomento sta cambiando. */
+  #fermato = false;
+  /** L'ultimo messaggio del proprietario: se fa cambiare argomento, va riproposto in quello nuovo. */
+  #ultimoMessaggio: Messaggio | undefined;
+  /** I messaggi arrivati durante un passaggio: partono appena l'argomento nuovo è aperto. */
+  readonly #inCoda: Messaggio[] = [];
+  /** Da dove arriva il messaggio che si sta consegnando alla conversazione, se non dall'interfaccia. */
+  #origineInConsegna: OrigineMessaggio | undefined;
+  /** Chi ascolta gli eventi nuovi dell'argomento aperto, qualunque esso sia. */
+  readonly #ascoltatori = new Set<(archiviato: EventoArchiviato) => void>();
+  #scollegaAscolto: () => void = () => {};
+
+  private constructor(opzioni: OpzioniHome, canale: Canale) {
+    this.#o = opzioni;
+    this.#canale = canale;
+    this.#ascoltaIlCanale(canale);
+    this.#porta = this.#apriPorta(opzioni.argomenti.aperto, canale);
+  }
+
+  #ascoltaIlCanale(canale: Canale): void {
+    this.#scollegaAscolto();
+    this.#scollegaAscolto = canale.ascolta((archiviato) => {
+      for (const ascoltatore of this.#ascoltatori) ascoltatore(archiviato);
+    });
+  }
+
+  /**
+   * Ascolta la Home senza guardarla: riceve solo gli eventi nuovi dell'argomento aperto, anche
+   * dopo che l'argomento è cambiato, e non conta come una pagina aperta.
+   */
+  ascolta(ascoltatore: (archiviato: EventoArchiviato) => void): () => void {
+    this.#ascoltatori.add(ascoltatore);
+    return () => this.#ascoltatori.delete(ascoltatore);
+  }
+
+  /** Come sta la Home, in una parola: al lavoro, aspetta il proprietario, oppure ferma. */
+  get condizione(): CondizioneDellaHome {
+    const { turni, permessi } = this.#canale.sospesi;
+    return permessi > 0 ? "aspetta-te" : turni > 0 ? "al-lavoro" : "fermo";
+  }
+
+  /** Chiamata quando la condizione della Home cambia, anche passando a un altro argomento. */
+  iscriviCondizione(ascoltatore: (condizione: CondizioneDellaHome) => void): () => void {
+    let ultima = this.condizione;
+    ascoltatore(ultima);
+    return this.ascolta(() => {
+      if (this.condizione === ultima) return;
+      ultima = this.condizione;
+      ascoltatore(ultima);
+    });
+  }
+
+  /** Vero mentre l'argomento aperto sta per cambiare, o sta cambiando. */
+  get staCambiandoArgomento(): boolean {
+    return this.#passaggio !== undefined || this.#inPassaggio;
+  }
+
+  static async apri(opzioni: OpzioniHome): Promise<Home> {
+    const aperto = opzioni.argomenti.aperto;
+    const canale = await Canale.apri(archivioDi(opzioni, aperto));
+    const home = new Home(opzioni, canale);
+    home.#canali.set(aperto.id, canale);
+    // Chi apre la Home deve sapere subito come è impostata.
+    canale.pubblica({ tipo: "impostazioni", impostazioni: opzioni.impostazioni() });
+    return home;
+  }
+
+  /** L'archivio dell'argomento aperto. */
+  get canale(): Canale {
+    return this.#canale;
+  }
+
+  get idArgomentoAperto(): string {
+    return this.#o.argomenti.aperto.id;
+  }
+
+  /** La cartella di lavoro dell'argomento aperto, nell'ambiente del centro. */
+  get cartellaAperta(): string {
+    return cartellaDi(this.#o, this.#o.argomenti.aperto);
+  }
+
+  /** La cartella di lavoro di un argomento qualunque, aperto o archiviato, nell'ambiente del centro. */
+  cartellaDellArgomento(idArgomento: string): string {
+    const argomento = this.#o.argomenti.trova(idArgomento);
+    return argomento === undefined
+      ? join(resolve(this.#o.radiceProgetti), CARTELLA_HOME, idArgomento)
+      : cartellaDi(this.#o, argomento);
+  }
+
+  /** Pubblica un evento nell'argomento aperto. */
+  readonly pubblica = (evento: EventoConversazione): void => {
+    this.#canale.pubblica(evento);
+  };
+
+  /**
+   * Segue la Home: riceve la storia dell'argomento aperto e poi gli eventi nuovi. Quando
+   * l'argomento cambia viene chiamato `azzera`, e subito dopo arriva la storia di quello nuovo.
+   * Finita ogni storia viene chiamato `storiaInviata`. Restituisce la funzione per smettere.
+   */
+  segui(
+    ricevi: (archiviato: EventoArchiviato) => void,
+    azzera: () => void,
+    storiaInviata: () => void = () => {},
+  ): () => void {
+    const seguace: Seguace = { ricevi, azzera, storiaInviata, scollega: this.#canale.iscrivi(ricevi) };
+    storiaInviata();
+    this.#seguaci.add(seguace);
+    return () => {
+      seguace.scollega();
+      this.#seguaci.delete(seguace);
+    };
+  }
+
+  /** L'archivio di un argomento qualunque, aperto o archiviato. Nulla se non esiste. */
+  async canaleDi(idArgomento: string): Promise<Canale | undefined> {
+    const esistente = this.#canali.get(idArgomento);
+    if (esistente !== undefined) return esistente;
+    const argomento = this.#o.argomenti.trova(idArgomento);
+    if (argomento === undefined) return undefined;
+    const canale = await Canale.apri(archivioDi(this.#o, argomento));
+    // Nel frattempo può averlo aperto qualcun altro: ne vale uno solo.
+    const giaAperto = this.#canali.get(idArgomento);
+    if (giaAperto !== undefined) return giaAperto;
+    this.#canali.set(idArgomento, canale);
+    return canale;
+  }
+
+  /** Dove sta l'archivio di un argomento, aperto o archiviato. */
+  archivioDellArgomento(idArgomento: string): string | undefined {
+    const argomento = this.#o.argomenti.trova(idArgomento);
+    return argomento === undefined ? undefined : archivioDi(this.#o, argomento);
+  }
+
+  /**
+   * Elimina un argomento archiviato: la sua storia e la sua cartella nell'ambiente del centro. Le
+   * cartelle che ha negli altri ambienti restano. Quello aperto non si elimina. Il motivo, se non si può.
+   */
+  async eliminaArchiviato(idArgomento: string): Promise<string | undefined> {
+    const argomento = this.#o.argomenti.trova(idArgomento);
+    if (argomento === undefined) return "Argomento non trovato.";
+    if (argomento.archiviatoIl === undefined || idArgomento === this.idArgomentoAperto) return "L'argomento aperto non si elimina: prima passa a un altro.";
+    const archivio = archivioDi(this.#o, argomento);
+    const cartella = cartellaDi(this.#o, argomento);
+    if (!(await this.#o.argomenti.togli(idArgomento))) return "Argomento non trovato tra quelli archiviati.";
+    this.#canali.delete(idArgomento);
+    await rm(archivio, { force: true });
+    // Solo la cartella che è sua: quella della Home di prima degli argomenti ha un posto suo, e resta.
+    if (argomento.cartella === undefined) await rm(cartella, { recursive: true, force: true });
+    return undefined;
+  }
+
+  archiviati(): VoceArgomento[] {
+    return this.#o.argomenti.archiviati();
+  }
+
+  /** Gli argomenti archiviati, ciascuno con la sua storia, per cercarvi dentro. */
+  async cercabili(): Promise<Cercabile[]> {
+    const cercabili: Cercabile[] = [];
+    for (const voce of this.archiviati()) {
+      const canale = await this.canaleDi(voce.id);
+      if (canale === undefined) continue;
+      cercabili.push({ id: voce.id, titolo: voce.titolo, riassunto: voce.riassunto, storia: canale.archiviati });
+    }
+    return cercabili;
+  }
+
+  prepara(): void {
+    this.#porta.prepara();
+  }
+
+  invia(testo: string, allegati: Allegato[] = [], origine?: OrigineMessaggio): void {
+    const messaggio: Messaggio = { testo, allegati, ...(origine === undefined ? {} : { origine }) };
+    if (this.#passaggio !== undefined || this.#inPassaggio) {
+      this.#inCoda.push(messaggio);
+      return;
+    }
+    this.#ultimoMessaggio = messaggio;
+    const nota = this.#o.notaPrimaDelMessaggio?.(this.idArgomentoAperto);
+    if (nota !== undefined) this.#porta.annota(nota);
+    if (origine === "telegram") this.#porta.annota(NOTA_TELEGRAM);
+    // La conversazione pubblica il messaggio mentre lo riceve: è lì che gli si scrive da dove arriva.
+    this.#origineInConsegna = origine;
+    try {
+      this.#porta.invia(testo, allegati);
+    } finally {
+      this.#origineInConsegna = undefined;
+    }
+  }
+
+  /** Le skill di Shinka sono cambiate: la conversazione dell'argomento aperto le rilegge. */
+  ricaricaSkill(): void {
+    this.#porta.ricaricaSkill?.();
+  }
+
+  /** Le estensioni accese nell'ambiente del centro sono cambiate: la conversazione dell'argomento aperto riparte con quelle nuove. */
+  ricaricaEstensioni(): void {
+    this.#porta.ricaricaEstensioni?.();
+  }
+
+  annota(testo: string): void {
+    this.#porta.annota(testo);
+  }
+
+  istruisci(testo: string): void {
+    this.#porta.istruisci(testo);
+  }
+
+  decidiPermesso(idPermesso: string, decisione: DecisionePermesso): boolean {
+    return this.#porta.decidiPermesso(idPermesso, decisione);
+  }
+
+  /** Quali file tornerebbero com'erano riprendendo da prima di quel messaggio. */
+  async anteprimaRiavvolgimento(idMessaggio: string): Promise<AnteprimaRiavvolgimento> {
+    if (this.#porta.anteprimaRiavvolgimento === undefined) return { motivo: "Questa conversazione non sa ripartire da un messaggio." };
+    return this.#porta.anteprimaRiavvolgimento(idMessaggio);
+  }
+
+  /**
+   * Il proprietario modifica un suo messaggio: la conversazione riparte da prima di quello, con i
+   * file se lo vuole, e il testo nuovo parte come un messaggio. Il motivo, se non si può.
+   */
+  async modifica(idMessaggio: string, testo: string, opzioni: { file: boolean }): Promise<string | undefined> {
+    if (this.#passaggio !== undefined || this.#inPassaggio) return "La Home sta cambiando argomento: riprova tra poco.";
+    if (this.#porta.riprendiDa === undefined) return "Questa conversazione non sa ripartire da un messaggio.";
+    const motivo = await this.#porta.riprendiDa(idMessaggio, opzioni);
+    if (motivo !== undefined) return motivo;
+    this.invia(testo);
+    return undefined;
+  }
+
+  /**
+   * Il proprietario modifica un suo messaggio e lo manda in un argomento nuovo: quello nuovo ha la
+   * storia fino a prima del messaggio e riparte da lì, nella stessa cartella; quello aperto viene
+   * archiviato com'è. Il motivo, se non si può.
+   */
+  async ramoDa(idMessaggio: string, testo: string): Promise<string | undefined> {
+    if (this.#passaggio !== undefined || this.#inPassaggio) return "La Home sta cambiando argomento: riprova tra poco.";
+    if (this.#canale.sospesi.turni > 0) return "Claude sta lavorando: aspetta che finisca, o fermalo.";
+    if (this.#porta.biforca === undefined) return "Questa conversazione non sa far nascere un argomento da un messaggio.";
+    const storia = storiaPrimaDi(this.#canale.archiviati, idMessaggio);
+    if (storia === undefined) return "Questo messaggio non è nell'argomento aperto.";
+    const esito = await this.#porta.biforca(idMessaggio);
+    if (!esito.riuscita) return esito.motivo;
+    const ramo: Ramo = {
+      tipo: "ramo",
+      cartella: this.cartellaAperta,
+      ...(esito.idSessione === undefined ? {} : { idSessione: esito.idSessione }),
+    };
+    const rifiuto = await this.#passaSuRichiesta(ramo, { storia, ripeti: { testo, allegati: [] } });
+    return rifiuto === undefined ? undefined : "Claude sta lavorando: aspetta che finisca, o fermalo.";
+  }
+
+  rispondiDomande(idDomande: string, risposta: RispostaAlleDomande): boolean {
+    return this.#porta.rispondiDomande?.(idDomande, risposta) ?? false;
+  }
+
+  /** La parte finale dell'uscita di un'attività dell'argomento aperto. */
+  async uscitaAttivita(idAttivita: string): Promise<UscitaAttivita | { motivo: string }> {
+    return this.#porta.uscitaAttivita?.(idAttivita) ?? { motivo: "Questa conversazione non tiene le attività." };
+  }
+
+  /** Una domanda a parte sull'argomento aperto: non vi resta. */
+  async chiediAParte(domanda: string): Promise<RispostaAParte> {
+    if (this.#porta.chiediAParte === undefined) return { motivo: "Questa conversazione non sa rispondere a una domanda a parte." };
+    return this.#porta.chiediAParte(domanda);
+  }
+
+  imposta(impostazioni: ImpostazioniConversazione): void {
+    this.#porta.imposta(impostazioni);
+    this.#canale.pubblica({ tipo: "impostazioni", impostazioni });
+  }
+
+  interrompi(): Promise<void> {
+    return this.#porta.interrompi();
+  }
+
+  chiudi(): void {
+    this.#porta.chiudi();
+  }
+
+  /**
+   * Claude chiede di cambiare argomento, oppure risponde alla richiesta di archiviare quello aperto.
+   * Il passaggio avviene quando il turno in corso si chiude. Restituisce ciò che va detto a Claude,
+   * oppure il motivo per cui il cambio non si fa.
+   */
+  richiediCambio(richiesta: { titolo: string; riassunto: string; riprendi?: string }): string | { rifiuto: string } {
+    const titolo = richiesta.titolo.trim().slice(0, 80);
+    const riassunto = richiesta.riassunto.trim();
+    if (titolo === "") return { rifiuto: "Serve un titolo per l'argomento che si chiude." };
+
+    if (this.#passaggio !== undefined) {
+      // È il proprietario ad aver chiesto il passaggio: mancavano solo titolo e riassunto.
+      this.#passaggio.titolo = titolo;
+      this.#passaggio.riassunto = riassunto;
+      this.#fermaIlTurno();
+      return "Argomento archiviato. Non scrivere altro.";
+    }
+
+    const scambi = messaggiDelProprietario(this.#canale.archiviati);
+    let verso: Passaggio["verso"] = "nuovo";
+    if (richiesta.riprendi !== undefined && richiesta.riprendi.trim() !== "") {
+      const daRiprendere = this.#o.argomenti.trova(richiesta.riprendi.trim());
+      if (daRiprendere === undefined || daRiprendere.archiviatoIl === undefined) {
+        return {
+          rifiuto: `Nessun argomento archiviato ha l'identificativo "${richiesta.riprendi}". Usa quello indicato da cerca_argomenti.`,
+        };
+      }
+      verso = daRiprendere.id;
+    } else if (scambi <= 1) {
+      return {
+        rifiuto:
+          "Questo argomento è appena cominciato: non c'è nulla da archiviare. Rispondi alla richiesta del proprietario qui.",
+      };
+    }
+    // Il messaggio che fa cambiare argomento è l'ultimo del proprietario: comincia lì ciò che passa a quello nuovo.
+    const togliDa = this.#ultimoMessaggio === undefined ? undefined : ultimoMessaggioDelProprietario(this.#canale.archiviati);
+    this.#passaggio = {
+      verso,
+      titolo,
+      riassunto,
+      // Un argomento con il solo messaggio che lo ha fatto cambiare non lascia nulla da conservare.
+      daDimenticare: scambi <= 1,
+      ...(this.#ultimoMessaggio === undefined ? {} : { ripeti: this.#ultimoMessaggio }),
+      ...(togliDa === undefined ? {} : { togliDa }),
+    };
+    this.#fermaIlTurno();
+    return (
+      "Fatto: l'argomento viene archiviato e la richiesta del proprietario viene riproposta " +
+      (verso === "nuovo" ? "in un argomento nuovo" : "nell'argomento ripreso") +
+      ". Termina qui, senza scrivere altro e senza rispondere alla richiesta."
+    );
+  }
+
+  /**
+   * Deciso il cambio, il turno in corso non ha altro da fare. Claude non sempre si ferma da sé:
+   * lasciato andare, risponderebbe alla richiesta anche qui, e poi di nuovo nell'argomento nuovo.
+   */
+  #fermaIlTurno(): void {
+    const porta = this.#porta;
+    const attesa = setTimeout(() => {
+      if (porta !== this.#porta || this.#passaggio === undefined) return;
+      this.#fermato = true;
+      porta.interrompi().catch(() => {
+        this.#fermato = false;
+      });
+    }, ATTESA_PRIMA_DI_FERMARE_MS);
+    attesa.unref();
+  }
+
+  /** Il proprietario chiude l'argomento aperto e ne comincia uno nuovo. */
+  nuovoArgomento(): Promise<RifiutoPassaggio | undefined> {
+    return this.#passaSuRichiesta("nuovo");
+  }
+
+  /** Il proprietario riprende un argomento archiviato: quello aperto viene archiviato al suo posto. */
+  riapri(idArgomento: string): Promise<RifiutoPassaggio | undefined> {
+    const argomento = this.#o.argomenti.trova(idArgomento);
+    if (argomento === undefined || argomento.archiviatoIl === undefined) return Promise.resolve("non-trovato");
+    return this.#passaSuRichiesta(argomento.id);
+  }
+
+  async #passaSuRichiesta(
+    verso: Passaggio["verso"],
+    ramo?: Pick<Passaggio, "storia" | "ripeti">,
+  ): Promise<RifiutoPassaggio | undefined> {
+    if (this.#passaggio !== undefined || this.#inPassaggio || this.#canale.sospesi.turni > 0) return "occupata";
+    const scambi = messaggiDelProprietario(this.#canale.archiviati);
+    if (scambi === 0) {
+      // Un argomento ancora vuoto è già quello nuovo; se se ne riprende un altro, non lascia traccia.
+      if (verso !== "nuovo") await this.#compi({ verso, daDimenticare: true, ...ramo });
+      return undefined;
+    }
+    // Titolo e riassunto li scrive Claude, che conosce l'argomento: il passaggio avviene a fine turno.
+    this.#passaggio = { verso, daDimenticare: false, ...ramo };
+    try {
+      this.#porta.istruisci(ISTRUZIONE_ARCHIVIA);
+    } catch {
+      // Se Claude non può scriverli, l'argomento viene archiviato lo stesso con un titolo di ripiego.
+      const passaggio = this.#passaggio;
+      this.#passaggio = undefined;
+      await this.#compi(passaggio);
+    }
+    return undefined;
+  }
+
+  /** Riceve un evento dalla conversazione di un argomento e lo archivia nel suo canale. */
+  #alEvento(porta: () => PortaConversazione, canale: Canale, ricevuto: EventoConversazione): void {
+    let evento = ricevuto;
+    if (evento.tipo === "turno-concluso" && evento.interrotto === true && this.#fermato && porta() === this.#porta) {
+      // Lo ha fermato la Home, non il proprietario: nella storia è un turno finito come gli altri.
+      this.#fermato = false;
+      evento = { tipo: "turno-concluso", riuscito: true, durataMs: evento.durataMs, ...(evento.token === undefined ? {} : { token: evento.token }) };
+    }
+    if (evento.tipo === "messaggio-proprietario" && this.#origineInConsegna !== undefined && porta() === this.#porta) {
+      evento = { ...evento, origine: this.#origineInConsegna };
+    }
+    canale.pubblica(this.#o.immagini.prendi(CUSTODIA_HOME, evento));
+    if (evento.tipo !== "turno-concluso" || this.#passaggio === undefined) return;
+    // Conta solo il turno dell'argomento aperto, e solo quando non ne restano altri in corso.
+    if (porta() !== this.#porta || canale.sospesi.turni > 0) return;
+    const passaggio = this.#passaggio;
+    this.#passaggio = undefined;
+    void this.#compi(passaggio);
+  }
+
+  async #compi(passaggio: Passaggio): Promise<void> {
+    this.#inPassaggio = true;
+    this.#fermato = false;
+    let riuscito = false;
+    const vecchio = this.#o.argomenti.aperto;
+    const canaleVecchio = this.#canale;
+    const portaVecchia = this.#porta;
+    try {
+      const chiuso = passaggio.daDimenticare
+        ? "da-dimenticare"
+        : {
+            titolo: passaggio.titolo ?? titoloDiRipiego(canaleVecchio),
+            riassunto: passaggio.riassunto ?? "",
+          };
+      const prossimo = await this.#o.argomenti.passa(chiuso, passaggio.verso);
+      portaVecchia.chiudi();
+      if (chiuso === "da-dimenticare") {
+        this.#canali.delete(vecchio.id);
+        if (vecchio.archivio === undefined) await rm(archivioDi(this.#o, vecchio), { force: true });
+      } else {
+        // Il messaggio che ha fatto cambiare argomento, e il turno che lo ha seguito, passano a quello nuovo.
+        if (passaggio.togliDa !== undefined) canaleVecchio.taglia(passaggio.togliDa);
+        canaleVecchio.pubblica({
+          tipo: "argomento-archiviato",
+          titolo: chiuso.titolo,
+          proseguito: passaggio.ripeti !== undefined,
+        });
+      }
+
+      const canale = (await this.canaleDi(prossimo.id)) ?? canaleVecchio;
+      const riaperto = typeof passaggio.verso === "string" && passaggio.verso !== "nuovo";
+      const ramo = typeof passaggio.verso === "object";
+      // Un ramo comincia con la storia di quello da cui nasce, fino al messaggio che cambia.
+      if (ramo && canale !== canaleVecchio) for (const archiviato of passaggio.storia ?? []) canale.riporta(archiviato);
+      this.#canale = canale;
+      this.#ascoltaIlCanale(canale);
+      this.#porta = this.#apriPorta(prossimo, canale);
+      canale.pubblica({
+        tipo: "passaggio-argomento",
+        riaperto,
+        ...(chiuso === "da-dimenticare" ? {} : { archiviato: { id: vecchio.id, titolo: chiuso.titolo } }),
+        ...(ramo ? { ramo: true as const } : {}),
+      });
+      canale.pubblica({ tipo: "impostazioni", impostazioni: this.#o.impostazioni() });
+      // Limiti del piano e modelli disponibili non dipendono dall'argomento: valgono da subito.
+      const noto = canaleVecchio.ricordato("stato");
+      if (noto?.tipo === "stato") {
+        const { limiti, modelli } = noto.stato;
+        if (limiti !== undefined || modelli !== undefined) {
+          canale.pubblica({
+            tipo: "stato",
+            stato: { ...(limiti === undefined ? {} : { limiti }), ...(modelli === undefined ? {} : { modelli }) },
+          });
+        }
+      }
+      for (const seguace of this.#seguaci) {
+        seguace.scollega();
+        seguace.azzera();
+        seguace.scollega = canale.iscrivi(seguace.ricevi);
+        seguace.storiaInviata();
+      }
+      if (riaperto) this.#porta.annota(NOTA_RIAPERTO);
+      if (ramo) this.#porta.annota(notaDelRamo(chiuso === "da-dimenticare" ? undefined : chiuso.titolo));
+      riuscito = true;
+    } catch (errore) {
+      canaleVecchio.pubblica({
+        tipo: "errore",
+        messaggio: `Non sono riuscito a cambiare argomento: ${errore instanceof Error ? errore.message : String(errore)}`,
+      });
+    } finally {
+      this.#inPassaggio = false;
+    }
+    // Se il passaggio non è riuscito il messaggio che lo aveva chiesto non va riproposto: lo richiederebbe di nuovo.
+    const daMandare = [
+      ...(riuscito && passaggio.ripeti !== undefined ? [passaggio.ripeti] : []),
+      ...this.#inCoda.splice(0),
+    ];
+    for (const messaggio of daMandare) this.invia(messaggio.testo, messaggio.allegati, messaggio.origine);
+  }
+
+  #apriPorta(argomento: Argomento, canale: Canale): PortaConversazione {
+    const cartella = cartellaDi(this.#o, argomento);
+    mkdirSync(cartella, { recursive: true });
+    const porta: PortaConversazione = this.#o.apri({
+      cartella,
+      idSessione: argomento.idSessione,
+      alEvento: (evento) => this.#alEvento(() => porta, canale, evento),
+      // Se non si riesce a salvarlo, alla ripresa l'argomento riparte senza il contesto dell'harness.
+      alIdSessione: (id) => void this.#o.argomenti.ricordaSessione(argomento.id, id).catch(() => {}),
+    });
+    return porta;
+  }
+}
+
+/** Il numero, nella storia, dell'ultimo messaggio del proprietario. */
+function ultimoMessaggioDelProprietario(archiviati: readonly EventoArchiviato[]): number | undefined {
+  for (let posto = archiviati.length - 1; posto >= 0; posto -= 1) {
+    const archiviato = archiviati[posto];
+    if (archiviato?.evento.tipo === "messaggio-proprietario") return archiviato.n;
+  }
+  return undefined;
+}
+
+function archivioDi(opzioni: OpzioniHome, argomento: Argomento): string {
+  return argomento.archivio ?? join(opzioni.cartellaArchivi, `${argomento.id}.jsonl`);
+}
+
+function cartellaDi(opzioni: OpzioniHome, argomento: Argomento): string {
+  return argomento.cartella ?? join(resolve(opzioni.radiceProgetti), CARTELLA_HOME, argomento.id);
+}
+
+/**
+ * La storia di un argomento fino a prima di un messaggio del proprietario, come la riceve il ramo
+ * che ne nasce: senza ciò che riguarda solo l'argomento di prima, e con i messaggi che non si
+ * possono più modificare, perché nella copia della conversazione hanno un altro identificativo.
+ * Undefined se il messaggio non c'è.
+ */
+export function storiaPrimaDi(archiviati: readonly EventoArchiviato[], idMessaggio: string): EventoArchiviato[] | undefined {
+  const posizione = archiviati.findIndex(({ evento }) => evento.tipo === "messaggio-proprietario" && evento.id === idMessaggio);
+  if (posizione < 0) return undefined;
+  const storia: EventoArchiviato[] = [];
+  let turniAperti = 0;
+  for (const archiviato of archiviati.slice(0, posizione)) {
+    const { evento } = archiviato;
+    if (evento.tipo === "passaggio-argomento" || evento.tipo === "argomento-archiviato" || evento.tipo === "riavvolto") continue;
+    if (evento.tipo === "turno-iniziato") turniAperti += 1;
+    if (evento.tipo === "turno-concluso") turniAperti = Math.max(0, turniAperti - 1);
+    if (evento.tipo === "messaggio-proprietario" && evento.modificabile === true) {
+      const { modificabile: _non, ...resto } = evento;
+      storia.push({ ...archiviato, evento: resto });
+    } else {
+      storia.push(archiviato);
+    }
+  }
+  // Il messaggio era entrato in un turno già cominciato: nel ramo quel turno finisce lì.
+  const quando = archiviati[posizione]?.quando ?? new Date().toISOString();
+  for (; turniAperti > 0; turniAperti -= 1) storia.push({ n: 0, quando, evento: { tipo: "turno-concluso", riuscito: true, durataMs: 0 } });
+  return storia;
+}
+
+/** Il titolo di un argomento che Claude non ha potuto intitolare: l'inizio della prima richiesta. */
+function titoloDiRipiego(canale: Canale): string {
+  for (const { evento } of canale.archiviati) {
+    if (evento.tipo !== "messaggio-proprietario") continue;
+    const testo = evento.testo.replace(/\s+/g, " ").trim();
+    if (testo !== "") return testo.length <= 60 ? testo : `${testo.slice(0, 57)}…`;
+  }
+  return "Senza titolo";
+}

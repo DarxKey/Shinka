@@ -1,0 +1,20 @@
+# Il centro di Shinka: la Home, i progetti dell'ambiente del centro, l'interfaccia.
+# Il codice sta nell'immagine, in sola lettura; ciò che cambia (dati, progetti, accessi di
+# Claude e Codex) sta nella cartella di casa dell'utente node, in un volume.
+FROM node:24-bookworm
+
+WORKDIR /opt/shinka
+COPY package.json package-lock.json ./
+# node-pty si compila qui: l'immagine ha già gli strumenti per farlo.
+RUN npm ci --omit=dev && npm cache clean --force
+COPY . .
+
+USER node
+ENV HOME=/home/node \
+    SHINKA_INSTALLATA=/opt/shinka \
+    SHINKA_DATI=/home/node/dati \
+    SHINKA_PROGETTI=/home/node/progetti \
+    SHINKA_INDIRIZZO=0.0.0.0
+RUN mkdir -p /home/node/dati /home/node/progetti
+EXPOSE 7850 7852
+CMD ["node", "src/centro/avvio.ts"]

@@ -1,0 +1,60 @@
+{
+  "name": "shinka",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Applicazione web personale: una Home che smista verso progetti, con Claude Code come motore.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "verifica:motore": "node src/harness/verifica-motore.ts",
+    "test": "node --test --test-timeout=30000 \"src/**/*.test.ts\" \"web/src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "avvia": "node src/centro/avvio.ts",
+    "imposta:password": "node src/centro/imposta-password.ts",
+    "costruisci": "vite build --config web/vite.config.ts",
+    "nodo": "node src/nodo/avvio.ts",
+    "gateway": "node src/gateway/avvio.ts",
+    "disponi:gateway": "node src/centro/disponi-gateway.ts",
+    "pubblica": "node src/pubblicazione/pubblica.ts",
+    "prova:host": "node src/prove/host-locale.ts",
+    "prova:telegram": "node src/prove/telegram-locale.ts",
+    "icone": "node src/prove/genera-icone.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.322",
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/static": "^10.1.10",
+    "@fastify/websocket": "^11.3.7",
+    "@openai/codex": "0.170.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "fastify": "^5.12.8",
+    "highlight.js": "^11.12.0",
+    "katex": "^0.19.1",
+    "mermaid": "^12.3.0",
+    "node-pty": "1.1.0",
+    "playwright-core": "1.65.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "ssh2": "^1.17.0",
+    "ws": "^8.22.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ssh2": "^1.15.6",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}

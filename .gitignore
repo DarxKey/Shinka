@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dati/
+dati-nodo*/
+dati-gateway*/
+.env
+.env.*
+*.log
+progetti/
+
+# Lo stato del progetto Shinka per il proprietario: non fa parte del repository.
+STATO-DEL-PROGETTO.md

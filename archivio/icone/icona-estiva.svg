@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="fondo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3d6ee3"/>
+      <stop offset="1" stop-color="#2346a6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#fondo)"/>
+  <!-- Shinka vuol dire evoluzione: un germoglio che sale. -->
+  <g fill="#ffffff" transform="translate(-16 0)">
+    <path d="M256 412 C252 352 250 306 256 262" fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round"/>
+    <path d="M254 318 C204 322 160 296 148 240 C204 232 246 262 254 318 Z"/>
+    <path d="M241 270 C246 176 312 114 396 104 C402 198 336 264 241 270 Z"/>
+  </g>
+</svg>
