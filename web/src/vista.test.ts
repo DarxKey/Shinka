@@ -64,3 +64,12 @@ test("la pagina Sicurezza ha il suo indirizzo", () => {
   assert.equal(frammentoDi({ tipo: "sicurezza" }), "#/sicurezza");
   assert.deepEqual(vistaDa("#/sicurezza"), { tipo: "sicurezza" });
 });
+
+test("la pagina Cerca ha il suo indirizzo, anche con le parole scritte nella barra laterale", () => {
+  assert.deepEqual(vistaDa("#/cerca"), { tipo: "cerca" });
+  const vista = { tipo: "cerca", parole: "backup del NAS / 50%" } as const;
+  assert.deepEqual(vistaDa(frammentoDi(vista)), vista);
+  assert.equal(frammentoDi({ tipo: "cerca", parole: "  " }), "#/cerca");
+  assert.equal(frammentoDi({ tipo: "cerca", parole: " mappa " }), "#/cerca/mappa");
+  assert.deepEqual(vistaDa("#/cerca/%E0%A4%A"), { tipo: "cerca" });
+});

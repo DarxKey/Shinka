@@ -48,7 +48,7 @@ test("la chat si legge come in Claude: codice, formule, diagrammi, viste, tema e
   assert.equal(await blocco.locator(".linguaggio").textContent(), "ts");
   assert.equal(await blocco.getByRole("button", { name: "Copia il codice" }).count(), 1);
   // Il diagramma e le formule sono disegnati; sotto la risposta c'è Copia.
-  await pagina.locator(".blocco-codice.diagramma svg").waitFor();
+  await pagina.locator(".blocco-codice.diagramma .disegno svg").waitFor();
   await pagina.locator(".riga.claude .katex").first().waitFor();
   assert.equal(await pagina.getByRole("button", { name: "Copia la risposta" }).count(), 1);
   // Le cose da fare in una scheda, e nessuna azione per la lista.

@@ -241,7 +241,7 @@ export function Guscio({ allUscita }: { allUscita: () => void }): ReactNode {
   } else if (vista.tipo === "elaborati") {
     contenuto = <PaginaElaborati menu={menu} scelto={vista.scelto} />;
   } else if (vista.tipo === "cerca") {
-    contenuto = <PaginaCerca menu={menu} />;
+    contenuto = <PaginaCerca key={vista.parole ?? ""} menu={menu} parole={vista.parole} />;
   } else if (vista.tipo === "ambiente") {
     contenuto = <PaginaAmbiente menu={menu} ambiente={quadro.ambienti?.ambienti.find((uno) => uno.id === vista.id)} caricato={quadro.ambienti !== undefined} />;
   } else if (vista.tipo === "nuovo-progetto") {

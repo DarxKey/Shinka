@@ -122,7 +122,7 @@ test("modifica e rigenera, menu dei comandi, ricerca, esportazione, bozza e coda
 
   // La ricerca nel testo di tutte le conversazioni.
   await pagina.goto(`${indirizzo}/#/cerca`);
-  await pagina.getByRole("searchbox").fill("caffè");
+  await pagina.getByRole("searchbox", { name: "Parole da cercare in tutte le conversazioni" }).fill("caffè");
   await pagina.locator(".risultati-cerca li").first().waitFor();
   await fotografa("cerca");
   assert.ok((await pagina.locator(".risultati-cerca li").count()) >= 1);

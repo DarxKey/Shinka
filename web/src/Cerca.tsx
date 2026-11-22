@@ -16,8 +16,9 @@ function quandoInBreve(quando: string): string {
   return Number.isNaN(data.getTime()) ? "" : data.toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-export function PaginaCerca({ menu }: { menu: ReactNode }): ReactNode {
-  const [cercato, setCercato] = useState("");
+/** `parole`: quelle scritte nella barra laterale, da cui la ricerca comincia. */
+export function PaginaCerca({ menu, parole = "" }: { menu: ReactNode; parole?: string }): ReactNode {
+  const [cercato, setCercato] = useState(parole);
   const [trovati, setTrovati] = useState<TrovatoNelleConversazioni[]>();
   const [errore, setErrore] = useState<string>();
 

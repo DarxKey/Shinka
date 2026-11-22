@@ -2511,22 +2511,99 @@ button.allega {
   }
 }
 
-/* Memoria e skill: in fondo alla barra laterale, ciascuna su una riga con il suo conteggio. */
+/* Il campo per cercare, in cima alla barra laterale. */
 
-.sapere {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--bordo);
+.cerca-laterale {
+  position: relative;
+  margin: 0 0 var(--s-2);
 }
 
-.sapere .voce {
+.cerca-laterale svg {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  color: var(--tenue);
+  pointer-events: none;
+}
+
+.cerca-laterale input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px 0 32px;
+  border: 1px solid var(--bordo);
+  border-radius: 8px;
+  background: var(--sfondo);
+}
+
+/* Le pagine: un menu che si apre verso l'alto dall'icona in fondo alla barra, ciascuna su una riga con il suo conteggio. */
+
+.piede {
+  position: relative;
+}
+
+.piede-destra {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.menu-pagine summary {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  color: var(--tenue);
+  cursor: pointer;
+  list-style: none;
+}
+
+.menu-pagine summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu-pagine summary:hover,
+.menu-pagine[open] summary,
+.menu-pagine summary.attuale {
+  background: var(--sfondo);
+  color: var(--testo);
+}
+
+.menu-pagine .pallino {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accento);
+}
+
+.voci-pagine {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  max-height: min(70dvh, 460px);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  background: var(--superficie);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+}
+
+.voci-pagine .voce {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.sapere .quanti {
+.voci-pagine .quanti {
   flex: none;
   font-size: 0.8125rem;
   color: var(--tenue);
@@ -3783,8 +3860,11 @@ button.pulsante-invio .in-volo {
 }
 
 button.copia {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
   min-height: 28px;
-  padding: 0 var(--s-2);
+  padding: 0;
   border-color: transparent;
   background: transparent;
   font-size: var(--t-piccolo);

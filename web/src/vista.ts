@@ -17,8 +17,8 @@ export type Vista =
   | { tipo: "elaborati"; scelto?: string }
   /** L'elenco delle skill, oppure una skill con la sua storia. */
   | { tipo: "skill"; nome?: string }
-  /** La ricerca nel testo di tutte le conversazioni. */
-  | { tipo: "cerca" }
+  /** La ricerca nel testo di tutte le conversazioni, con le parole scritte nella barra laterale. */
+  | { tipo: "cerca"; parole?: string }
   /** Un ambiente in dettaglio: risorse, processi, container. */
   | { tipo: "ambiente"; id: string }
   /** La scheda con cui il proprietario crea un progetto da sé. */
@@ -58,6 +58,14 @@ export function vistaDa(frammento: string): Vista {
       return { tipo: "elaborati" };
     }
   }
+  const cercato = /^#\/cerca\/(.+)$/.exec(frammento);
+  if (cercato?.[1] !== undefined) {
+    try {
+      return { tipo: "cerca", parole: decodeURIComponent(cercato[1]) };
+    } catch {
+      return { tipo: "cerca" };
+    }
+  }
   const skill = /^#\/skill\/([a-z0-9-]+)$/.exec(frammento);
   if (skill?.[1] !== undefined) return { tipo: "skill", nome: skill[1] };
   const trovato = /^#\/(progetti|argomenti|ambienti)\/([^/?#]+)$/.exec(frammento);
@@ -86,7 +94,7 @@ export function frammentoDi(vista: Vista): string {
     case "skill":
       return vista.nome === undefined ? "#/skill" : `#/skill/${vista.nome}`;
     case "cerca":
-      return "#/cerca";
+      return vista.parole === undefined || vista.parole.trim() === "" ? "#/cerca" : `#/cerca/${encodeURIComponent(vista.parole.trim())}`;
     case "nuovo-progetto":
       return "#/nuovo-progetto";
     case "ambiente":

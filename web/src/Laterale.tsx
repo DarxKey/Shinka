@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { VoceProgetto } from "../../src/protocollo/progetti.ts";
 import { eliminaProgetto, fissaProgetto, rinominaProgetto } from "./api.ts";
 import { leggiModoGruppi, raggruppaProgetti, scriviModoGruppi, type ModoGruppi } from "./barra.ts";
@@ -28,8 +28,9 @@ export interface ProprietaLaterale {
 const ARGOMENTI_PER_CERCARE = 6;
 
 /**
- * La barra laterale: la Home in cima con i suoi argomenti archiviati,
- * poi i progetti con il loro ambiente e la loro condizione, e in fondo memoria, skill, estensioni e vault.
+ * La barra laterale: il campo per cercare, la Home con i suoi argomenti archiviati, poi i progetti
+ * con il loro ambiente e la loro condizione, che hanno tutto lo spazio che resta. In fondo il
+ * menu delle pagine (memoria, skill, vault, impostazioni…), che si apre con la sua icona.
  */
 export function Laterale(proprieta: ProprietaLaterale): ReactNode {
   const { vista, quadro, aperta, allaScelta } = proprieta;
@@ -40,10 +41,6 @@ export function Laterale(proprieta: ProprietaLaterale): ReactNode {
   const trovati = filtraArgomenti(archiviati, cercato);
   // Chi sta rileggendo un argomento archiviato lo vede nell'elenco, anche se lo aveva richiuso.
   const elencoAperto = argomentiAperti || vista.tipo === "argomento";
-  const voci = quadro.memoria?.voci.length;
-  const skill = quadro.skill?.skill.length;
-  const estensioni = quadro.estensioni?.estensioni.length;
-  const vault = vaultInBreve(quadro.vault);
   const condizioneHome = quadro.home?.condizione ?? "fermo";
   const [modo, setModo] = useState<ModoGruppi>(leggiModoGruppi);
   const gruppi = progetti === undefined ? [] : raggruppaProgetti(progetti, modo);
@@ -56,6 +53,8 @@ export function Laterale(proprieta: ProprietaLaterale): ReactNode {
           Vai a… <kbd>Ctrl K</kbd>
         </button>
       </div>
+
+      <CampoCerca allaScelta={allaScelta} />
 
       <a
         className={`voce ${condizioneHome}${vista.tipo === "home" ? " attuale" : ""}`}
@@ -158,99 +157,6 @@ export function Laterale(proprieta: ProprietaLaterale): ReactNode {
         ))}
       </div>
 
-      <div className="sapere">
-        <a
-          className={vista.tipo === "cerca" ? "voce attuale" : "voce"}
-          href={frammentoDi({ tipo: "cerca" })}
-          aria-current={vista.tipo === "cerca" ? "page" : undefined}
-          onClick={allaScelta}
-        >
-          <span className="nome">Cerca</span>
-        </a>
-        <a
-          className={vista.tipo === "programmati" ? "voce attuale" : "voce"}
-          href={frammentoDi({ tipo: "programmati" })}
-          aria-current={vista.tipo === "programmati" ? "page" : undefined}
-          onClick={allaScelta}
-        >
-          <span className="nome">Programmati</span>
-        </a>
-        <a
-          className={vista.tipo === "uso" ? "voce attuale" : "voce"}
-          href={frammentoDi({ tipo: "uso" })}
-          aria-current={vista.tipo === "uso" ? "page" : undefined}
-          onClick={allaScelta}
-        >
-          <span className="nome">Uso</span>
-        </a>
-        <a
-          className={vista.tipo === "archiviazione" ? "voce attuale" : "voce"}
-          href={frammentoDi({ tipo: "archiviazione" })}
-          aria-current={vista.tipo === "archiviazione" ? "page" : undefined}
-          onClick={allaScelta}
-        >
-          <span className="nome">Archiviazione</span>
-        </a>
-        <a
-          className={vista.tipo === "elaborati" ? "voce attuale" : "voce"}
-          href={frammentoDi({ tipo: "elaborati" })}
-          aria-current={vista.tipo === "elaborati" ? "page" : undefined}
-          onClick={allaScelta}
-        >
-          <span className="nome">Elaborati</span>
-        </a>
-        <a
-          className={vista.tipo === "memoria" ? "voce attuale" : "voce"}
-          href={frammentoDi({ tipo: "memoria" })}
-          aria-current={vista.tipo === "memoria" ? "page" : undefined}
-          onClick={allaScelta}
-        >
-          <span className="nome">Memoria</span>
-          {voci !== undefined && <span className="quanti">{voci}</span>}
-        </a>
-        <a
-          className={vista.tipo === "skill" ? "voce attuale" : "voce"}
-          href={frammentoDi({ tipo: "skill" })}
-          aria-current={vista.tipo === "skill" ? "page" : undefined}
-          onClick={allaScelta}
-        >
-          <span className="nome">Skill</span>
-          {proprieta.skillNuove > 0 ? (
-            <span className="novita" aria-label={`${proprieta.skillNuove} nuove o cambiate`}>
-              {proprieta.skillNuove === 1 ? "1 novità" : `${proprieta.skillNuove} novità`}
-            </span>
-          ) : (
-            skill !== undefined && <span className="quanti">{skill}</span>
-          )}
-        </a>
-        <a
-          className={vista.tipo === "estensioni" ? "voce attuale" : "voce"}
-          href={frammentoDi({ tipo: "estensioni" })}
-          aria-current={vista.tipo === "estensioni" ? "page" : undefined}
-          onClick={allaScelta}
-        >
-          <span className="nome">Estensioni</span>
-          {estensioni !== undefined && <span className="quanti">{estensioni}</span>}
-        </a>
-        <a
-          className={vista.tipo === "vault" ? "voce attuale" : "voce"}
-          href={frammentoDi({ tipo: "vault" })}
-          aria-current={vista.tipo === "vault" ? "page" : undefined}
-          onClick={allaScelta}
-        >
-          <span className="nome">Vault</span>
-          {vault !== undefined && <span className="quanti">{vault}</span>}
-        </a>
-        <a
-          className={vista.tipo === "impostazioni" ? "voce attuale" : "voce"}
-          href={frammentoDi({ tipo: "impostazioni" })}
-          aria-current={vista.tipo === "impostazioni" ? "page" : undefined}
-          onClick={allaScelta}
-        >
-          <span className="nome">Impostazioni</span>
-        </a>
-      </div>
-
       <MenuAspetto />
       <div className="piede">
         <PulsanteAmbienti
@@ -258,11 +164,133 @@ export function Laterale(proprieta: ProprietaLaterale): ReactNode {
           aperto={proprieta.pannelloAmbientiAperto}
           alClic={proprieta.alClicAmbienti}
         />
-        <button type="button" className="discreto" onClick={proprieta.allUscita}>
-          Esci
-        </button>
+        <div className="piede-destra">
+          <MenuPagine vista={vista} quadro={quadro} skillNuove={proprieta.skillNuove} allaScelta={allaScelta} />
+          <button type="button" className="discreto" onClick={proprieta.allUscita}>
+            Esci
+          </button>
+        </div>
       </div>
     </nav>
+  );
+}
+
+/** Il campo per cercare nelle conversazioni: con Invio apre la pagina Cerca con le parole scritte. */
+function CampoCerca({ allaScelta }: { allaScelta: () => void }): ReactNode {
+  const [parole, setParole] = useState("");
+  return (
+    <form
+      className="cerca-laterale"
+      role="search"
+      onSubmit={(evento) => {
+        evento.preventDefault();
+        window.location.hash = frammentoDi({ tipo: "cerca", parole });
+        setParole("");
+        allaScelta();
+      }}
+    >
+      <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+        <circle cx="8.5" cy="8.5" r="5.5" />
+        <path d="M12.5 12.5l4.5 4.5" />
+      </svg>
+      <input
+        type="search"
+        enterKeyHint="search"
+        aria-label="Cerca nelle conversazioni"
+        placeholder="Cerca"
+        value={parole}
+        onChange={(evento) => setParole(evento.target.value)}
+      />
+    </form>
+  );
+}
+
+/** Le pagine che non sono conversazioni, in un menu che si apre dall'icona in fondo alla barra. */
+function MenuPagine({ vista, quadro, skillNuove, allaScelta }: { vista: Vista; quadro: Quadro; skillNuove: number; allaScelta: () => void }): ReactNode {
+  const menu = useRef<HTMLDetailsElement>(null);
+  const [aperto, setAperto] = useState(false);
+  // Si richiude con un tocco fuori o con Esc, come gli altri menu.
+  useEffect(() => {
+    if (!aperto) return;
+    const chiudi = (): void => menu.current?.removeAttribute("open");
+    const fuori = (evento: PointerEvent): void => {
+      if (!menu.current?.contains(evento.target as Node)) chiudi();
+    };
+    const tasto = (evento: KeyboardEvent): void => {
+      if (evento.key === "Escape") chiudi();
+    };
+    document.addEventListener("pointerdown", fuori);
+    document.addEventListener("keydown", tasto);
+    return () => {
+      document.removeEventListener("pointerdown", fuori);
+      document.removeEventListener("keydown", tasto);
+    };
+  }, [aperto]);
+
+  const voci = quadro.memoria?.voci.length;
+  const skill = quadro.skill?.skill.length;
+  const estensioni = quadro.estensioni?.estensioni.length;
+  const vault = vaultInBreve(quadro.vault);
+  const pagine: { vista: Vista; nome: string; accanto?: ReactNode }[] = [
+    { vista: { tipo: "programmati" }, nome: "Programmati" },
+    { vista: { tipo: "uso" }, nome: "Uso" },
+    { vista: { tipo: "archiviazione" }, nome: "Archiviazione" },
+    { vista: { tipo: "elaborati" }, nome: "Elaborati" },
+    { vista: { tipo: "memoria" }, nome: "Memoria", accanto: voci !== undefined && <span className="quanti">{voci}</span> },
+    {
+      vista: { tipo: "skill" },
+      nome: "Skill",
+      accanto:
+        skillNuove > 0 ? (
+          <span className="novita" aria-label={`${skillNuove} nuove o cambiate`}>
+            {skillNuove === 1 ? "1 novità" : `${skillNuove} novità`}
+          </span>
+        ) : (
+          skill !== undefined && <span className="quanti">{skill}</span>
+        ),
+    },
+    { vista: { tipo: "estensioni" }, nome: "Estensioni", accanto: estensioni !== undefined && <span className="quanti">{estensioni}</span> },
+    { vista: { tipo: "vault" }, nome: "Vault", accanto: vault !== undefined && <span className="quanti">{vault}</span> },
+    { vista: { tipo: "impostazioni" }, nome: "Impostazioni" },
+  ];
+  const suUnaPagina = pagine.some((pagina) => pagina.vista.tipo === vista.tipo);
+
+  return (
+    <details ref={menu} className="menu-pagine" onToggle={(evento) => setAperto(evento.currentTarget.open)}>
+      <summary
+        className={suUnaPagina ? "attuale" : undefined}
+        aria-label={skillNuove > 0 ? "Pagine: ci sono skill nuove" : "Pagine"}
+        title="Programmati, uso, memoria, skill, vault, impostazioni…"
+      >
+        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
+          <rect x="3" y="3" width="5.5" height="5.5" rx="1.4" />
+          <rect x="11.5" y="3" width="5.5" height="5.5" rx="1.4" />
+          <rect x="3" y="11.5" width="5.5" height="5.5" rx="1.4" />
+          <rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1.4" />
+        </svg>
+        {skillNuove > 0 && <span className="pallino" aria-hidden="true" />}
+      </summary>
+      <div className="voci-pagine">
+        {pagine.map((pagina) => {
+          const attuale = pagina.vista.tipo === vista.tipo;
+          return (
+            <a
+              key={pagina.vista.tipo}
+              className={attuale ? "voce attuale" : "voce"}
+              href={frammentoDi(pagina.vista)}
+              aria-current={attuale ? "page" : undefined}
+              onClick={() => {
+                menu.current?.removeAttribute("open");
+                allaScelta();
+              }}
+            >
+              <span className="nome">{pagina.nome}</span>
+              {pagina.accanto}
+            </a>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 
