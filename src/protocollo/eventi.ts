@@ -383,6 +383,30 @@ export interface EventoArchiviato {
   evento: EventoConversazione;
 }
 
+/**
+ * Fin dove arriva l'archivio di una conversazione, e in quale versione (ADR 0046). La versione
+ * resta la stessa finché all'archivio si aggiungono eventi in fondo; cambia quando eventi già
+ * dati potrebbero non valere più: chi ne ha una copia con un'altra versione la butta e la riscarica.
+ */
+export interface IndiceArchivio {
+  /** Il numero dell'ultimo evento archiviato; 0 se non ce n'è nessuno. */
+  ultimo: number;
+  versione: string;
+}
+
+/** Un pezzo della storia di una conversazione, da un punto in poi: per chi ne tiene una copia. */
+export interface PezzoDiStoria extends IndiceArchivio {
+  /** Gli eventi archiviati dopo il punto chiesto, in ordine, come nella storia leggera. */
+  eventi: EventoArchiviato[];
+  /** Vero se dopo questi ce ne sono altri: si chiedono dopo l'ultimo ricevuto. */
+  altri: boolean;
+  /**
+   * Vero se il pezzo comincia dall'inizio anche se era stato chiesto da un punto: la versione
+   * chiesta non era questa, o il punto era oltre la fine. La copia che si aveva va buttata.
+   */
+  daCapo: boolean;
+}
+
 /** Ciò che il centro si aspetta da una conversazione, ovunque essa giri. */
 /** Un messaggio della storia di una conversazione, solo testo. */
 export interface ScambioDellaStoria {

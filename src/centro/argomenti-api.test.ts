@@ -128,7 +128,7 @@ test("chi tiene aperta la Home vede cambiare l'argomento, e il quadro elenca que
   const home = await apriFlusso(t, banco, "/api/home/eventi");
   const quadro = await apriFlusso(t, banco, "/api/quadro/eventi");
   await home.finche('"testo":"Aggiungi la data."');
-  await quadro.finche(`event: argomenti\ndata: {"idAperto":"${primo}","archiviati":[]}`);
+  await quadro.finche(`event: argomenti\ndata: {"idAperto":"${primo}","archiviati":[]`);
 
   banco.casa.invia("Che tempo fa domani?");
   banco.casa.richiediCambio(TITOLO);

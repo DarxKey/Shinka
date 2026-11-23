@@ -14,6 +14,7 @@
  * rimescolata o con la testata cambiata non si apre.
  */
 
+import { ESTENSIONE_VERSIONE } from "./indice-archivio.ts";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scrypt } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { chmod, lstat, mkdir, open, readdir, readFile, rm, stat } from "node:fs/promises";
@@ -196,7 +197,10 @@ export function fuoriDallaCopia(relativo: string): boolean {
   if (DELLA_MACCHINA.has(primo) || NON_SERVE.has(primo)) return true;
   // Le fotografie dei file si rifanno da sole, e sono la parte più pesante delle modifiche.
   if (primo === "modifiche" && parti[2] === "fotografie") return true;
-  return (parti.at(-1) ?? "").endsWith(".tmp");
+  const nome = parti.at(-1) ?? "";
+  // La versione di un archivio è della macchina: uno ripristinato ne prende una nuova (ADR 0046).
+  if (nome.endsWith(`.jsonl${ESTENSIONE_VERSIONE}`)) return true;
+  return nome.endsWith(".tmp");
 }
 
 interface DaScrivere {

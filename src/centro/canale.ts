@@ -5,18 +5,27 @@
  * L'archivio è un file di righe JSON a cui si aggiunge in fondo. Gli eventi passeggeri, come i
  * frammenti di testo, non vengono archiviati: basta il testo intero che arriva alla fine. L'unico
  * modo di togliere qualcosa è `taglia`, che lascia la storia fino a un evento.
+ *
+ * Accanto all'archivio il canale tiene la sua versione (ADR 0046): resta la stessa finché si
+ * aggiunge in fondo, cambia con un taglio o quando all'apertura i numeri vanno riassegnati.
  */
 
 import { appendFileSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { analizzaArchivio, nuovaVersione, scriviIndice, sistemaArchivio, testoDellArchivio, type ArchivioLetto } from "./indice-archivio.ts";
 import { storiaLeggera } from "./storia-leggera.ts";
 import {
   daRicordare,
   passeggero,
   type EventoArchiviato,
   type EventoConversazione,
+  type IndiceArchivio,
+  type PezzoDiStoria,
 } from "../protocollo/eventi.ts";
+
+/** Quanti eventi al massimo in un pezzo di storia, se chi lo chiede non dice meno. */
+export const PEZZO_MASSIMO = 1000;
 
 type Ascoltatore = (evento: EventoArchiviato) => void;
 
@@ -45,20 +54,26 @@ export class Canale {
   /** Quante pagine dell'interfaccia stanno seguendo questa conversazione. */
   #pagine = 0;
   #turniAperti = 0;
+  #versione: string;
+  /** Quanti byte ha l'archivio: il file della versione lo ricorda, per accorgersi di cambi fatti da altri. */
+  #byte: number;
 
-  private constructor(file: string, archiviati: EventoArchiviato[]) {
+  private constructor(file: string, archiviati: EventoArchiviato[], versione: string, byte: number) {
     this.#file = file;
     this.#archiviati = archiviati;
+    this.#versione = versione;
+    this.#byte = byte;
     for (const { evento } of archiviati) this.#annota(evento);
   }
 
   static async apri(file: string): Promise<Canale> {
     mkdirSync(dirname(file), { recursive: true });
-    const { archiviati, rigaSpezzata } = await leggiArchivio(file);
-    // Dopo uno spegnimento brusco l'ultima riga può essere a metà: la si chiude,
-    // così la prossima aggiunta non le finisce attaccata.
-    if (rigaSpezzata) appendFileSync(file, "\n");
-    const canale = new Canale(file, archiviati);
+    const letto = await leggiArchivio(file);
+    // Dopo uno spegnimento brusco l'ultima riga può essere a metà, o una riga può mancare: l'archivio
+    // si riscrive con i numeri giusti, così la prossima aggiunta non finisce attaccata a un pezzo, e
+    // la versione cambia, perché chi ha una copia potrebbe avere numeri che non valgono più.
+    const indice = sistemaArchivio(file, letto);
+    const canale = new Canale(file, letto.archiviati, indice.versione, indice.byte);
     // All'apertura nessun processo sta lavorando: ciò che risultava in sospeso
     // al momento dello spegnimento va chiuso.
     canale.chiudiSospesi("Il centro è stato riavviato mentre Claude stava rispondendo.");
@@ -99,7 +114,10 @@ export class Canale {
       archiviato = { n: this.#archiviati.length + 1, quando, evento };
       this.#archiviati.push(archiviato);
       this.#annota(evento);
-      appendFileSync(this.#file, `${JSON.stringify(archiviato)}\n`);
+      const riga = `${JSON.stringify(archiviato)}\n`;
+      appendFileSync(this.#file, riga);
+      this.#byte += Buffer.byteLength(riga);
+      this.#salvaIndice();
     }
     for (const ascoltatore of this.#ascoltatori) ascoltatore(archiviato);
   }
@@ -113,10 +131,15 @@ export class Canale {
     const resto = this.#archiviati.filter((archiviato) => archiviato.n < n);
     if (resto.length === this.#archiviati.length) return;
     const provvisorio = `${this.#file}.taglio`;
-    writeFileSync(provvisorio, resto.map((archiviato) => `${JSON.stringify(archiviato)}\n`).join(""));
+    const testo = testoDellArchivio(resto);
+    writeFileSync(provvisorio, testo);
     renameSync(provvisorio, this.#file);
     this.#archiviati.length = 0;
     this.#archiviati.push(...resto);
+    // Eventi già dati non ci sono più: chi ne ha una copia la deve buttare.
+    this.#versione = nuovaVersione();
+    this.#byte = Buffer.byteLength(testo);
+    this.#salvaIndice();
     // Ciò che era aperto si ricalcola su ciò che resta.
     this.#testiInCorso.clear();
     for (const aperti of [this.#testiAperti, this.#permessiAperti, this.#domandeAperte, this.#approvazioniAperte, this.#proposteAperte, this.#sviluppiAperti, this.#installazioniAperte, this.#estensioniAperte]) {
@@ -126,13 +149,44 @@ export class Canale {
     for (const { evento } of resto) this.#annota(evento);
   }
 
+  /** Fin dove arriva l'archivio, e in quale versione. */
+  get indice(): IndiceArchivio {
+    return { ultimo: this.#archiviati.length, versione: this.#versione };
+  }
+
+  /**
+   * Un pezzo della storia leggera, dopo l'evento `dopo`, per chi ne tiene una copia. Non ha effetti:
+   * non conta come pagina che segue la conversazione. Con una `versione` che non è questa, o un
+   * punto oltre la fine, il pezzo comincia dall'inizio e lo dice.
+   */
+  storiaDopo(richiesta: { dopo?: number; limite?: number; versione?: string }): PezzoDiStoria {
+    const indice = this.indice;
+    const dopo = Math.max(0, Math.floor(richiesta.dopo ?? 0));
+    const daCapo = (richiesta.versione !== undefined && richiesta.versione !== indice.versione) || dopo > indice.ultimo;
+    const da = daCapo ? 0 : dopo;
+    const limite = Math.min(PEZZO_MASSIMO, Math.max(1, Math.floor(richiesta.limite ?? PEZZO_MASSIMO)));
+    // La storia leggera si calcola sull'archivio intero: se un'azione è conclusa lo dice un evento che può venire dopo.
+    const eventi = storiaLeggera(this.#archiviati).slice(da, da + limite);
+    return { ...indice, eventi, altri: da + eventi.length < indice.ultimo, daCapo };
+  }
+
+  /**
+   * Vero se chi ha una copia dell'archivio fino all'evento `dopo`, in quella versione, può
+   * riprendere da lì senza buttarla.
+   */
+  riprendibile(dopo: number, versione: string): boolean {
+    return versione === this.#versione && Number.isInteger(dopo) && dopo >= 0 && dopo <= this.#archiviati.length;
+  }
+
   /**
    * Collega un ascoltatore: riceve subito tutta la storia, poi gli eventi nuovi.
-   * Restituisce la funzione per scollegarlo.
+   * Con `dopo` riceve della storia solo gli eventi archiviati dopo quello: chi lo chiama ha già
+   * controllato con `riprendibile` che la sua copia vale. Testi in corso ed eventi ricordati
+   * arrivano comunque, interi. Restituisce la funzione per scollegarlo.
    */
-  iscrivi(ascoltatore: Ascoltatore): () => void {
+  iscrivi(ascoltatore: Ascoltatore, dopo = 0): () => void {
     // Chi si iscrive è l'interfaccia: delle azioni concluse le basta un riassunto, il resto lo chiede quando serve.
-    for (const archiviato of storiaLeggera(this.#archiviati)) ascoltatore(archiviato);
+    for (const archiviato of storiaLeggera(this.#archiviati).slice(dopo)) ascoltatore(archiviato);
     const quando = new Date().toISOString();
     for (const [idTesto, finora] of this.#testiInCorso) {
       if (finora !== "") {
@@ -213,6 +267,10 @@ export class Canale {
     }
   }
 
+  #salvaIndice(): void {
+    scriviIndice(this.#file, { versione: this.#versione, ultimo: this.#archiviati.length, byte: this.#byte });
+  }
+
   /** Tiene il conto di ciò che comincia e di ciò che si conclude. */
   #annota(evento: EventoConversazione): void {
     switch (evento.tipo) {
@@ -276,28 +334,13 @@ export class Canale {
   }
 }
 
-async function leggiArchivio(
-  file: string,
-): Promise<{ archiviati: EventoArchiviato[]; rigaSpezzata: boolean }> {
-  let contenuto: string;
+async function leggiArchivio(file: string): Promise<ArchivioLetto> {
   try {
-    contenuto = await readFile(file, "utf8");
+    return analizzaArchivio(await readFile(file, "utf8"));
   } catch (errore) {
     if (errore instanceof Error && "code" in errore && errore.code === "ENOENT") {
-      return { archiviati: [], rigaSpezzata: false };
+      return { archiviati: [], rigaSpezzata: false, rinumerati: false };
     }
     throw errore;
   }
-  const archiviati: EventoArchiviato[] = [];
-  for (const riga of contenuto.split("\n")) {
-    if (riga.trim() === "") continue;
-    try {
-      const letto = JSON.parse(riga) as EventoArchiviato;
-      // I numeri vengono riassegnati in ordine: una riga persa non lascia buchi.
-      archiviati.push({ ...letto, n: archiviati.length + 1 });
-    } catch {
-      // Una riga scritta a metà durante uno spegnimento brusco viene ignorata.
-    }
-  }
-  return { archiviati, rigaSpezzata: contenuto !== "" && !contenuto.endsWith("\n") };
 }

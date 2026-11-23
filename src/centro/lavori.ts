@@ -38,6 +38,7 @@ import {
 } from "../protocollo/avvio-progetto.ts";
 import { ID_AMBIENTE_DEL_CENTRO, type RegistroAmbienti } from "./ambienti.ts";
 import { Canale } from "./canale.ts";
+import { fileDellaVersione } from "./indice-archivio.ts";
 import { AmbienteSpento, type Esecutore } from "./esecutori.ts";
 import type { CustodiaImmagini } from "./immagini.ts";
 import type { NuovoProgetto, RegistroProgetti } from "./progetti.ts";
@@ -456,6 +457,8 @@ export class LavoriDeiProgetti {
         ...progetto,
         nomeAmbiente: ambienti.get(progetto.idAmbiente)?.nome ?? "ambiente rimosso",
         condizione: this.#condizione(progetto),
+        // Fin dove arriva il suo archivio: chi ne tiene una copia sa se gli manca qualcosa.
+        ...this.#canali.get(progetto.id)?.indice,
       })),
     };
   }
@@ -509,6 +512,7 @@ export class LavoriDeiProgetti {
     this.#canali.delete(idProgetto);
     await this.#o.progetti.togli(idProgetto);
     await rm(join(this.#o.cartellaConversazioni, `${idProgetto}.jsonl`), { force: true });
+    await rm(fileDellaVersione(join(this.#o.cartellaConversazioni, `${idProgetto}.jsonl`)), { force: true });
     await this.#o.immagini.dimentica(idProgetto);
     // Le versioni dei file e le loro fotografie, per i progetti dell'ambiente del centro; non deve fermare l'eliminazione.
     if (this.#o.cartellaModifiche !== undefined) {

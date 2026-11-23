@@ -46,6 +46,7 @@ import { COPIA_MASSIMA, leggiScelteDelTrasloco, type StatoCopie } from "../proto
 import { CopiaNonValida, PasswordDellaCopiaSbagliata } from "./copia-di-sicurezza.ts";
 import { CopiaRifiutata, type CopieDiSicurezza } from "./copie.ts";
 import type { CanaleNodo, RegistroAmbienti } from "./ambienti.ts";
+import type { Canale } from "./canale.ts";
 import type { AggiornamentoDeiNodi } from "./aggiornamento-nodi.ts";
 import { ProgrammatoRifiutato, type LavoriProgrammati } from "./programmati.ts";
 import { NotificaRifiutata, type NotificheApp } from "./notifiche-app.ts";
@@ -858,13 +859,15 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
   // Flusso in tempo reale: prima tutta la storia dell'argomento aperto, poi gli eventi nuovi.
   // Quando l'argomento cambia arriva "azzera", seguito dalla storia di quello nuovo. Dopo ogni
   // storia arriva "storia": l'interfaccia la mostra tutta insieme, senza scorrerla davanti al proprietario.
-  app.get("/api/home/eventi", (richiesta, risposta) => {
+  // Con `dopo` e `versione` chi ha già una copia della storia riprende da lì (ADR 0046).
+  app.get<{ Querystring: RichiestaDiStoria }>("/api/home/eventi", (richiesta, risposta) => {
     const flusso = apriFlusso(richiesta, risposta);
     flusso.allaChiusura(
       home.segui(
         flusso.manda,
         () => flusso.manda({}, "azzera"),
-        () => flusso.manda({}, FINE_STORIA),
+        (indice) => flusso.manda(indice, FINE_STORIA),
+        daDoveRiprendere(richiesta.query),
       ),
     );
     // Il proprietario ha aperto la Home: avviamo l'harness prima che scriva.
@@ -1011,13 +1014,19 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
   });
 
   // La storia di un argomento, anche archiviato: si rilegge, non ci si scrive.
-  app.get<{ Params: { id: string } }>("/api/argomenti/:id/eventi", async (richiesta, risposta) => {
+  app.get<{ Params: { id: string }; Querystring: RichiestaDiStoria }>("/api/argomenti/:id/eventi", async (richiesta, risposta) => {
     const canale = await home.canaleDi(richiesta.params.id);
     if (canale === undefined) return risposta.code(404).send({ errore: "Argomento non trovato." });
-    const flusso = apriFlusso(richiesta, risposta);
-    flusso.allaChiusura(canale.iscrivi(flusso.manda));
-    flusso.manda({}, FINE_STORIA);
+    seguiDaDove(canale, apriFlusso(richiesta, risposta), daDoveRiprendere(richiesta.query));
     return risposta;
+  });
+
+  // Un pezzo della storia di un argomento, aperto o archiviato, dopo un evento: per chi ne tiene una
+  // copia. Di sola lettura: non prepara nulla e non conta come pagina che segue (ADR 0046).
+  app.get<{ Params: { id: string }; Querystring: RichiestaDiStoria }>("/api/argomenti/:id/storia", async (richiesta, risposta) => {
+    const canale = await home.canaleDi(richiesta.params.id);
+    if (canale === undefined) return risposta.code(404).send({ errore: "Argomento non trovato." });
+    return canale.storiaDopo(pezzoChiesto(richiesta.query));
   });
 
   app.get<{ Params: { id: string; idAzione: string } }>("/api/argomenti/:id/azioni/:idAzione", async (richiesta, risposta) => {
@@ -1185,9 +1194,19 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     const flusso = apriFlusso(richiesta, risposta);
     flusso.allaChiusura(ambienti.iscrivi((stato) => flusso.manda(stato, "ambienti")));
     flusso.allaChiusura(lavori.iscrivi((stato) => flusso.manda(stato, "progetti")));
-    flusso.allaChiusura(argomenti.iscrivi((stato) => flusso.manda(stato, "argomenti")));
+    // Gli argomenti e la Home con l'indice dei loro archivi (ADR 0046).
+    const mandaArgomenti = (): void => flusso.manda(home.conIndici(argomenti.stato()), "argomenti");
+    const mandaHome = (): void => flusso.manda({ condizione: home.condizione, argomento: { id: home.idArgomentoAperto, ...home.canale.indice } }, "home");
+    flusso.allaChiusura(argomenti.iscrivi(mandaArgomenti));
     // Anche la Home dice se lavora o se aspetta il proprietario, come i progetti nella barra laterale.
-    flusso.allaChiusura(home.iscriviCondizione((condizione) => flusso.manda({ condizione }, "home")));
+    flusso.allaChiusura(home.iscriviCondizione(mandaHome));
+    // Un passaggio di argomento cambia gli archivi dopo che l'elenco è già partito: si rimanda.
+    flusso.allaChiusura(
+      home.dopoIPassaggi(() => {
+        mandaArgomenti();
+        mandaHome();
+      }),
+    );
     flusso.allaChiusura(memoria.iscrivi((stato) => flusso.manda(stato, "memoria")));
     flusso.allaChiusura(skill.iscrivi((stato) => flusso.manda(stato, "skill")));
     if (opzioni.estensioni !== undefined) {
@@ -1617,16 +1636,21 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     return intera ?? risposta.code(404).send({ errore: "Azione non trovata." });
   });
 
-  app.get<{ Params: { id: string } }>("/api/progetti/:id/eventi", (richiesta, risposta) => {
+  app.get<{ Params: { id: string }; Querystring: RichiestaDiStoria }>("/api/progetti/:id/eventi", (richiesta, risposta) => {
     const canale = lavori.canale(richiesta.params.id);
     if (canale === undefined) {
       void risposta.code(404).send({ errore: "Progetto non trovato." });
       return;
     }
-    const flusso = apriFlusso(richiesta, risposta);
-    flusso.allaChiusura(canale.iscrivi(flusso.manda));
-    flusso.manda({}, FINE_STORIA);
+    seguiDaDove(canale, apriFlusso(richiesta, risposta), daDoveRiprendere(richiesta.query));
     lavori.prepara(richiesta.params.id);
+  });
+
+  // Un pezzo della storia di un progetto dopo un evento, di sola lettura: non prepara il motore (ADR 0046).
+  app.get<{ Params: { id: string }; Querystring: RichiestaDiStoria }>("/api/progetti/:id/storia", async (richiesta, risposta) => {
+    const canale = lavori.canale(richiesta.params.id);
+    if (canale === undefined) return risposta.code(404).send({ errore: "Progetto non trovato." });
+    return canale.storiaDopo(pezzoChiesto(richiesta.query));
   });
 
   // La pagina Uso: i token degli ultimi giorni, per giorno e per conversazione, e i limiti del piano.
@@ -2407,4 +2431,47 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
     default:
       return leggiRiferitoTerminale(campi) ?? leggiRiferitoAnteprima(campi) ?? leggiRiferitoApplicazione(campi) ?? leggiRiferitoFile(campi);
   }
+}
+
+/** Ciò che si può chiedere della storia di una conversazione (ADR 0046). */
+interface RichiestaDiStoria {
+  dopo?: string;
+  limite?: string;
+  versione?: string;
+}
+
+function numeroDa(testo: string | undefined): number | undefined {
+  if (testo === undefined || !/^\d{1,12}$/.test(testo)) return undefined;
+  return Number(testo);
+}
+
+function pezzoChiesto(query: RichiestaDiStoria): { dopo?: number; limite?: number; versione?: string } {
+  const dopo = numeroDa(query.dopo);
+  const limite = numeroDa(query.limite);
+  return {
+    ...(dopo === undefined ? {} : { dopo }),
+    ...(limite === undefined ? {} : { limite }),
+    ...(query.versione === undefined ? {} : { versione: query.versione.slice(0, 64) }),
+  };
+}
+
+/** Da dove riprende un flusso: solo se chi lo apre dice la versione della copia che ha. */
+function daDoveRiprendere(query: RichiestaDiStoria): { dopo: number; versione: string } | undefined {
+  if (query.versione === undefined) return undefined;
+  return { dopo: numeroDa(query.dopo) ?? 0, versione: query.versione.slice(0, 64) };
+}
+
+/**
+ * Manda la storia di un canale e poi i suoi eventi nuovi. Con `da`, se la copia di chi chiede vale,
+ * solo gli eventi archiviati dopo; altrimenti prima `azzera`. Alla fine della storia, l'indice.
+ */
+function seguiDaDove(
+  canale: Canale,
+  flusso: { manda: (dati: unknown, nome?: string) => void; allaChiusura: (fai: () => void) => void },
+  da: { dopo: number; versione: string } | undefined,
+): void {
+  const riprende = da !== undefined && canale.riprendibile(da.dopo, da.versione);
+  if (da !== undefined && !riprende) flusso.manda({}, "azzera");
+  flusso.allaChiusura(canale.iscrivi(flusso.manda, riprende ? da.dopo : 0));
+  flusso.manda(canale.indice, FINE_STORIA);
 }

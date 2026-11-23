@@ -1,5 +1,6 @@
 import type { EstensioniDegliAmbienti, SkillDiPartenza } from "./avvio-progetto.ts";
 import type { Impegno, ImpostazioniConversazione, ModelloDisponibile, ModoPermessi, Motore } from "./impostazioni.ts";
+import type { IndiceArchivio } from "./eventi.ts";
 
 /** Ciò che l'interfaccia vede dei progetti. Dati semplici, serializzabili in JSON. */
 
@@ -40,11 +41,13 @@ export const STATO_PROGETTO_MASSIMO = 20_000;
 /** In che condizione è un progetto, in una parola. */
 export type CondizioneProgetto = "al-lavoro" | "aspetta-te" | "fermo" | "ambiente-spento";
 
-export interface VoceProgetto extends Progetto {
+/** Un progetto nell'elenco del quadro, con l'indice del suo archivio (ADR 0046). */
+export interface VoceProgetto extends Progetto, Partial<IndiceArchivio> {
   nomeAmbiente: string;
   condizione: CondizioneProgetto;
 }
 
+/** I progetti. L'elenco è sempre completo: un progetto che non c'è è stato eliminato (ADR 0046). */
 export interface StatoProgetti {
   progetti: VoceProgetto[];
 }

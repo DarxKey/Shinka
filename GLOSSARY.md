@@ -320,6 +320,10 @@ _Avoid_: canale sicuro, tunnel, HTTPS dei nodi
 Ciò che il centro annota di chi bussa: le entrate riuscite e fallite, le richieste senza una sessione, le pagine che non ci sono, con l'indirizzo, il programma e il percorso, mai il contenuto. Si legge nella pagina Sicurezza. Non è il registro del gateway, che annota l'uso delle credenziali.
 _Avoid_: log di accesso, audit log, registro degli accessi (l'accesso è quello di un motore)
 
+**Versione dell'archivio**:
+Un identificativo dell'archivio di una conversazione che resta lo stesso finché si aggiungono eventi in fondo, e cambia quando eventi già dati potrebbero non valere più (un taglio, numeri riassegnati, un ripristino). Con l'ultimo numero forma l'indice dell'archivio: chi tiene una copia della storia lo confronta con il suo, e chiede solo ciò che manca.
+_Avoid_: revisione, etag, epoca
+
 **Copia pubblica** (di Shinka):
 Il codice di Shinka su GitHub, con una storia sua che comincia dalla prima pubblicazione: un commit per ogni commit del repository di lavoro, senza i file esclusi e solo se non contiene espressioni vietate. Il repository di lavoro resta sul server.
 _Avoid_: mirror, repo pubblico, fork

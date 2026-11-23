@@ -10,7 +10,7 @@ import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Allegato } from "../protocollo/allegati.ts";
-import type { VoceArgomento } from "../protocollo/argomenti.ts";
+import type { StatoArgomenti, VoceArgomento } from "../protocollo/argomenti.ts";
 import { CARTELLA_HOME } from "../protocollo/azioni.ts";
 import type {
   AnteprimaRiavvolgimento,
@@ -18,6 +18,7 @@ import type {
   RispostaAlleDomande,
   EventoArchiviato,
   EventoConversazione,
+  IndiceArchivio,
   OrigineMessaggio,
   PortaConversazione,
   RispostaAParte,
@@ -26,6 +27,7 @@ import type {
 import type { ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
 import type { Argomento, Ramo, RegistroArgomenti } from "./argomenti.ts";
 import { Canale } from "./canale.ts";
+import { fileDellaVersione, indiceSenzaAprire } from "./indice-archivio.ts";
 import type { CustodiaImmagini } from "./immagini.ts";
 import { messaggiDelProprietario, type Cercabile } from "./storia.ts";
 
@@ -115,8 +117,8 @@ interface Passaggio {
 interface Seguace {
   ricevi(archiviato: EventoArchiviato): void;
   azzera(): void;
-  /** La storia è stata rimandata tutta: da qui in poi arrivano solo eventi nuovi. */
-  storiaInviata(): void;
+  /** La storia è stata rimandata, fin dove arriva l'archivio: da qui in poi arrivano solo eventi nuovi. */
+  storiaInviata(indice: IndiceArchivio): void;
   scollega(): void;
 }
 
@@ -130,6 +132,8 @@ export class Home implements PortaConversazione {
   readonly #o: OpzioniHome;
   readonly #canali = new Map<string, Canale>();
   readonly #seguaci = new Set<Seguace>();
+  /** Chi vuole sapere quando un passaggio di argomento è finito, con gli archivi a posto. */
+  readonly #dopoIPassaggi = new Set<() => void>();
   #canale: Canale;
   #porta: PortaConversazione;
   #passaggio: Passaggio | undefined;
@@ -233,14 +237,21 @@ export class Home implements PortaConversazione {
    * Segue la Home: riceve la storia dell'argomento aperto e poi gli eventi nuovi. Quando
    * l'argomento cambia viene chiamato `azzera`, e subito dopo arriva la storia di quello nuovo.
    * Finita ogni storia viene chiamato `storiaInviata`. Restituisce la funzione per smettere.
+   *
+   * Con `da` chi segue ha già una copia della storia dell'argomento aperto fino all'evento `dopo`,
+   * in quella versione: se vale riceve solo gli eventi archiviati dopo, altrimenti `azzera` e la
+   * storia intera (ADR 0046).
    */
   segui(
     ricevi: (archiviato: EventoArchiviato) => void,
     azzera: () => void,
-    storiaInviata: () => void = () => {},
+    storiaInviata: (indice: IndiceArchivio) => void = () => {},
+    da?: { dopo: number; versione: string },
   ): () => void {
-    const seguace: Seguace = { ricevi, azzera, storiaInviata, scollega: this.#canale.iscrivi(ricevi) };
-    storiaInviata();
+    const riprende = da !== undefined && this.#canale.riprendibile(da.dopo, da.versione);
+    if (da !== undefined && !riprende) azzera();
+    const seguace: Seguace = { ricevi, azzera, storiaInviata, scollega: this.#canale.iscrivi(ricevi, riprende ? da.dopo : 0) };
+    storiaInviata(this.#canale.indice);
     this.#seguaci.add(seguace);
     return () => {
       seguace.scollega();
@@ -262,6 +273,36 @@ export class Home implements PortaConversazione {
     return canale;
   }
 
+  /**
+   * Fin dove arriva l'archivio di un argomento, aperto o archiviato, e in quale versione. Di uno
+   * che non è aperto in memoria lo dice il file della versione, senza leggere l'archivio.
+   */
+  indiceDi(idArgomento: string): IndiceArchivio | undefined {
+    const aperto = this.#canali.get(idArgomento);
+    if (aperto !== undefined) return aperto.indice;
+    const argomento = this.#o.argomenti.trova(idArgomento);
+    return argomento === undefined ? undefined : indiceSenzaAprire(archivioDi(this.#o, argomento));
+  }
+
+  /** L'elenco degli argomenti con, per ciascuno e per quello aperto, l'indice del suo archivio. */
+  conIndici(stato: StatoArgomenti): StatoArgomenti {
+    const aperto = this.indiceDi(stato.idAperto);
+    return {
+      ...stato,
+      ...(aperto === undefined ? {} : { aperto }),
+      archiviati: stato.archiviati.map((voce) => {
+        const indice = this.indiceDi(voce.id);
+        return indice === undefined ? voce : { ...voce, ...indice };
+      }),
+    };
+  }
+
+  /** Avvisa quando un passaggio di argomento è finito: gli archivi dei due argomenti sono com'erano da restare. */
+  dopoIPassaggi(ascoltatore: () => void): () => void {
+    this.#dopoIPassaggi.add(ascoltatore);
+    return () => this.#dopoIPassaggi.delete(ascoltatore);
+  }
+
   /** Dove sta l'archivio di un argomento, aperto o archiviato. */
   archivioDellArgomento(idArgomento: string): string | undefined {
     const argomento = this.#o.argomenti.trova(idArgomento);
@@ -281,6 +322,7 @@ export class Home implements PortaConversazione {
     if (!(await this.#o.argomenti.togli(idArgomento))) return "Argomento non trovato tra quelli archiviati.";
     this.#canali.delete(idArgomento);
     await rm(archivio, { force: true });
+    await rm(fileDellaVersione(archivio), { force: true });
     // Solo la cartella che è sua: quella della Home di prima degli argomenti ha un posto suo, e resta.
     if (argomento.cartella === undefined) await rm(cartella, { recursive: true, force: true });
     return undefined;
@@ -558,7 +600,10 @@ export class Home implements PortaConversazione {
       portaVecchia.chiudi();
       if (chiuso === "da-dimenticare") {
         this.#canali.delete(vecchio.id);
-        if (vecchio.archivio === undefined) await rm(archivioDi(this.#o, vecchio), { force: true });
+        if (vecchio.archivio === undefined) {
+          await rm(archivioDi(this.#o, vecchio), { force: true });
+          await rm(fileDellaVersione(archivioDi(this.#o, vecchio)), { force: true });
+        }
       } else {
         // Il messaggio che ha fatto cambiare argomento, e il turno che lo ha seguito, passano a quello nuovo.
         if (passaggio.togliDa !== undefined) canaleVecchio.taglia(passaggio.togliDa);
@@ -599,7 +644,7 @@ export class Home implements PortaConversazione {
         seguace.scollega();
         seguace.azzera();
         seguace.scollega = canale.iscrivi(seguace.ricevi);
-        seguace.storiaInviata();
+        seguace.storiaInviata(canale.indice);
       }
       if (riaperto) this.#porta.annota(NOTA_RIAPERTO);
       if (ramo) this.#porta.annota(notaDelRamo(chiuso === "da-dimenticare" ? undefined : chiuso.titolo));
@@ -611,6 +656,7 @@ export class Home implements PortaConversazione {
       });
     } finally {
       this.#inPassaggio = false;
+      for (const ascoltatore of this.#dopoIPassaggi) ascoltatore();
     }
     // Se il passaggio non è riuscito il messaggio che lo aveva chiesto non va riproposto: lo richiederebbe di nuovo.
     const daMandare = [

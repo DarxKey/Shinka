@@ -210,3 +210,10 @@ test("un ripristino che non riesce lascia i dati com'erano, e lo dice", async (t
   assert.deepEqual(readdirSync(join(dati, "copia-di-sicurezza")).filter((nome) => nome.startsWith("prima-")), []);
   assert.equal(applicaRipristino(dati), undefined);
 });
+
+test("la versione di un archivio resta fuori dalla copia: uno ripristinato ne prende una nuova", () => {
+  assert.equal(fuoriDallaCopia("conversazioni/2026-11-11-abc.jsonl.versione"), true);
+  assert.equal(fuoriDallaCopia("home/argomenti/a.jsonl.versione"), true);
+  assert.equal(fuoriDallaCopia("conversazioni/2026-11-11-abc.jsonl"), false);
+  assert.equal(fuoriDallaCopia("note.versione"), false);
+});
