@@ -20,8 +20,8 @@ import {
 test("la cartella prevista è scritta come la scrive il suo ambiente", () => {
   assert.equal(cartellaPrevista("/home/node/progetti", "videogioco"), "/home/node/progetti/videogioco");
   assert.equal(
-    cartellaPrevista("C:\\Users\\USer\\Desktop\\Claude", "gioco-unity"),
-    "C:\\Users\\USer\\Desktop\\Claude\\gioco-unity",
+    cartellaPrevista("C:\\Users\\mario\\Progetti", "gioco-unity"),
+    "C:\\Users\\mario\\Progetti\\gioco-unity",
   );
 });
 

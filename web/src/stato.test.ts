@@ -468,7 +468,7 @@ test("una proposta su una cartella che esiste già porta il percorso e, decisa, 
       nome: "Rougue AFK",
       idAmbiente: "pc",
       brief: "Portaluce",
-      cartellaEsistente: "C:\\Users\\USer\\Desktop\\Claude\\Rougue AFK",
+      cartellaEsistente: "C:\\Users\\mario\\Progetti\\Gioco vecchio",
       avvisoCartella: "Non è un repository Git.",
     },
     {
@@ -477,14 +477,14 @@ test("una proposta su una cartella che esiste già porta il percorso e, decisa, 
       esito: "confermata",
       idProgetto: "x",
       nome: "Rougue AFK",
-      cartellaAdottata: { percorso: "C:\\Users\\USer\\Desktop\\Claude\\Rougue AFK", git: false },
+      cartellaAdottata: { percorso: "C:\\Users\\mario\\Progetti\\Gioco vecchio", git: false },
     },
   ]);
   const [proposta] = stato.elementi;
   assert.ok(proposta?.tipo === "proposta");
-  assert.equal(proposta.cartellaEsistente, "C:\\Users\\USer\\Desktop\\Claude\\Rougue AFK");
+  assert.equal(proposta.cartellaEsistente, "C:\\Users\\mario\\Progetti\\Gioco vecchio");
   assert.equal(proposta.avvisoCartella, "Non è un repository Git.");
-  assert.deepEqual(proposta.cartellaAdottata, { percorso: "C:\\Users\\USer\\Desktop\\Claude\\Rougue AFK", git: false });
+  assert.deepEqual(proposta.cartellaAdottata, { percorso: "C:\\Users\\mario\\Progetti\\Gioco vecchio", git: false });
 });
 
 test("le domande di Claude diventano una scheda al posto dell'azione, e chiuse ricordano le risposte", () => {
