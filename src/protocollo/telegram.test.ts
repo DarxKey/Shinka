@@ -5,7 +5,7 @@ import { nomeFileTelegram } from "./telegram.ts";
 test("un file arriva su Telegram con il solo nome, senza cartelle né caratteri di controllo", () => {
   assert.equal(nomeFileTelegram("itinerario-tokyo.pdf"), "itinerario-tokyo.pdf");
   assert.equal(nomeFileTelegram("tokyo/mappa.html"), "mappa.html");
-  assert.equal(nomeFileTelegram("C:\\Users\\USer\\giro.pdf"), "giro.pdf");
+  assert.equal(nomeFileTelegram("C:\\Users\\mario\\giro.pdf"), "giro.pdf");
   assert.equal(nomeFileTelegram('nome "strano"\n.txt'), "nome strano.txt");
   assert.equal(nomeFileTelegram("Itinerario dei negozi di carte.pdf"), "Itinerario dei negozi di carte.pdf");
   for (const vuoto of ["", "  ", "cartella/", ".", "..", "\u0000"]) assert.equal(nomeFileTelegram(vuoto), undefined, vuoto);
