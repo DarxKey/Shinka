@@ -9,7 +9,7 @@ import { COOKIE_SESSIONE } from "./centro.ts";
 test("prima dell'accesso lo stato dice configurato ma non autenticato", async (t) => {
   const { centro } = await allestisci(t);
   const risposta = await centro.inject({ method: "GET", url: "/api/stato" });
-  assert.deepEqual(risposta.json(), { configurato: true, autenticato: false });
+  assert.deepEqual(risposta.json(), { protocollo: 1, configurato: true, autenticato: false });
 });
 
 test("senza sessione la Home non è raggiungibile", async (t) => {

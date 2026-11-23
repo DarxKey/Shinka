@@ -30,6 +30,7 @@ import type { AzioneInAmbiente, EsitoAzione } from "../protocollo/azioni.ts";
 import type { ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
 import { EsecutoreLocale, EsecutoriRemoti, type ServiziLocali } from "../centro/esecutori.ts";
 import { ApplicazioniDeiProgetti } from "../centro/applicazioni.ts";
+import { AggiornamentiDesktop } from "../centro/desktop.ts";
 import { FileDeiProgetti } from "../centro/file-progetto.ts";
 import { FileDeiProgettiQui } from "../nodo/file-progetto.ts";
 import { Applicazioni } from "../nodo/applicazioni.ts";
@@ -254,6 +255,8 @@ export interface Banco {
   cartella: string;
   /** I file dei progetti, come li vede il centro. */
   file: FileDeiProgetti;
+  /** Gli aggiornamenti di Shinka Desktop. */
+  desktop: AggiornamentiDesktop;
   accesso: Accesso;
   centro: FastifyInstance;
   /** La Home vera, con conversazioni finte al posto dell'harness. */
@@ -464,6 +467,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     attesaAvvioMs: opzioni.attesaAvvioMs ?? 10_000,
   });
   const file = new FileDeiProgetti({ progetti, ambienti, locale: (riferisci) => new FileDeiProgettiQui(riferisci) });
+  const desktop = new AggiornamentiDesktop(join(cartella, "desktop"));
   // Come nel centro vero: la scheda di approvazione compare nella conversazione che ha chiesto il comando.
   const PREFISSO_HOME = chiaveDellaHome("");
   const pubblicaLeSchede = (chiave: string): ((evento: EventoConversazione) => void) | undefined => {
@@ -744,6 +748,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     anteprime,
     applicazioni,
     file,
+    desktop,
     statoHome,
     immagini,
     ...(opzioni.immaginiEsterne === undefined ? {} : { immaginiEsterne: opzioni.immaginiEsterne }),
@@ -794,6 +799,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     return cookie.value;
   };
   return {
+    desktop,
     file,
     cartella,
     stili,

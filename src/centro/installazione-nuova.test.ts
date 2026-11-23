@@ -77,7 +77,7 @@ test("una versione senza i file per installare lo dice", async () => {
 test("primo avvio: la pagina sa che serve, la password nasce solo con il codice, poi il pacchetto si scarica", async (t) => {
   const banco = await allestisci(t, { primoAvvio: true, installata: versioneFinta() });
   const stato = await banco.centro.inject({ method: "GET", url: "/api/stato" });
-  assert.deepEqual(stato.json(), { configurato: false, autenticato: false, primoAvvio: true });
+  assert.deepEqual(stato.json(), { protocollo: 1, versione: "01234567", configurato: false, autenticato: false, primoAvvio: true });
   assert.ok(banco.codicePrimoAvvio !== undefined);
   // Senza sessione il pacchetto non si scarica.
   assert.equal((await banco.centro.inject({ method: "GET", url: "/api/installazione/pacchetto" })).statusCode, 401);
@@ -89,7 +89,7 @@ test("primo avvio: la pagina sa che serve, la password nasce solo con il codice,
   const cookie = giusto.cookies.find((voce) => voce.name === COOKIE_SESSIONE);
   assert.ok(cookie !== undefined);
   const dopo = await banco.centro.inject({ method: "GET", url: "/api/stato", cookies: { [COOKIE_SESSIONE]: cookie.value } });
-  assert.deepEqual(dopo.json(), { configurato: true, autenticato: true });
+  assert.deepEqual(dopo.json(), { protocollo: 1, versione: "01234567", configurato: true, autenticato: true });
   assert.equal(existsSync(join(banco.cartella, "primo-avvio.txt")), false);
   // Una seconda volta non serve più.
   const ancora = await banco.centro.inject({ method: "POST", url: "/api/primo-avvio", payload: { codice: banco.codicePrimoAvvio, password: "un-altra-password" } });

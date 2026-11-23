@@ -41,7 +41,8 @@ export const CARTELLA_DELLE_COPIE = "copia-di-sicurezza";
 export const DELLA_MACCHINA: ReadonlySet<string> = new Set([CARTELLA_DELLE_COPIE, "gateway.json", "installazione.json"]);
 
 /** Ciò che non serve portare: le sessioni aperte, e ciò che il centro rifà da sé. */
-const NON_SERVE: ReadonlySet<string> = new Set(["sessioni.json", "estensioni-in-esame"]);
+// Gli aggiornamenti di Shinka Desktop si ripubblicano dal progetto, e l'installer pesa (ADR 0049).
+const NON_SERVE: ReadonlySet<string> = new Set(["sessioni.json", "estensioni-in-esame", "desktop"]);
 
 /** Il file che, nella copia aperta, dice al centro di ripartire con quei dati. */
 const SEGNO = "RIPRISTINA";

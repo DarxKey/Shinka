@@ -22,6 +22,7 @@ import type { StatoHttps } from "../../src/protocollo/https.ts";
 import type { DettaglioSkill, VersioniSkill } from "../../src/protocollo/skill.ts";
 import type { DettaglioVault } from "../../src/protocollo/vault.ts";
 import type { StatoSicurezza } from "../../src/protocollo/sicurezza.ts";
+import type { RichiestaDiPubblicazione, StatoDesktop } from "../../src/protocollo/desktop.ts";
 import type { CopiaCaricata, CopiaPronta, EsitoTrasloco, ScelteDelTrasloco, StatoCopie } from "../../src/protocollo/copia.ts";
 
 export interface StatoAccesso {
@@ -586,6 +587,16 @@ export async function leggiSicurezza(soloDaGuardare: boolean): Promise<StatoSicu
 }
 
 /** Chiude una sessione dal suo identificativo: quel dispositivo dovrà rientrare. */
+/** La versione di Shinka Desktop che il centro serve agli aggiornamenti. */
+export async function leggiDesktop(): Promise<StatoDesktop> {
+  return (await chiama("GET", "/api/desktop")) as StatoDesktop;
+}
+
+/** Pubblica una versione di Shinka Desktop presa dalla cartella di un progetto. */
+export async function pubblicaDesktop(richiesta: RichiestaDiPubblicazione): Promise<StatoDesktop> {
+  return (await chiama("POST", "/api/desktop/pubblicazione", richiesta)) as StatoDesktop;
+}
+
 /** Toglie un dispositivo: il suo gettone non vale più. */
 export async function togliDispositivo(id: string): Promise<void> {
   await chiama("POST", `/api/sicurezza/dispositivi/${encodeURIComponent(id)}/chiusura`);

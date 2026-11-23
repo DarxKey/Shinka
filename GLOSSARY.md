@@ -324,6 +324,10 @@ _Avoid_: log di accesso, audit log, registro degli accessi (l'accesso è quello 
 Ciò con cui un'app del proprietario, come Shinka Desktop, entra nel centro senza il cookie del browser: lo riceve una volta con la password, vale quanto una sessione finché viene usato e decade dopo novanta giorni fermo. Si toglie dalla pagina Sicurezza; cambiare la password li toglie tutti.
 _Avoid_: token API, chiave, API key
 
+**Protocollo dei clienti**:
+Il numero, in `/api/stato`, che dice quale versione delle rotte e degli eventi del centro parla un cliente come Shinka Desktop. Cresce solo quando un cambio rompe i clienti di prima; un cliente che ne vede uno più alto si aggiorna. Si rilascia prima il cliente, poi il centro.
+_Avoid_: API version, versione dell'API
+
 **Versione dell'archivio**:
 Un identificativo dell'archivio di una conversazione che resta lo stesso finché si aggiungono eventi in fondo, e cambia quando eventi già dati potrebbero non valere più (un taglio, numeri riassegnati, un ripristino). Con l'ultimo numero forma l'indice dell'archivio: chi tiene una copia della storia lo confronta con il suo, e chiede solo ciò che manca.
 _Avoid_: revisione, etag, epoca

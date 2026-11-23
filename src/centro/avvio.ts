@@ -50,6 +50,7 @@ import { fonteConfigurata } from "../harness/autenticazione.ts";
 import { TramiteAnteprima } from "../nodo/anteprima.ts";
 import { Applicazioni } from "../nodo/applicazioni.ts";
 import { ApplicazioniDeiProgetti } from "./applicazioni.ts";
+import { AggiornamentiDesktop } from "./desktop.ts";
 import { FileDeiProgetti } from "./file-progetto.ts";
 import { FileDeiProgettiQui } from "../nodo/file-progetto.ts";
 import { apriConversazione, impostaMotorePredefinito } from "../nodo/motore.ts";
@@ -544,7 +545,11 @@ await copie.riordina().catch((errore: unknown) => console.error("La cartella del
 
 // Le immagini scritte nelle risposte: le stesse, già scaricate, per l'interfaccia e per Telegram.
 const immaginiEsterne = new ImmaginiEsterne();
+// Gli aggiornamenti di Shinka Desktop: l'ultima versione pubblicata dalle Impostazioni (ADR 0049).
+const desktop = new AggiornamentiDesktop(join(dati, "desktop"));
+
 const centro = await creaCentro({
+  desktop,
   accesso,
   primoAvvio,
   installata,

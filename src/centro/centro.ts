@@ -47,6 +47,10 @@ import { CopiaNonValida, PasswordDellaCopiaSbagliata } from "./copia-di-sicurezz
 import { CopiaRifiutata, type CopieDiSicurezza } from "./copie.ts";
 import type { CanaleNodo, RegistroAmbienti } from "./ambienti.ts";
 import type { Canale } from "./canale.ts";
+import { MANIFESTO, type AggiornamentiDesktop } from "./desktop.ts";
+import { intervalliChiesti, piuParti } from "./intervalli.ts";
+import { PROTOCOLLO_DEI_CLIENTI, type RichiestaDiPubblicazione } from "../protocollo/desktop.ts";
+import { inBreve, versioneDi } from "../protocollo/versione.ts";
 import { GENERI_DISPOSITIVO, type GenereDispositivo } from "../protocollo/sicurezza.ts";
 import type { AggiornamentoDeiNodi } from "./aggiornamento-nodi.ts";
 import { ProgrammatoRifiutato, type LavoriProgrammati } from "./programmati.ts";
@@ -296,6 +300,8 @@ export interface OpzioniCentro {
   applicazioni?: ApplicazioniDeiProgetti;
   /** I file dei progetti, per il pannello File. Se mancano, il pannello dice che non ci sono. */
   file?: FileDeiProgetti;
+  /** Gli aggiornamenti di Shinka Desktop che il centro serve (ADR 0049). */
+  desktop?: AggiornamentiDesktop;
   /** Cartella con l'interfaccia già costruita. Se manca, il centro serve solo le API. */
   cartellaWeb?: string;
   /** Il primo avvio guidato: c'è finché la password del proprietario non è stata scelta. */
@@ -438,7 +444,12 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     });
   };
 
+  // La versione in funzione, che `/api/stato` dice a chiunque insieme al protocollo dei clienti.
+  const versioneInFunzione = opzioni.installata === undefined ? undefined : await versioneDi(opzioni.installata);
   app.get("/api/stato", async (richiesta) => ({
+    // Per i clienti come Shinka Desktop: se il protocollo è più alto del loro, si aggiornano (ADR 0049).
+    protocollo: PROTOCOLLO_DEI_CLIENTI,
+    ...(versioneInFunzione === undefined ? {} : { versione: inBreve(versioneInFunzione) }),
     configurato: accesso.configurato,
     autenticato:
       gettoneDi(richiesta.headers.authorization) === undefined
@@ -2174,6 +2185,105 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       if (!risposta.raw.writableFinished) esito.flusso.destroy();
     });
     return risposta.send(esito.flusso);
+  });
+
+  // Shinka Desktop: la versione pubblicata, la pubblicazione dalle Impostazioni, e i file che
+  // electron-updater scarica, a parti se le chiede (ADR 0049).
+  const senzaDesktop = { errore: "Questa installazione non serve gli aggiornamenti di Shinka Desktop." };
+  app.get("/api/desktop", async (_richiesta, risposta) => (opzioni.desktop === undefined ? risposta.code(404).send(senzaDesktop) : opzioni.desktop.stato()));
+
+  app.post<{ Body: RichiestaDiPubblicazione }>(
+    "/api/desktop/pubblicazione",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["idProgetto", "cartella", "password"],
+          additionalProperties: false,
+          properties: {
+            idProgetto: { type: "string", minLength: 1, maxLength: 200 },
+            cartella: { type: "string", maxLength: 1000 },
+            password: { type: "string", minLength: 1, maxLength: 1024 },
+          },
+        },
+      },
+    },
+    async (richiesta, risposta) => {
+      if (opzioni.desktop === undefined || opzioni.file === undefined) return risposta.code(404).send(senzaDesktop);
+      // Pubblicare è del proprietario, dal browser con la sua password: un dispositivo non pubblica.
+      if (gettoneDi(richiesta.headers.authorization) !== undefined) {
+        registroAccessi.annota("desktop-non-pubblicato", chiDi(richiesta), { dettaglio: "chiesto con un gettone di dispositivo" });
+        return risposta.code(403).send({ errore: "Un dispositivo non può pubblicare: si pubblica dalle Impostazioni di Shinka, nel browser." });
+      }
+      const conferma = await accesso.conferma(richiesta.body.password);
+      if (conferma !== "ok") {
+        registroAccessi.annota("desktop-non-pubblicato", chiDi(richiesta), { dettaglio: "password sbagliata" });
+        if (conferma.esito === "troppi-tentativi") {
+          return risposta.code(429).send({ errore: `Troppi tentativi falliti: riprova tra ${Math.ceil(conferma.riprovaTraMs / 1000)} secondi.` });
+        }
+        return risposta.code(403).send({ errore: "La password di Shinka non è giusta." });
+      }
+      const file = opzioni.file;
+      const { idProgetto } = richiesta.body;
+      const cartella = richiesta.body.cartella.trim().replace(/^[/\\]+|[/\\]+$/g, "");
+      const dentro = (nome: string): string => (cartella === "" ? nome : `${cartella}/${nome}`);
+      const letto = await file.leggi(idProgetto, dentro(MANIFESTO));
+      const esito =
+        "motivo" in letto
+          ? { motivo: `${MANIFESTO}: ${letto.motivo}` }
+          : await opzioni.desktop.pubblica({
+              manifesto: Buffer.from(letto.dati, "base64"),
+              apri: async (nome) => {
+                const scaricato = await file.scarica(idProgetto, dentro(nome));
+                if ("motivo" in scaricato) return scaricato;
+                if (scaricato.comeArchivio) {
+                  scaricato.flusso.destroy();
+                  return { motivo: "è una cartella." };
+                }
+                return scaricato.flusso;
+              },
+            });
+      if ("motivo" in esito) {
+        registroAccessi.annota("desktop-non-pubblicato", chiDi(richiesta), { dettaglio: esito.motivo.slice(0, 200) });
+        return risposta.code(409).send({ errore: esito.motivo });
+      }
+      registroAccessi.annota("desktop-pubblicato", chiDi(richiesta), { dettaglio: `versione ${esito.versione}` });
+      return opzioni.desktop.stato();
+    },
+  );
+
+  app.get<{ Params: { nome: string } }>("/api/desktop/aggiornamenti/:nome", async (richiesta, risposta) => {
+    const desktop = opzioni.desktop;
+    if (desktop === undefined) return risposta.code(404).send(senzaDesktop);
+    void risposta.header("Cache-Control", "no-store");
+    void risposta.header("X-Content-Type-Options", "nosniff");
+    if (richiesta.params.nome === MANIFESTO) {
+      const manifesto = desktop.manifesto();
+      if (manifesto === undefined) return risposta.code(404).send({ errore: "Non c'è ancora una versione di Shinka Desktop pubblicata." });
+      return risposta.type("text/yaml; charset=utf-8").send(manifesto);
+    }
+    const trovato = desktop.file(richiesta.params.nome);
+    if (trovato === undefined) return risposta.code(404).send({ errore: "Questo file non c'è tra quelli della versione pubblicata." });
+    const tipo = "application/octet-stream";
+    void risposta.header("Accept-Ranges", "bytes");
+    void risposta.header("Content-Disposition", `attachment; filename="${richiesta.params.nome.replace(/[^\x20-\x7e]|["\\]/g, "_")}"`);
+    const intervalli = intervalliChiesti(richiesta.headers.range, trovato.dimensione);
+    if (intervalli === "fuori") {
+      return risposta.code(416).header("Content-Range", `bytes */${trovato.dimensione}`).send({ errore: "La parte chiesta è fuori dal file." });
+    }
+    if (intervalli === undefined) {
+      void risposta.header("Content-Length", String(trovato.dimensione));
+      return risposta.type(tipo).send(createReadStream(trovato.percorso));
+    }
+    if (intervalli.length === 1) {
+      const [solo] = intervalli as [{ inizio: number; fine: number }];
+      void risposta.header("Content-Range", `bytes ${solo.inizio}-${solo.fine}/${trovato.dimensione}`);
+      void risposta.header("Content-Length", String(solo.fine - solo.inizio + 1));
+      return risposta.code(206).type(tipo).send(createReadStream(trovato.percorso, { start: solo.inizio, end: solo.fine }));
+    }
+    const parti = piuParti(trovato.percorso, intervalli, trovato.dimensione, tipo);
+    void risposta.header("Content-Length", String(parti.lunghezza));
+    return risposta.code(206).type(`multipart/byteranges; boundary=${parti.confine}`).send(parti.flusso);
   });
 
   app.get<{ Params: { id: string } }>("/api/progetti/:id/applicazione", async (richiesta, risposta) => {

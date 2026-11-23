@@ -75,7 +75,7 @@ test("sulla stessa porta il centro parla HTTPS al proprietario e HTTP a nodi, ga
   for (const schema of ["http", "https"] as const) {
     const stato = await chiedi(schema, porta, "/api/stato", ca);
     assert.equal(stato.stato, 200, schema);
-    assert.deepEqual(JSON.parse(stato.corpo.toString()), { configurato: true, autenticato: false });
+    assert.deepEqual(JSON.parse(stato.corpo.toString()), { protocollo: 1, configurato: true, autenticato: false });
   }
   // La politica dei contenuti ammette i WebSocket cifrati e l'anteprima, che in una pagina HTTPS è HTTPS.
   const politica = String((await chiedi("https", porta, "/api/stato", ca)).intestazioni["content-security-policy"]);
