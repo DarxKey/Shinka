@@ -4,7 +4,7 @@ status: accepted
 
 # Il gettone di un dispositivo
 
-Il 23 novembre 2026 il proprietario ha confermato la seconda proposta nata dal progetto Shinka Desktop: l'app resta accesa nell'area di notifica e deve aprirsi già collegata. Con la sessione del browser ([ADR 0039](0039-sessioni-e-registro-delle-richieste.md)) non andava: dura trenta giorni fissi, nella pagina Sicurezza comparirebbe come «node», e il cookie è fatto per una pagina, non per il processo di un'app.
+Il 23 novembre 2026 il proprietario ha confermato la seconda proposta nata dal progetto Shinka Desktop: l'app resta accesa nell'area di notifica e deve aprirsi già collegata. Con la sessione del browser ([ADR 0039](0039-registro-delle-richieste.md)) non andava: dura trenta giorni fissi, nella pagina Sicurezza comparirebbe come «node», e il cookie è fatto per una pagina, non per il processo di un'app.
 
 ## Decisioni
 
