@@ -7,6 +7,7 @@
  */
 
 import { GRUPPO_SKILL } from "../protocollo/skill.ts";
+import { eIncarico, progettoDellaConversazione } from "../protocollo/incarichi.ts";
 import type { EsitoStack, RichiestaStack } from "../protocollo/stack.ts";
 import { eStrumentoComune, type EsitoStrumento } from "../protocollo/strumenti.ts";
 import { AZIONI_NEL_SITO, TIPI_IN_CHIARO, type AzioneNelSito, type EsitoBrowser, type TipoInChiaro } from "../protocollo/vault.ts";
@@ -21,6 +22,21 @@ export interface ChiChiama {
   chiave: string;
   /** Da dove viene la richiesta, in parole per il proprietario: "Home", oppure `Progetto "Nome"`. */
   origine: string;
+  /** Vero se chiama la conversazione di un incarico del progetto: non affida incarichi e non installa (ADR 0051). */
+  daUnIncarico?: true;
+}
+
+/**
+ * Chi chiama da una conversazione di progetto: il progetto stesso, oppure un suo incarico, i cui
+ * strumenti valgono per il progetto (ADR 0051).
+ */
+export function chiDiUnProgetto(idConversazione: string, nomeDelProgetto: (idProgetto: string) => string | undefined): ChiChiama {
+  const idProgetto = progettoDellaConversazione(idConversazione);
+  return {
+    chiave: idProgetto,
+    origine: `Progetto "${nomeDelProgetto(idProgetto) ?? idProgetto}"`,
+    ...(eIncarico(idConversazione) ? { daUnIncarico: true as const } : {}),
+  };
 }
 
 /** La chiave della conversazione di un argomento della Home. */
@@ -58,6 +74,9 @@ export type StrumentiProgrammati = (chi: ChiChiama, nome: string, argomenti: Rec
 /** Gli strumenti delle cartelle collegate di un progetto (ADR 0050): `chiave` è il progetto che li usa. */
 export type StrumentiCollegate = (chiave: string, nome: string, argomenti: Record<string, unknown>) => Promise<EsitoStrumento>;
 
+/** Chi guida un progetto affida un incarico a chi implementa, e ne aspetta la fine (ADR 0051). */
+export type AffidaIncarico = (idProgetto: string, argomenti: unknown) => Promise<EsitoStrumento>;
+
 /** Il progetto Shinka chiede di installare la versione che ha scritto: la si prepara, la si prova e si mostra la scheda. */
 export type ChiediInstallazione = (idProgetto: string, riassunto: unknown) => Promise<EsitoStrumento>;
 
@@ -72,6 +91,7 @@ export class StrumentiComuni {
   readonly #applicazioni: StrumentiApplicazione | undefined;
   readonly #programmati: StrumentiProgrammati | undefined;
   readonly #collegate: StrumentiCollegate | undefined;
+  readonly #affidaIncarico: AffidaIncarico | undefined;
 
   constructor(
     memoria: Memoria,
@@ -90,7 +110,10 @@ export class StrumentiComuni {
     programmati?: StrumentiProgrammati,
     /** Come un progetto lavora nelle sue cartelle collegate. */
     collegate?: StrumentiCollegate,
+    /** Come chi guida un progetto affida un incarico. */
+    affidaIncarico?: AffidaIncarico,
   ) {
+    this.#affidaIncarico = affidaIncarico;
     this.#collegate = collegate;
     this.#applicazioni = applicazioni;
     this.#programmati = programmati;
@@ -106,6 +129,10 @@ export class StrumentiComuni {
   /** Esegue uno strumento per conto di una conversazione. Non lancia mai: l'errore è nella risposta. */
   async esegui(chi: ChiChiama, nome: unknown, argomenti: unknown): Promise<EsitoStrumento> {
     if (!eStrumentoComune(nome)) return fallito("Questo strumento non esiste.");
+    // Chi svolge un incarico lavora per chi guida: a affidare, installare e proporre versioni è lui.
+    if (chi.daUnIncarico === true && (nome === "affida_incarico" || nome === "chiedi_installazione" || nome === "aggiorna_gateway")) {
+      return fallito("Chi svolge un incarico non lo può fare: scrivilo nel resoconto, e lo farà chi guida il progetto.");
+    }
     try {
       switch (nome) {
         case "ricorda":
@@ -236,6 +263,10 @@ export class StrumentiComuni {
           if (this.#collegate === undefined) return fallito("In questa installazione di Shinka le cartelle collegate non ci sono.");
           const campi = typeof argomenti === "object" && argomenti !== null ? (argomenti as Record<string, unknown>) : {};
           return await this.#collegate(chi.chiave, nome, campi);
+        }
+        case "affida_incarico": {
+          if (this.#affidaIncarico === undefined) return fallito("In questa installazione di Shinka gli incarichi non ci sono.");
+          return await this.#affidaIncarico(chi.chiave, argomenti);
         }
         case "aggiorna_gateway": {
           if (this.#aggiornaGateway === undefined) {

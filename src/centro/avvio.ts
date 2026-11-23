@@ -96,7 +96,7 @@ import { Memoria } from "./memoria.ts";
 import { creaServerAnteprima } from "./server-anteprima.ts";
 import { RegistroSkill } from "./skill.ts";
 import { RegistroStili } from "./stili.ts";
-import { chiaveDellaHome, StrumentiComuni } from "./strumenti-comuni.ts";
+import { chiaveDellaHome, chiDiUnProgetto, StrumentiComuni } from "./strumenti-comuni.ts";
 import { SviluppoDiShinka } from "./sviluppo.ts";
 import { inBreve, versioneDi } from "./preparazione.ts";
 import { RegistroProgetti } from "./progetti.ts";
@@ -302,13 +302,11 @@ const comuni = new StrumentiComuni(
   portaAnteprima === null ? undefined : (chiave, nome, argomenti) => applicazioni.strumento(chiave, nome, argomenti),
   (chi, nome, argomenti) => programmati.strumento(chi, nome, argomenti),
   (chiave, nome, argomenti) => collegate.strumento(chiave, nome, argomenti),
+  (idProgetto, argomenti) => lavori.affidaIncarico(idProgetto, argomenti),
 );
-const strumentoDiProgetto = (idProgetto: string, nome: unknown, argomenti: unknown) =>
-  comuni.esegui(
-    { chiave: idProgetto, origine: `Progetto "${progetti.trova(idProgetto)?.nome ?? idProgetto}"` },
-    nome,
-    argomenti,
-  );
+// Gli strumenti della conversazione di un incarico valgono per il suo progetto (ADR 0051).
+const strumentoDiProgetto = (idConversazione: string, nome: unknown, argomenti: unknown) =>
+  comuni.esegui(chiDiUnProgetto(idConversazione, (id) => progetti.trova(id)?.nome), nome, argomenti);
 
 // Le estensioni: l'elenco sta al centro, e ogni ambiente riceve quelle accese lì. Quelle
 // dell'ambiente del centro le usano i suoi progetti e la Home. Le chiavi che un'estensione
@@ -355,6 +353,7 @@ const lavori = await LavoriDeiProgetti.apri({
   immagini,
   locale,
   remoti,
+  registroIncarichi: join(dati, "incarichi.jsonl"),
   // Prima del messaggio il progetto riceve la memoria e, se è il progetto Shinka, com'è finita un'installazione.
   notaPrimaDelMessaggio: (idProgetto) => {
     const note = [sviluppo?.notaPerIlProgetto(idProgetto), memoria.daConsegnare(idProgetto)].filter((nota) => nota !== undefined);

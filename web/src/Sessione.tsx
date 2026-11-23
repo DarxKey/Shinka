@@ -5,6 +5,7 @@
  */
 
 import { CartelleCollegate } from "./Collegate.tsx";
+import { ChiImplementa } from "./ChiImplementa.tsx";
 import { useState, type ReactNode } from "react";
 import type { Attivita } from "../../src/protocollo/attivita.ts";
 import type { UscitaAttivita } from "../../src/protocollo/eventi.ts";
@@ -72,6 +73,7 @@ export function SchedaSessione({
               </>
             )}
           </dl>
+          {idProgetto !== undefined && <ChiImplementa idProgetto={idProgetto} modelli={stato?.modelli} />}
           {idProgetto !== undefined && <CartelleCollegate idProgetto={idProgetto} />}
         </section>
         {contesto !== undefined && (

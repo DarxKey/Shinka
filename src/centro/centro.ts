@@ -34,6 +34,7 @@ import {
   type MessaggioNodo,
 } from "../protocollo/nodi.ts";
 import { IMPEGNI, MODI_PERMESSI, MOTORI, type ModificaImpostazioni, type Motore, type SceltaDelProprietario } from "../protocollo/impostazioni.ts";
+import { leggiChiImplementa, type StatoChiImplementa } from "../protocollo/incarichi.ts";
 import { DOMANDA_A_PARTE_MASSIMA } from "../protocollo/eventi.ts";
 import { DESCRIZIONE_MASSIMA, NOME_MASSIMO, sceltoDa, STILI_DI_SHINKA } from "../protocollo/stili.ts";
 import { BRIEF_MASSIMO, NOME_PROGETTO_MASSIMO, type NuovoProgettoAMano } from "../protocollo/progetti.ts";
@@ -2219,6 +2220,43 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     const esito = await opzioni.collegate.scollega(richiesta.params.id, richiesta.params.idAmbiente);
     return "motivo" in esito ? risposta.code(409).send({ errore: esito.motivo }) : esito;
   });
+
+  // Chi implementa gli incarichi di un progetto: lo sceglie il proprietario, nella scheda della sessione (ADR 0051).
+  app.get<{ Params: { id: string } }>("/api/progetti/:id/chi-implementa", async (richiesta, risposta) => {
+    if (lavori.progetto(richiesta.params.id) === undefined) return risposta.code(404).send({ errore: "Progetto non trovato." });
+    const chiImplementa = lavori.chiImplementa(richiesta.params.id);
+    const stato: StatoChiImplementa = chiImplementa === undefined ? {} : { chiImplementa };
+    return stato;
+  });
+  app.put<{ Params: { id: string }; Body: { chiImplementa: Record<string, unknown> | null } }>(
+    "/api/progetti/:id/chi-implementa",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["chiImplementa"],
+          additionalProperties: false,
+          properties: {
+            chiImplementa: {
+              type: ["object", "null"],
+              additionalProperties: false,
+              properties: {
+                motore: { type: "string", enum: [...MOTORI] },
+                modello: { type: "string", maxLength: 200 },
+                impegno: { type: "string", enum: [...IMPEGNI] },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (richiesta, risposta) => {
+      const scelta = richiesta.body.chiImplementa === null ? undefined : leggiChiImplementa(richiesta.body.chiImplementa);
+      if (!(await lavori.cambiaChiImplementa(richiesta.params.id, scelta))) return risposta.code(404).send({ errore: "Progetto non trovato." });
+      const stato: StatoChiImplementa = scelta === undefined ? {} : { chiImplementa: scelta };
+      return stato;
+    },
+  );
 
   // Shinka Desktop: la versione pubblicata, la pubblicazione dalle Impostazioni, e i file che
   // electron-updater scarica, a parti se le chiede (ADR 0049).

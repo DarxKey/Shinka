@@ -38,6 +38,10 @@ test("gli strumenti della Home hanno un nome leggibile e il loro dettaglio", () 
   // Su Windows i comandi arrivano da uno strumento con un altro nome: per il proprietario è lo stesso.
   assert.equal(etichettaDi("PowerShell"), "Comando");
   assert.equal(dettaglioDi("PowerShell", { command: "python primi.py" }), "python primi.py");
+  assert.equal(etichettaDi("mcp__shinka__affida_incarico"), "Incarico a chi implementa");
+  assert.equal(dettaglioDi("mcp__shinka__affida_incarico", { incarico: "Scrivi somma", criteri: "passa" }), "Scrivi somma");
+  assert.equal(etichettaDi("mcp__shinka__esegui_nella_collegata"), "Comando nella cartella collegata");
+  assert.equal(dettaglioDi("mcp__shinka__esegui_nella_collegata", { ambiente: "PC", comando: "npm test" }), "npm test");
   assert.equal(etichettaDi("StrumentoMaiVisto"), "StrumentoMaiVisto");
   assert.equal(dettaglioDi("Bash", { command: 7 }), "");
 });

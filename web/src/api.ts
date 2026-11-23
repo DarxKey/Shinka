@@ -1,5 +1,6 @@
 /** Chiamate dal browser al centro. */
 
+import type { ChiImplementa, StatoChiImplementa } from "../../src/protocollo/incarichi.ts";
 import type { ScelteAvvisi } from "../../src/protocollo/avvisi.ts";
 import type { DettaglioDellAmbiente } from "../../src/protocollo/risorse.ts";
 import type { StatoNotifiche } from "../../src/centro/notifiche-app.ts";
@@ -599,6 +600,16 @@ export async function collegaCartella(idProgetto: string, idAmbiente: string, ca
 
 export async function scollegaCartella(idProgetto: string, idAmbiente: string): Promise<StatoCollegate> {
   return (await chiama("DELETE", `${baseDelProgetto(idProgetto)}/collegate/${encodeURIComponent(idAmbiente)}`)) as StatoCollegate;
+}
+
+/** Chi implementa gli incarichi del progetto (ADR 0051). */
+export async function leggiChiImplementa(idProgetto: string): Promise<StatoChiImplementa> {
+  return (await chiama("GET", `${baseDelProgetto(idProgetto)}/chi-implementa`)) as StatoChiImplementa;
+}
+
+/** Sceglie chi implementa, o con null torna a un modello solo. */
+export async function cambiaChiImplementa(idProgetto: string, chiImplementa: ChiImplementa | null): Promise<StatoChiImplementa> {
+  return (await chiama("PUT", `${baseDelProgetto(idProgetto)}/chi-implementa`, { chiImplementa })) as StatoChiImplementa;
 }
 
 /** La versione di Shinka Desktop che il centro serve agli aggiornamenti. */

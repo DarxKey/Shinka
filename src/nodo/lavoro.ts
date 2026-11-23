@@ -21,6 +21,7 @@ import { Terminali, type AccendiShell } from "./terminali.ts";
 import { adottaCartella, CartellaNonCreata, creaCartellaProgetto } from "./cartelle.ts";
 import type { ConfigurazioneConversazione } from "./conversazione.ts";
 import { apriConversazione } from "./motore.ts";
+import { eIncarico } from "../protocollo/incarichi.ts";
 import { configurazioneDiProgetto } from "./profili.ts";
 import { nomeDiCartella } from "../protocollo/modifiche.ts";
 import { EstensioniInAmbiente, soloLeScelte } from "./estensioni.ts";
@@ -430,6 +431,7 @@ export class LavoroDelNodo {
           ? {}
           : { estensioni: scelte === undefined ? this.#estensioni : soloLeScelte(this.#estensioni, () => scelte) }),
         ...(this.#contesto.browserDelPc === true ? { browserDelPc: true } : {}),
+        ...(eIncarico(idConversazione) ? { incarico: true } : {}),
         ...(this.#contesto.cartellaModifiche === undefined ? {} : { cartellaModifiche: join(this.#contesto.cartellaModifiche, nomeDiCartella(idConversazione)) }),
       },
     );

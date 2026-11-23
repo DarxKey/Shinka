@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Incarichi affidati a un altro modello, anche locale
@@ -18,7 +18,7 @@ Il profilo è già quello giusto per la scheda: non serve cambiarlo per comincia
 
 ## Decisioni
 
-- **Guida chi pianifica.** La conversazione del progetto è il modello che pianifica e decide, come oggi, con il motore e il modello scelti dal proprietario. Affida l'implementazione con uno strumento, `affida_incarico`: incarico, vincoli, file pertinenti e criteri di accettazione, niente storia della conversazione. Chi implementa lavora e riporta: che cosa ha fatto, i file cambiati, l'esito dei test, i dubbi. Le correzioni le decide chi pianifica, e le affida con un altro incarico. Si può sempre lavorare con un modello solo: se il progetto non ha un esecutore, lo strumento non c'è.
+- **Guida chi pianifica.** La conversazione del progetto è il modello che pianifica e decide, come oggi, con il motore e il modello scelti dal proprietario. Affida l'implementazione con uno strumento, `affida_incarico`: incarico, vincoli, file pertinenti e criteri di accettazione, niente storia della conversazione. Chi implementa lavora e riporta: che cosa ha fatto, i file cambiati, l'esito dei test, i dubbi. Le correzioni le decide chi pianifica, e le affida con un altro incarico. Si può sempre lavorare con un modello solo: se il proprietario non ha scelto chi implementa, lo strumento lo dice e il lavoro resta a chi guida. Lo strumento c'è comunque, perché gli strumenti si fissano quando la conversazione parte, e la scelta può cambiare dopo: chi guida la viene a sapere da una nota.
 - **L'incarico è una conversazione a parte del progetto**, nello stesso ambiente e nella stessa cartella, con il motore e il modello dell'esecutore e con il modo dei permessi del progetto. Le sue richieste di permesso e le sue domande compaiono nella conversazione del progetto, e il proprietario decide da lì. Nella chat l'incarico si vede come un'azione, con il modello che lo svolge e a che punto è.
 - **Il selettore per ruolo.** Nelle impostazioni del progetto: chi implementa, predefinito per il progetto, tra i modelli davvero disponibili negli accessi di Claude Code e di Codex di quell'ambiente e i modelli locali accesi lì; per ognuno ciò che sa fare e, se non è disponibile, perché. Per un singolo incarico il proprietario può chiederne un altro, e chi pianifica lo passa allo strumento: mai un cambio di modello deciso da solo, mai una chiave API nuova per un motore che ha già il suo accesso.
 - **I modelli locali sono un'estensione.** L'estensione «Modello locale», accesa in un ambiente dall'elenco delle estensioni, dice come si accende il server (il profilo del proprietario), su quale porta risponde, il nome del modello e il contesto. Il nodo lo accende quando un incarico lo chiede, aspetta che risponda, e lo spegne dopo 10 minuti senza richieste per liberare la scheda. L'esecutore è Claude Code che parla con quel server, come fa `claude-qwen`. Per ora vale solo per i progetti che vivono nello stesso ambiente del server: niente porte aperte sulla rete.
@@ -31,8 +31,14 @@ Il profilo è già quello giusto per la scheda: non serve cambiarlo per comincia
 2. L'estensione «Modello locale» sul nodo, con l'accensione e lo spegnimento del server.
 3. Le prove a confronto, con un resoconto per il proprietario.
 
+## Com'è fatta la fase 1
+
+- La conversazione di un incarico ha per identificativo quello del progetto seguito da `~incarico-` e da un suo codice: così i suoi strumenti di Shinka valgono per il progetto, e l'ambiente la riconosce e le dà le istruzioni di chi implementa, senza lo stato del progetto e senza gli strumenti per affidare incarichi e installare.
+- Le sue richieste di permesso, le sue domande e la fine di quelle azioni entrano nell'archivio del progetto; il resto della sua storia no: lo riassume il resoconto, e la sua uscita si legge dall'attività.
+- Le misure di ogni incarico finiscono in `incarichi.jsonl` nei dati di Shinka.
+
 ## Conseguenze
 
 - Un incarico costa una conversazione nuova: chi pianifica deve scriverlo perché si capisca da solo.
 - Due modelli lavorano nella stessa cartella, uno per volta: mentre un incarico è in corso, la conversazione del progetto aspetta il suo esito.
-- La specifica cambia nella sezione dei progetti quando la fase 1 entra in funzione.
+- La specifica non cambia: un incarico è una delle conversazioni del progetto (sezione 4.4), con il motore e il modello scelti per lei (sezione 4.12), e le regole della sezione 4 valgono anche lì.

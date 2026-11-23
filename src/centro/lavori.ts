@@ -42,6 +42,10 @@ import { fileDellaVersione } from "./indice-archivio.ts";
 import { AmbienteSpento, type Esecutore } from "./esecutori.ts";
 import type { CustodiaImmagini } from "./immagini.ts";
 import type { NuovoProgetto, RegistroProgetti } from "./progetti.ts";
+import { Incarichi } from "./incarichi.ts";
+import type { Attivita } from "../protocollo/attivita.ts";
+import { descriviChiImplementa, type ChiImplementa } from "../protocollo/incarichi.ts";
+import type { EsitoStrumento } from "../protocollo/strumenti.ts";
 
 /** Un progetto appena nato. `filePortati` c'è se doveva portare con sé i file di un argomento. */
 export interface ProgettoNato extends Progetto {
@@ -87,6 +91,10 @@ export interface OpzioniLavori {
    * proprietario, se c'è: è così che le arriva la memoria.
    */
   notaPrimaDelMessaggio?(idProgetto: string): string | undefined;
+  /** Dove ogni incarico finito lascia le sue misure (ADR 0051). */
+  registroIncarichi?: string;
+  /** Quanto può durare un incarico. Nei test meno. */
+  durataIncaricoMs?: number;
 }
 
 export class LavoriDeiProgetti {
@@ -98,9 +106,22 @@ export class LavoriDeiProgetti {
   readonly #ascoltatori = new Set<(stato: StatoProgetti) => void>();
   /** Chi ascolta gli eventi nuovi di ogni progetto, anche di quelli che nasceranno. */
   readonly #ascoltatoriDegliEventi = new Set<(idProgetto: string, archiviato: EventoArchiviato) => void>();
+  /** Le attività che la conversazione di ogni progetto ha riferito per ultime: vi si aggiungono quelle degli incarichi. */
+  readonly #attivitaDellaConversazione = new Map<string, Attivita[]>();
+  readonly #incarichi: Incarichi;
+  /** Ciò che la conversazione di un progetto deve sapere e non ha ancora saputo, perché non era aperta. */
+  readonly #daDire = new Map<string, string[]>();
 
   private constructor(opzioni: OpzioniLavori) {
     this.#o = opzioni;
+    this.#incarichi = new Incarichi({
+      esecutore: (idAmbiente) => this.#esecutore(idAmbiente),
+      pubblica: (idProgetto, evento) => this.#canali.get(idProgetto)?.pubblica(evento),
+      attivitaCambiate: (idProgetto) => this.#pubblicaAttivita(idProgetto),
+      estensioni: (idProgetto) => opzioni.progetti.estensioni(idProgetto),
+      ...(opzioni.registroIncarichi === undefined ? {} : { registro: opzioni.registroIncarichi }),
+      ...(opzioni.durataIncaricoMs === undefined ? {} : { durataMassimaMs: opzioni.durataIncaricoMs }),
+    });
   }
 
   static async apri(opzioni: OpzioniLavori): Promise<LavoriDeiProgetti> {
@@ -328,6 +349,8 @@ export class LavoriDeiProgetti {
     }
     const nota = this.#o.notaPrimaDelMessaggio?.(progetto.id);
     if (nota !== undefined) porta.annota(nota);
+    for (const daDire of this.#daDire.get(idProgetto) ?? []) porta.annota(daDire);
+    this.#daDire.delete(idProgetto);
     porta.invia(testo, allegati);
   }
 
@@ -379,7 +402,39 @@ export class LavoriDeiProgetti {
   }
 
   decidiPermesso(idProgetto: string, idPermesso: string, decisione: DecisionePermesso): boolean {
-    return this.#porte.get(idProgetto)?.decidiPermesso(idPermesso, decisione) ?? false;
+    // Il permesso può essere di chi svolge un incarico del progetto.
+    return (this.#porte.get(idProgetto)?.decidiPermesso(idPermesso, decisione) ?? false) || this.#incarichi.decidiPermesso(idProgetto, idPermesso, decisione);
+  }
+
+  /**
+   * Chi guida il progetto affida un incarico a chi implementa, e ne aspetta la fine (ADR 0051).
+   * Non lancia: ciò che va storto è nella risposta.
+   */
+  affidaIncarico(idProgetto: string, argomenti: unknown): Promise<EsitoStrumento> {
+    const progetto = this.#o.progetti.trova(idProgetto);
+    if (progetto === undefined) return Promise.resolve({ testo: "Progetto non trovato.", errore: true });
+    if (!this.#o.ambienti.attivo(progetto.idAmbiente)) return Promise.resolve({ testo: "L'ambiente del progetto è spento.", errore: true });
+    return this.#incarichi.affida(progetto, this.#o.progetti.chiImplementa(idProgetto), this.impostazioniInUso(idProgetto).permessi, argomenti);
+  }
+
+  /** Chi implementa gli incarichi del progetto, se il proprietario lo ha scelto. */
+  chiImplementa(idProgetto: string): ChiImplementa | undefined {
+    return this.#o.progetti.chiImplementa(idProgetto);
+  }
+
+  /**
+   * Il proprietario sceglie chi implementa, o con nulla torna a un modello solo. La conversazione del
+   * progetto lo viene a sapere. Falso se il progetto non c'è.
+   */
+  async cambiaChiImplementa(idProgetto: string, scelta: ChiImplementa | undefined): Promise<boolean> {
+    if (!(await this.#o.progetti.ricordaChiImplementa(idProgetto, scelta))) return false;
+    this.#annotaOPoi(
+      idProgetto,
+      scelta === undefined
+        ? "[Shinka] In questo progetto il proprietario non vuole più un modello che implementa: il lavoro lo fai tu, senza affida_incarico."
+        : `[Shinka] In questo progetto il proprietario ha scelto chi implementa: ${descriviChiImplementa(scelta)}. Pianifica e controlla tu, e affida l'implementazione con i suoi test con affida_incarico.`,
+    );
+    return true;
   }
 
   /** Quali file tornerebbero com'erano riprendendo da prima di quel messaggio. */
@@ -428,6 +483,8 @@ export class LavoriDeiProgetti {
 
   /** La parte finale dell'uscita di un'attività del progetto. */
   async uscitaAttivita(idProgetto: string, idAttivita: string): Promise<UscitaAttivita | { motivo: string }> {
+    const diUnIncarico = this.#incarichi.uscita(idAttivita);
+    if (diUnIncarico !== undefined) return diUnIncarico;
     const porta = this.#portaAttiva(idProgetto);
     if (typeof porta === "string") return { motivo: porta };
     return porta.uscitaAttivita?.(idAttivita) ?? { motivo: "Questa conversazione non tiene le attività." };
@@ -443,10 +500,12 @@ export class LavoriDeiProgetti {
   }
 
   rispondiDomande(idProgetto: string, idDomande: string, risposta: RispostaAlleDomande): boolean {
-    return this.#porte.get(idProgetto)?.rispondiDomande?.(idDomande, risposta) ?? false;
+    return (this.#porte.get(idProgetto)?.rispondiDomande?.(idDomande, risposta) ?? false) || this.#incarichi.rispondiDomande(idProgetto, idDomande, risposta);
   }
 
   async interrompi(idProgetto: string): Promise<void> {
+    // Prima l'incarico: chi guida lo sta aspettando, e saprà che è stato fermato.
+    await this.#incarichi.interrompi(idProgetto);
     await this.#porte.get(idProgetto)?.interrompi();
   }
 
@@ -523,6 +582,7 @@ export class LavoriDeiProgetti {
 
   /** Chiude le conversazioni aperte, per esempio allo spegnimento del centro. */
   chiudi(): void {
+    this.#incarichi.chiudi();
     for (const porta of this.#porte.values()) porta.chiudi();
     this.#porte.clear();
   }
@@ -545,6 +605,17 @@ export class LavoriDeiProgetti {
     this.#porte.get(idProgetto)?.annota(testo);
   }
 
+  /** Come `annota`, ma se la conversazione non è aperta lo dice prima del prossimo messaggio. */
+  #annotaOPoi(idProgetto: string, testo: string): void {
+    const porta = this.#porte.get(idProgetto);
+    if (porta !== undefined) {
+      porta.annota(testo);
+      return;
+    }
+    // Vale l'ultima scelta: una nota di prima sulla stessa cosa non serve più.
+    this.#daDire.set(idProgetto, [testo]);
+  }
+
   #esecutore(idAmbiente: string): Esecutore {
     return idAmbiente === ID_AMBIENTE_DEL_CENTRO ? this.#o.locale : this.#o.remoti.per(idAmbiente);
   }
@@ -564,6 +635,12 @@ export class LavoriDeiProgetti {
         // Lo stato del progetto entra nella storia solo quando cambia: dopo un riavvio
         // chi lavora lo riferisce di nuovo, anche se è quello di prima.
         if (evento.tipo === "stato-progetto" && statoDelProgetto(canale.archiviati)?.testo === evento.testo) return;
+        // Le attività della conversazione si mostrano insieme a quelle degli incarichi.
+        if (evento.tipo === "attivita") {
+          this.#attivitaDellaConversazione.set(progetto.id, evento.attivita);
+          this.#pubblicaAttivita(progetto.id);
+          return;
+        }
         canale.pubblica(this.#o.immagini.prendi(progetto.id, evento));
       },
       (idSessione) => void this.#o.progetti.ricordaSessione(progetto.id, idSessione),
@@ -602,8 +679,17 @@ export class LavoriDeiProgetti {
     });
   }
 
+  /** Le attività del progetto: quelle della sua conversazione e quelle dei suoi incarichi. */
+  #pubblicaAttivita(idProgetto: string): void {
+    const incarichi = this.#incarichi.attivita(idProgetto);
+    const dellaConversazione = this.#attivitaDellaConversazione.get(idProgetto);
+    if (dellaConversazione === undefined && incarichi.length === 0) return;
+    this.#canali.get(idProgetto)?.pubblica({ tipo: "attivita", attivita: [...(dellaConversazione ?? []), ...incarichi] });
+  }
+
   /** Un ambiente si è scollegato: ciò che vi era in corso non arriverà più a conclusione. */
   #ambienteScollegato(idAmbiente: string): void {
+    this.#incarichi.ambienteScollegato(idAmbiente);
     for (const progetto of this.#o.progetti.elenco()) {
       if (progetto.idAmbiente !== idAmbiente) continue;
       this.#canali
@@ -637,3 +723,4 @@ function confrontabile(percorso: string): string {
   const dritto = percorso.trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/(.)\/$/, "$1");
   return /^[A-Za-z]:/.test(dritto) ? dritto.toLowerCase() : dritto;
 }
+

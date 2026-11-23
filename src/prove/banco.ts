@@ -54,7 +54,7 @@ import { Memoria } from "../centro/memoria.ts";
 import { RegistroSkill } from "../centro/skill.ts";
 import { RegistroStili } from "../centro/stili.ts";
 import type { EsitoAnnullamento, VersioniDiUnFile } from "../protocollo/modifiche.ts";
-import { chiaveDellaHome, StrumentiComuni } from "../centro/strumenti-comuni.ts";
+import { chiaveDellaHome, chiDiUnProgetto, StrumentiComuni } from "../centro/strumenti-comuni.ts";
 import { RegistroProgetti } from "../centro/progetti.ts";
 import { Proposte } from "../centro/proposte.ts";
 import { git } from "../centro/preparazione.ts";
@@ -539,13 +539,10 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     (chiave, nome, argomenti) => applicazioni.strumento(chiave, nome, argomenti),
     (chi, nome, argomenti) => programmati.strumento(chi, nome, argomenti),
     (chiave, nome, argomenti) => collegate.strumento(chiave, nome, argomenti),
+    (idProgetto, argomenti) => lavori.affidaIncarico(idProgetto, argomenti),
   );
-  const strumentoDiProgetto = (idProgetto: string, nome: unknown, argomenti: unknown) =>
-    comuni.esegui(
-      { chiave: idProgetto, origine: `Progetto "${progetti.trova(idProgetto)?.nome ?? idProgetto}"` },
-      nome,
-      argomenti,
-    );
+  const strumentoDiProgetto = (idConversazione: string, nome: unknown, argomenti: unknown) =>
+    comuni.esegui(chiDiUnProgetto(idConversazione, (id) => progetti.trova(id)?.nome), nome, argomenti);
   // Come nel centro vero: l'elenco nasce dopo, ma gli ambienti lo chiedono solo quando serve.
   const harnessEstensioni = opzioni.estensioni?.harness ?? harnessDiProva();
   let estensioni: Estensioni | undefined;
@@ -606,6 +603,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     immagini,
     locale,
     remoti,
+    registroIncarichi: join(cartella, "incarichi.jsonl"),
     notaPrimaDelMessaggio: (idProgetto) => {
       const note = [sviluppo?.notaPerIlProgetto(idProgetto), memoria.daConsegnare(idProgetto)].filter((nota) => nota !== undefined);
       return note.length === 0 ? undefined : note.join("\n\n");

@@ -332,6 +332,18 @@ _Avoid_: API version, versione dell'API
 Un identificativo dell'archivio di una conversazione che resta lo stesso finché si aggiungono eventi in fondo, e cambia quando eventi già dati potrebbero non valere più (un taglio, numeri riassegnati, un ripristino). Con l'ultimo numero forma l'indice dell'archivio: chi tiene una copia della storia lo confronta con il suo, e chiede solo ciò che manca.
 _Avoid_: revisione, etag, epoca
 
+**Incarico**:
+Un pezzo di lavoro di un progetto, di solito l'implementazione con i suoi test, che chi guida affida a chi implementa: lo svolge in una conversazione a parte del progetto, e riporta un resoconto.
+_Avoid_: task, subagent, delega
+
+**Chi guida** (un progetto):
+Il modello della conversazione del progetto: pianifica, decide, affida gli incarichi e ne controlla il risultato.
+_Avoid_: planner, orchestratore
+
+**Chi implementa** (in un progetto):
+Il modello che il proprietario sceglie per svolgere gli incarichi di un progetto; senza, il progetto lavora con un modello solo.
+_Avoid_: executor, esecutore, worker
+
 **Cartella collegata** (di un progetto):
 Una cartella di un altro ambiente che il proprietario collega a un progetto: il progetto ci lavora con gli strumenti di Shinka, seguendo il modo dei suoi permessi, mentre il suo motore resta nel suo ambiente. Una per ambiente.
 _Avoid_: cartella remota, mount, progetto multi-ambiente

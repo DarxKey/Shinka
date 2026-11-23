@@ -14,6 +14,7 @@ import { soloLeScelte, type FonteEstensioni } from "../nodo/estensioni.ts";
 import { preparaProgetto } from "../nodo/preparazione.ts";
 import { DURATA_PREPARAZIONE_MS, type EsitoPreparazione, type PreparazioneDelProgetto } from "../protocollo/avvio-progetto.ts";
 import { configurazioneDiProgetto } from "../nodo/profili.ts";
+import { eIncarico } from "../protocollo/incarichi.ts";
 import { USCITA_MOSTRATA } from "../protocollo/attivita.ts";
 import {
   leggiEsitoAnnullamento,
@@ -180,6 +181,7 @@ export class EsecutoreLocale implements Esecutore {
         ...(cartellaSkill === undefined ? {} : { cartellaSkill }),
         ...(estensioni === undefined ? {} : { estensioni }),
         ...(diShinka?.(idConversazione) === true ? { sviluppoDiShinka: true } : {}),
+        ...(eIncarico(idConversazione) ? { incarico: true } : {}),
         ...(this.#servizi.cartellaModifiche === undefined ? {} : { cartellaModifiche: join(this.#servizi.cartellaModifiche, nomeDiCartella(idConversazione)) }),
       }),
     );

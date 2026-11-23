@@ -30,6 +30,11 @@ export interface ServiziDiShinka {
   sviluppoDiShinka?: boolean;
   /** Dove tenere le versioni dei file che Claude cambia in questo progetto, per il pannello Modifiche. */
   cartellaModifiche?: string;
+  /**
+   * Vero per la conversazione di un incarico (ADR 0051): lavora per chi guida il progetto, non
+   * tiene lo stato del progetto, non affida altri incarichi e non installa.
+   */
+  incarico?: boolean;
 }
 
 /**
@@ -131,6 +136,22 @@ export const ISTRUZIONI_COLLEGATE = `# Cartelle collegate in altri ambienti
 - Lì non hai Bash, Read, Write ed Edit: usi \`esegui_nella_collegata\`, \`leggi_nella_collegata\`, \`scrivi_nella_collegata\` e \`modifica_nella_collegata\`, nella shell di quell'ambiente (PowerShell su Windows). Comandi e file scritti seguono il modo dei permessi del progetto.
 - Una cartella collegata ha il suo repository: i commit lì li fai con un comando nella collegata, e quel lavoro non entra nel repository di questo progetto.`;
 
+/** Ciò che sa chi guida un progetto: può affidare l'implementazione a un altro modello (ADR 0051). */
+export const ISTRUZIONI_INCARICHI = `# Incarichi a chi implementa
+
+- In questo progetto il proprietario può scegliere chi implementa: un altro modello, a cui affidi l'implementazione e i suoi test con \`affida_incarico\`, mentre tu pianifichi, decidi e controlli. Quando lo sceglie o lo cambia te lo dice un messaggio [Shinka]; se non l'ha scelto, il lavoro lo fai tu, come sempre.
+- Un incarico è un pezzo di lavoro che si chiude da sé: che cosa fare, i vincoli, i file pertinenti e i criteri di accettazione, con i comandi di prova che devono passare. Chi implementa non vede questa conversazione: scrivilo perché si capisca da solo, senza rimandi a ciò che vi è stato detto.
+- Quando torna il resoconto controlla tu: guarda il diff, rilancia le prove. Se qualcosa non va, affidane la correzione con un altro incarico, oppure correggi tu se è poco. A dire al proprietario che il lavoro è fatto, e a registrarlo o a chiederne l'installazione, sei tu.
+- Un altro modello per un incarico solo, o un altro impegno, solo se il proprietario lo chiede. Non cambiare chi implementa per conto tuo.`;
+
+/** Ciò che sa la conversazione di un incarico: lavora per chi guida il progetto, e gli riporta (ADR 0051). */
+export const ISTRUZIONI_DI_CHI_IMPLEMENTA = `# Un incarico
+
+- Questa conversazione svolge un incarico che chi guida il progetto, un altro modello, ti affida nella cartella del progetto: il primo messaggio lo descrive. Il proprietario segue il lavoro dalla conversazione di chi guida, ed è lì che gli arrivano le tue richieste di permesso e le tue domande.
+- Fai ciò che l'incarico chiede, nel modo più semplice che rispetta vincoli e criteri, e lancia le prove indicate. Non allargare il lavoro, e non registrare commit se l'incarico non lo chiede.
+- Se qualcosa nell'incarico non torna o manca un'informazione, non inventarla: fai ciò che si può e scrivilo nel resoconto.
+- L'ultima risposta è il resoconto per chi guida: che cosa hai fatto, i file cambiati, i comandi di prova lanciati con il loro esito, e i dubbi o ciò che resta da fare. Breve e preciso: lo leggerà un altro modello.`;
+
 /** Ciò che un progetto sa delle estensioni che Shinka accende nel suo ambiente. */
 export const ISTRUZIONI_ESTENSIONI = `# Estensioni di Shinka
 
@@ -193,7 +214,8 @@ export function configurazioneDiProgetto(
   servizi: ServiziDiShinka = {},
 ): ConfigurazioneConversazione {
   // Nel progetto Shinka STATO.md è già lo stato dello sviluppo, nel repository: lo stato del progetto ha un altro nome.
-  const diShinka = servizi.sviluppoDiShinka === true;
+  const incarico = servizi.incarico === true;
+  const diShinka = servizi.sviluppoDiShinka === true && !incarico;
   const chiama = servizi.chiama;
   const nomeDelloStato = diShinka ? FILE_STATO_DELLO_SVILUPPO : FILE_STATO_PROGETTO;
   const fileDelloStato = resolve(cartella, nomeDelloStato);
@@ -208,9 +230,14 @@ export function configurazioneDiProgetto(
     cartella,
     istruzioni: "claude-code",
     istruzioniAggiunte: [
-      istruzioniDelloStato(nomeDelloStato),
+      // Lo stato del progetto lo tiene chi guida; chi svolge un incarico gli riporta.
+      ...(incarico ? [ISTRUZIONI_DI_CHI_IMPLEMENTA] : [istruzioniDelloStato(nomeDelloStato)]),
       ...(diShinka ? [ISTRUZIONI_SVILUPPO_DI_SHINKA] : []),
-      ...(servizi.chiama === undefined ? [] : [ISTRUZIONI_MEMORIA_E_SKILL, ISTRUZIONI_ANTEPRIMA, ISTRUZIONI_COLLEGATE]),
+      ...(servizi.chiama === undefined
+        ? []
+        : incarico
+          ? [ISTRUZIONI_COLLEGATE]
+          : [ISTRUZIONI_MEMORIA_E_SKILL, ISTRUZIONI_ANTEPRIMA, ISTRUZIONI_COLLEGATE, ISTRUZIONI_INCARICHI]),
       ...(servizi.estensioni === undefined ? [] : [ISTRUZIONI_ESTENSIONI]),
       ...(servizi.browserDelPc === true ? [ISTRUZIONI_BROWSER_DEL_PC] : []),
     ].join("\n\n"),
@@ -218,7 +245,7 @@ export function configurazioneDiProgetto(
     // Memoria e skill sono compiti che Shinka dà a Claude: usarli non chiede consenso.
     // Un comando su un host con una credenziale del vault segue invece il modo dei permessi.
     strumentiSenzaRichiesta: servizi.chiama === undefined ? [] : STRUMENTI_COMUNI_SENZA_RICHIESTA.map(nomePerHarness),
-    ...(chiama === undefined ? {} : { strumentiNostri: () => ({ [GRUPPO_STRUMENTI]: creaStrumentiDiProgetto(chiama, { installazione: diShinka }) }) }),
+    ...(chiama === undefined ? {} : { strumentiNostri: () => ({ [GRUPPO_STRUMENTI]: creaStrumentiDiProgetto(chiama, { installazione: diShinka, incarico }) }) }),
     ...(servizi.cartellaSkill === undefined ? {} : { cartellaSkill: servizi.cartellaSkill }),
     ...(servizi.estensioni === undefined ? {} : { estensioni: servizi.estensioni }),
     ...(servizi.browserDelPc === true ? { browserDelPc: true } : {}),
@@ -230,7 +257,7 @@ export function configurazioneDiProgetto(
     consenteDaSe: (strumento, ingresso) => {
       // Una skill di Shinka è una procedura da leggere: ciò che poi fa segue i permessi come il resto.
       if (strumento === "Skill") return eSkillDiShinka(ingresso);
-      if (strumento !== "Write" && strumento !== "Edit") return false;
+      if (incarico || (strumento !== "Write" && strumento !== "Edit")) return false;
       const percorso = campo(ingresso, "file_path");
       return percorso !== undefined && stessoPercorso(resolve(cartella, percorso), fileDelloStato);
     },
@@ -238,7 +265,7 @@ export function configurazioneDiProgetto(
     alEvento: (evento) => {
       alEvento(evento);
       // A fine turno il progetto può aver riscritto il suo stato: se è cambiato, lo si riferisce.
-      if (evento.tipo === "turno-concluso") void riferisciLoStato().catch(() => {});
+      if (evento.tipo === "turno-concluso" && !incarico) void riferisciLoStato().catch(() => {});
     },
     alIdSessione,
   };

@@ -8,6 +8,7 @@ import { leggiImpostazioni, type ImpostazioniConversazione } from "../protocollo
 import { leggiAvvio, type AvvioApplicazione } from "../protocollo/applicazioni.ts";
 import { leggiEstensioniScelte } from "../protocollo/avvio-progetto.ts";
 import type { CartellaCollegata, Progetto } from "../protocollo/progetti.ts";
+import { leggiChiImplementa, type ChiImplementa } from "../protocollo/incarichi.ts";
 
 interface ProgettoSalvato extends Progetto {
   /** Identificativo da cui l'harness riprende la conversazione del progetto. */
@@ -20,6 +21,8 @@ interface ProgettoSalvato extends Progetto {
   applicazione?: AvvioApplicazione & { voluta?: boolean };
   /** Le cartelle di altri ambienti in cui il progetto lavora anche (ADR 0050). */
   collegate?: CartellaCollegata[];
+  /** Chi implementa gli incarichi del progetto, se il proprietario lo ha scelto (ADR 0051). */
+  chiImplementa?: ChiImplementa;
 }
 
 /** L'applicazione di un progetto per come la ricorda il registro. */
@@ -172,6 +175,22 @@ export class RegistroProgetti {
     if (progetto === undefined) return false;
     if (collegate.length === 0) delete progetto.collegate;
     else progetto.collegate = collegate.map((voce) => ({ idAmbiente: voce.idAmbiente, cartella: voce.cartella }));
+    await this.#salva();
+    return true;
+  }
+
+  /** Chi implementa gli incarichi del progetto; nulla se il proprietario non lo ha scelto. */
+  chiImplementa(idProgetto: string): ChiImplementa | undefined {
+    const salvato = this.#progetti.get(idProgetto)?.chiImplementa;
+    return salvato === undefined ? undefined : leggiChiImplementa(salvato);
+  }
+
+  /** Ricorda chi implementa, o con nulla che non c'è più nessuno. Falso se il progetto non c'è. */
+  async ricordaChiImplementa(idProgetto: string, scelta: ChiImplementa | undefined): Promise<boolean> {
+    const progetto = this.#progetti.get(idProgetto);
+    if (progetto === undefined) return false;
+    if (scelta === undefined) delete progetto.chiImplementa;
+    else progetto.chiImplementa = { ...scelta };
     await this.#salva();
     return true;
   }

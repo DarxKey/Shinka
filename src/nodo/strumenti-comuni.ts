@@ -6,6 +6,8 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { PERCORSO_ANTEPRIMA_MASSIMO } from "../protocollo/anteprima.ts";
+import { IMPEGNI } from "../protocollo/impostazioni.ts";
+import { INCARICO_MASSIMO } from "../protocollo/incarichi.ts";
 import { COMANDO_MASSIMO } from "../protocollo/applicazioni.ts";
 import { VOCE_MEMORIA_MASSIMA } from "../protocollo/memoria.ts";
 import {
@@ -531,12 +533,35 @@ function definizioniCollegate(chiama: ChiamaStrumento) {
   ];
 }
 
+/** Lo strumento con cui chi guida un progetto affida un pezzo di lavoro a chi implementa (ADR 0051). */
+function definizioneIncarico(chiama: ChiamaStrumento) {
+  const esegui = esecutore(chiama);
+  return tool(
+    "affida_incarico",
+    "Affida un pezzo di lavoro del progetto, di solito l'implementazione con i suoi test, a chi implementa: il modello che il proprietario ha scelto per questo progetto. Lavora in una conversazione a parte, nella stessa cartella, con il modo dei permessi del progetto, e non vede questa conversazione: scrivi l'incarico perché si capisca da solo. Lo strumento aspetta che finisca e riporta il suo resoconto, i file che ha cambiato, i token e la durata. Mentre lavora tu aspetti: le sue richieste di permesso e le sue domande arrivano al proprietario in questa conversazione. Poi controlla tu il lavoro (il diff, i test) prima di dirlo fatto; le correzioni le affidi con un altro incarico. Se il proprietario non ha scelto chi implementa, lo strumento lo dice: allora il lavoro lo fai tu. Un altro modello solo se il proprietario lo chiede per questo incarico.",
+    {
+      incarico: z.string().min(1).max(INCARICO_MASSIMO).describe("Che cosa fare, completo: lo scopo, il comportamento voluto, dove intervenire."),
+      vincoli: z.string().max(INCARICO_MASSIMO).optional().describe("Ciò che va rispettato: convenzioni, cose da non toccare, niente commit se non li chiedi."),
+      file: z.array(z.string().min(1).max(1000)).max(100).optional().describe("I file pertinenti, con il percorso dalla cartella del progetto."),
+      criteri: z.string().min(1).max(INCARICO_MASSIMO).describe("I criteri di accettazione: come si sa che è fatto, e quali comandi di prova devono passare."),
+      modello: z
+        .string()
+        .max(200)
+        .optional()
+        .describe("Solo se il proprietario ha chiesto un altro modello per questo incarico: il suo valore, come nell'elenco dei modelli; per Codex con \"codex:\" davanti."),
+      impegno: z.enum(IMPEGNI).optional().describe("Solo se il proprietario ha chiesto un altro impegno per questo incarico."),
+    },
+    async (argomenti) => esegui("affida_incarico", argomenti),
+  );
+}
+
 /**
  * Il gruppo di strumenti di una conversazione di progetto: quelli comuni, memoria, skill e vault,
- * più l'anteprima. Il progetto Shinka ha anche quelli per chiedere l'installazione e per proporre
- * la versione al gateway.
+ * più l'anteprima e gli incarichi. Il progetto Shinka ha anche quelli per chiedere l'installazione e
+ * per proporre la versione al gateway. La conversazione di un incarico non affida altri incarichi e
+ * non installa: quello lo fa chi guida.
  */
-export function creaStrumentiDiProgetto(chiama: ChiamaStrumento, opzioni: { installazione?: boolean } = {}) {
+export function creaStrumentiDiProgetto(chiama: ChiamaStrumento, opzioni: { installazione?: boolean; incarico?: boolean } = {}) {
   // Sempre caricati: dietro la ricerca degli strumenti Claude non li userebbe di sua iniziativa.
   return createSdkMcpServer({
     name: GRUPPO_STRUMENTI,
@@ -548,7 +573,8 @@ export function creaStrumentiDiProgetto(chiama: ChiamaStrumento, opzioni: { inst
       definizioneAvvioApplicazione(chiama),
       ...definizioniApplicazione(chiama),
       ...definizioniCollegate(chiama),
-      ...(opzioni.installazione === true ? [definizioneInstallazione(chiama), definizioneGateway(chiama)] : []),
+      ...(opzioni.incarico === true ? [] : [definizioneIncarico(chiama)]),
+      ...(opzioni.installazione === true && opzioni.incarico !== true ? [definizioneInstallazione(chiama), definizioneGateway(chiama)] : []),
     ],
   });
 }
