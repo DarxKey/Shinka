@@ -229,3 +229,14 @@ test("lo script porta al nodo l'impronta del certificato da riconoscere, e su Li
   assert.ok(windows.includes(`$SHINKA_IMPRONTA = '${CERTIFICATO.impronta}'`));
   assert.ok(windows.includes("s.improntaDelCentro=process.env.SHINKA_IMPRONTA"));
 });
+
+test("su Windows a ogni accesso parte l'icona del nodo, che avvia il nodo; prima di sostituire il codice si chiude", async () => {
+  const windows = await scriptDiPreparazione({ ...invitoCattivo, sistema: "windows" }, CERTIFICATO);
+  assert.ok(windows.includes(String.raw`$icona = Join-Path $cartella 'guardiano\icona-windows.ps1'`));
+  assert.ok(windows.includes("$collegamento.Arguments = $argomentiIcona"));
+  assert.match(windows, /-STA -WindowStyle Hidden -File/);
+  // L'icona si chiude prima che il nodo si fermi e che guardiano\ venga sostituita.
+  assert.ok(windows.indexOf(String.raw`icona-windows\.ps1`) < windows.indexOf("Fermo il nodo che c''era"));
+  // Il guardiano si avvia con il percorso intero, da cui l'icona lo riconosce.
+  assert.ok(windows.includes(String.raw`'$guardiano = Join-Path $cartella ''guardiano\avvio-nodo.ts'''`));
+});

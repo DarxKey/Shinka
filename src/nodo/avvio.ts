@@ -52,6 +52,7 @@ import { custodiaDelSegreto, leggiOCreaIdentita } from "./identita.ts";
 import { LavoroDelNodo } from "./lavoro.ts";
 import { preparaCartellaSkill } from "./skill.ts";
 import { sistemaDiQuestaMacchina } from "./sistema.ts";
+import { FILE_STATO_DEL_COLLEGAMENTO, scriviStatoDelCollegamento } from "./stato-del-collegamento.ts";
 
 interface Impostazioni {
   centro: string;
@@ -71,6 +72,7 @@ const fileImpostazioni = join(dati, "nodo.json");
 const installata = resolve(import.meta.dirname, "../..");
 const fileInstallazione = join(dati, FILE_INSTALLAZIONE);
 const fileCollegato = join(dati, FILE_COLLEGATO);
+const fileStatoDelCollegamento = join(dati, FILE_STATO_DEL_COLLEGAMENTO);
 const colGuardiano = process.env.SHINKA_GUARDIANO === "1";
 
 try {
@@ -184,6 +186,10 @@ try {
       // Durante i tentativi falliti lo stesso avviso si ripeterebbe a ogni giro.
       if (stato.stato === ultimoStato && stato.stato !== "in-attesa") return;
       ultimoStato = stato.stato;
+      // Per chi guarda da questa macchina, come l'icona del nodo su Windows.
+      void scriviStatoDelCollegamento(fileStatoDelCollegamento, stato).catch((errore: unknown) =>
+        console.error(`Non è stato possibile scrivere lo stato del collegamento: ${errore instanceof Error ? errore.message : String(errore)}`),
+      );
       switch (stato.stato) {
         case "collegamento":
           console.log("Mi collego al centro…");

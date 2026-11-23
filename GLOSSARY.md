@@ -120,6 +120,10 @@ _Avoid_: deploy, aggiornamento, rilascio
 Il programma, fuori dal codice che cambia, che tiene acceso il centro, mette in funzione una versione approvata e rimette quella di prima se la nuova non parte. Un nodo può avere il suo, che fa lo stesso con la versione che il centro gli passa; il gateway ha il suo, per la versione che il proprietario gli ha approvato.
 _Avoid_: supervisor, watchdog, launcher
 
+**Icona del nodo**:
+Su Windows, l'icona di un nodo nell'area di notifica: avvia il nodo a ogni accesso, ne mostra lo stato del collegamento con un pallino colorato e dal suo menu lo ferma, lo avvia e lo riavvia. Sta accanto al guardiano, fuori dalla versione in funzione.
+_Avoid_: tray, systray, icona di sistema
+
 **Nodo indietro**:
 Un nodo collegato che esegue una versione diversa da quella in funzione al centro, o che non dice quale.
 _Avoid_: nodo vecchio, nodo obsoleto, outdated

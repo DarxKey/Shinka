@@ -1,5 +1,6 @@
 # Prepara un ambiente Windows per Shinka: scarica dal centro il nodo e il suo guardiano, installa le
-# dipendenze, fa partire il nodo e lo fa ripartire a ogni accesso a Windows. Il centro mette in cima
+# dipendenze, fa partire il nodo e lo fa ripartire a ogni accesso a Windows, con la sua icona
+# nell'area di notifica (guardiano\icona-windows.ps1, ADR 0045). Il centro mette in cima
 # a questo file le scelte fatte nella pagina Ambienti ($SHINKA_CENTRO, $SHINKA_PACCHETTO,
 # $SHINKA_NOME, $SHINKA_DESCRIZIONE). Si può rilanciare: l'identità del nodo e i suoi dati restano.
 #
@@ -70,6 +71,10 @@ function Prepara-AmbienteShinka {
 
     New-Item -ItemType Directory -Force -Path $cartella | Out-Null
 
+    # L'icona del nodo si chiude: sta in guardiano\, che viene sostituita, e ripartirà con quella nuova.
+    $icone = @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" | Where-Object { $_.CommandLine -match 'icona-windows\.ps1' })
+    foreach ($aperta in $icone) { Stop-Process -Id $aperta.ProcessId -Force -ErrorAction SilentlyContinue }
+
     # Un nodo già acceso su questa macchina si ferma, con ciò che ha avviato, per sostituirne il codice.
     $accesi = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.CommandLine -match 'guardiano[\\/]avvio-nodo\.ts' })
     if ($accesi.Count -gt 0) {
@@ -121,23 +126,27 @@ function Prepara-AmbienteShinka {
   foreach ($nome in 'SHINKA_FILE', 'SHINKA_CENTRO', 'SHINKA_NOME', 'SHINKA_DESCRIZIONE', 'SHINKA_IMPRONTA') { Remove-Item "Env:$nome" -ErrorAction SilentlyContinue }
   if ($LASTEXITCODE -ne 0) { Fallisci 'non è stato possibile salvare le scelte del nodo.'; return }
 
-  # Il nodo parte nascosto, con il suo registro: lo stesso avvio vale adesso e a ogni accesso a Windows.
+  # Il nodo parte nascosto, con il suo registro. Lo avvia l'icona, a ogni accesso a Windows, e la
+  # riconosce dal percorso intero del guardiano.
   $avvio = Join-Path $cartella 'avvia-nodo.ps1'
   $righe = @(
     '# Avvia il guardiano del nodo di Shinka, nascosto, con il registro in nodo.log. Scritto da Shinka.',
     '$cartella = Split-Path -Parent $MyInvocation.MyCommand.Path',
     '$env:SHINKA_INSTALLATA = Join-Path $cartella ''shinka''',
     '$env:SHINKA_DATI_NODO = Join-Path $cartella ''dati-nodo''',
-    ('Start-Process -FilePath $env:ComSpec -WorkingDirectory $cartella -WindowStyle Hidden -ArgumentList ''/d /c ""' + $node.Replace("'", "''") + '" guardiano\avvio-nodo.ts >> nodo.log 2>&1"''')
+    '$guardiano = Join-Path $cartella ''guardiano\avvio-nodo.ts''',
+    ('Start-Process -FilePath $env:ComSpec -WorkingDirectory $cartella -WindowStyle Hidden -ArgumentList (''/d /c ""' + $node.Replace("'", "''") + '" "'' + $guardiano + ''" >> nodo.log 2>&1"'')')
   )
   Set-Content -LiteralPath $avvio -Value $righe -Encoding UTF8
+  $icona = Join-Path $cartella 'guardiano\icona-windows.ps1'
+  $argomentiIcona = "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$icona`""
 
-  Passo 'Faccio partire il nodo a ogni accesso a Windows'
+  Passo 'Faccio partire il nodo e la sua icona a ogni accesso a Windows'
   $esecuzioneAutomatica = Join-Path ([Environment]::GetFolderPath('Startup')) 'Shinka nodo.lnk'
   $shell = New-Object -ComObject WScript.Shell
   $collegamento = $shell.CreateShortcut($esecuzioneAutomatica)
   $collegamento.TargetPath = Join-Path $PSHOME 'powershell.exe'
-  $collegamento.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$avvio`""
+  $collegamento.Arguments = $argomentiIcona
   $collegamento.WorkingDirectory = $cartella
   $collegamento.WindowStyle = 7
   $collegamento.Description = 'Nodo di Shinka'
@@ -147,6 +156,8 @@ function Prepara-AmbienteShinka {
   $inizio = @(Get-Content -LiteralPath $registro -Encoding UTF8).Count
   Passo 'Faccio partire il nodo'
   & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $avvio
+  # L'icona trova il nodo già acceso e lo tiene d'occhio; se non si può mostrare, il nodo resta acceso lo stesso.
+  Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList $argomentiIcona -WindowStyle Hidden
 
   Passo 'Aspetto che il nodo si presenti al centro'
   $esito = ''
@@ -178,6 +189,7 @@ function Prepara-AmbienteShinka {
   }
   Write-Host 'Poi, nella pagina Impostazioni, fai gli accessi di Claude o Codex per questo ambiente.'
   Write-Host "Il nodo sta in $cartella; il suo registro è $registro."
+  Write-Host "Nell'area di notifica c'è la sua icona: dal suo menu lo fermi, lo avvii e lo riavvii."
 }
 
 Prepara-AmbienteShinka
