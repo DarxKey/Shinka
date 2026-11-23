@@ -14,6 +14,7 @@ Il 23 novembre 2026 il proprietario ha chiesto di far lavorare insieme il proget
 - **I permessi come nel progetto**, per scelta del proprietario: comandi, file scritti e file modificati seguono il modo dei permessi del progetto; elencare le cartelle e leggere un file no, come Read.
 - **Solo i progetti.** La Home ha già i suoi strumenti per agire negli ambienti, nella cartella di ogni argomento.
 - **Il progetto Shinka Desktop sul PC** lo elimina il proprietario quando il collegamento funziona: la cartella resta, e due Claude sulla stessa cartella si pesterebbero i piedi.
+- **Si pubblica anche da una cartella collegata.** La pubblicazione di Shinka Desktop ([ADR 0049](0049-shinka-desktop-si-aggiorna-dal-centro.md)) sceglie tra le cartelle dei progetti e le loro cartelle collegate, che il centro elenca; con una collegata, solo se è davvero del progetto indicato.
 
 ## Conseguenze
 

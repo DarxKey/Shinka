@@ -5,27 +5,33 @@
  */
 
 import { useEffect, useState, type ReactNode } from "react";
-import type { StatoDesktop } from "../../src/protocollo/desktop.ts";
-import type { VoceProgetto } from "../../src/protocollo/progetti.ts";
+import type { FonteDiPubblicazione, StatoDesktop } from "../../src/protocollo/desktop.ts";
 import { leggiDesktop, pubblicaDesktop } from "./api.ts";
 import { momentoInBreve } from "./descrivi.ts";
 
 const CHIAVE_SCELTE = "shinka.desktop.pubblicazione";
 
-function scelteRicordate(): { idProgetto?: string; cartella?: string } {
+function scelteRicordate(): { fonte?: string; cartella?: string } {
   try {
-    return JSON.parse(localStorage.getItem(CHIAVE_SCELTE) ?? "{}") as { idProgetto?: string; cartella?: string };
+    return JSON.parse(localStorage.getItem(CHIAVE_SCELTE) ?? "{}") as { fonte?: string; cartella?: string };
   } catch {
     return {};
   }
 }
 
-export function SezioneDesktop({ progetti }: { progetti: readonly VoceProgetto[] }): ReactNode {
+/** Una fonte in una chiave sola: il progetto, e l'ambiente se è una cartella collegata. */
+function chiaveDi(fonte: FonteDiPubblicazione): string {
+  return `${fonte.idProgetto}|${fonte.idAmbiente ?? ""}`;
+}
+
+export function SezioneDesktop(): ReactNode {
   const [stato, setStato] = useState<StatoDesktop>();
   const ricordate = scelteRicordate();
-  const proposto = progetti.find((progetto) => progetto.id === ricordate.idProgetto) ?? progetti.find((progetto) => /desktop/i.test(progetto.nome)) ?? progetti[0];
-  const [idProgetto, setIdProgetto] = useState(proposto?.id ?? "");
-  const [cartella, setCartella] = useState(ricordate.cartella ?? "dist");
+  const fonti = stato?.fonti ?? [];
+  const proposta = fonti.find((fonte) => chiaveDi(fonte) === ricordate.fonte) ?? fonti.find((fonte) => /desktop/i.test(fonte.cartella)) ?? fonti[0];
+  const [chiave, setChiave] = useState("");
+  const scelta = fonti.find((fonte) => chiaveDi(fonte) === chiave) ?? proposta;
+  const [cartella, setCartella] = useState(ricordate.cartella ?? "release");
   const [password, setPassword] = useState("");
   const [lavoro, setLavoro] = useState(false);
   const [esito, setEsito] = useState<{ errore?: string; fatto?: string }>({});
@@ -35,9 +41,6 @@ export function SezioneDesktop({ progetti }: { progetti: readonly VoceProgetto[]
       .then(setStato)
       .catch(() => setStato({}));
   }, []);
-  useEffect(() => {
-    if (idProgetto === "" && proposto !== undefined) setIdProgetto(proposto.id);
-  }, [idProgetto, proposto]);
 
   const pubblicata = stato?.pubblicata;
   return (
@@ -63,8 +66,9 @@ export function SezioneDesktop({ progetti }: { progetti: readonly VoceProgetto[]
           evento.preventDefault();
           setLavoro(true);
           setEsito({});
-          localStorage.setItem(CHIAVE_SCELTE, JSON.stringify({ idProgetto, cartella }));
-          pubblicaDesktop({ idProgetto, cartella, password })
+          if (scelta === undefined) return;
+          localStorage.setItem(CHIAVE_SCELTE, JSON.stringify({ fonte: chiaveDi(scelta), cartella }));
+          pubblicaDesktop({ idProgetto: scelta.idProgetto, ...(scelta.idAmbiente === undefined ? {} : { idAmbiente: scelta.idAmbiente }), cartella, password })
             .then((nuovo) => {
               setStato(nuovo);
               setPassword("");
@@ -75,30 +79,30 @@ export function SezioneDesktop({ progetti }: { progetti: readonly VoceProgetto[]
         }}
       >
         <p className="tenue">
-          Per pubblicarne una nuova: il progetto in cui l'hai costruita e la cartella in cui electron-builder ha messo latest.yml, l'installer e il suo
-          .blockmap. Il centro li prende da lì, controlla che l'installer sia quello di latest.yml e che la versione venga dopo quella pubblicata.
+          Per pubblicarne una nuova: la cartella in cui l'hai costruita (di un progetto, o collegata a un progetto) e, dentro, quella in cui
+          electron-builder ha messo latest.yml, l'installer e il suo .blockmap. Il centro li prende da lì, controlla che l'installer sia quello di latest.yml e che la versione venga dopo quella pubblicata.
         </p>
         <label>
-          Progetto
-          <select value={idProgetto} onChange={(evento) => setIdProgetto(evento.target.value)} required disabled={lavoro}>
-            {progetti.length === 0 && <option value="">Nessun progetto</option>}
-            {progetti.map((progetto) => (
-              <option key={progetto.id} value={progetto.id}>
-                {progetto.nome} · {progetto.nomeAmbiente}
+          Dove l'hai costruita
+          <select value={scelta === undefined ? "" : chiaveDi(scelta)} onChange={(evento) => setChiave(evento.target.value)} required disabled={lavoro}>
+            {fonti.length === 0 && <option value="">Nessun progetto</option>}
+            {fonti.map((fonte) => (
+              <option key={chiaveDi(fonte)} value={chiaveDi(fonte)}>
+                {fonte.idAmbiente === undefined ? `${fonte.nomeProgetto} · ${fonte.nomeAmbiente}` : `${fonte.cartella} · ${fonte.nomeAmbiente}, collegata a ${fonte.nomeProgetto}`}
               </option>
             ))}
           </select>
         </label>
         <label>
-          Cartella nel progetto
-          <input value={cartella} onChange={(evento) => setCartella(evento.target.value)} placeholder="dist" spellCheck={false} autoCapitalize="none" disabled={lavoro} />
+          Cartella, dentro quella
+          <input value={cartella} onChange={(evento) => setCartella(evento.target.value)} placeholder="release" spellCheck={false} autoCapitalize="none" disabled={lavoro} />
         </label>
         <label>
           Password di Shinka
           <input type="password" value={password} onChange={(evento) => setPassword(evento.target.value)} autoComplete="current-password" required disabled={lavoro} />
         </label>
         <div className="pulsanti">
-          <button type="submit" className="approva" disabled={lavoro || idProgetto === "" || password === ""}>
+          <button type="submit" className="approva" disabled={lavoro || scelta === undefined || password === ""}>
             {lavoro ? "Pubblico…" : "Pubblica"}
           </button>
         </div>

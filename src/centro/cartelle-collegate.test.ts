@@ -65,6 +65,25 @@ test("il proprietario collega una cartella di un altro ambiente, e il progetto c
   const altrove = await banco.comuniDelProgetto(progetto.id, "leggi_nella_collegata", { ambiente: "Marte", percorso: "a" });
   assert.equal(altrove.errore, true);
 
+  // Da una cartella collegata si pubblica anche Shinka Desktop (ADR 0049, 0050).
+  const fonti = (await chiedi(banco, "GET", "/api/desktop")).json().fonti as { idAmbiente?: string; cartella: string }[];
+  assert.ok(fonti.some((fonte) => fonte.idAmbiente === ID_NODO && fonte.cartella === stato.collegate[0]?.cartella));
+  const { createHash, randomBytes } = await import("node:crypto");
+  const { gzipSync } = await import("node:zlib");
+  const installer = randomBytes(50_000);
+  const sha512 = createHash("sha512").update(installer).digest("base64");
+  const nome = "Shinka-Desktop-0.3.0-installa.exe";
+  await mkdir(join(desktop, "release"));
+  await writeFile(join(desktop, "release", nome), installer);
+  await writeFile(join(desktop, "release", `${nome}.blockmap`), gzipSync("{}"));
+  await writeFile(join(desktop, "release", "latest.yml"), `version: 0.3.0\r\nfiles:\r\n  - url: ${nome}\r\n    sha512: ${sha512}\r\n    size: ${installer.length}\r\npath: ${nome}\r\nsha512: ${sha512}\r\n`);
+  const { PASSWORD } = await import("../prove/banco.ts");
+  const pubblicata = await chiedi(banco, "POST", "/api/desktop/pubblicazione", { idProgetto: progetto.id, idAmbiente: ID_NODO, cartella: "release", password: PASSWORD });
+  assert.equal(pubblicata.statusCode, 200, pubblicata.body);
+  assert.equal(pubblicata.json().pubblicata.versione, "0.3.0");
+  const nonCollegata = await chiedi(banco, "POST", "/api/desktop/pubblicazione", { idProgetto: progetto.id, idAmbiente: "altro", cartella: "release", password: PASSWORD });
+  assert.equal(nonCollegata.statusCode, 409);
+
   // Scollegata, gli strumenti non la raggiungono più.
   const scollegata = await chiedi(banco, "DELETE", `/api/progetti/${progetto.id}/collegate/${ID_NODO}`);
   assert.deepEqual((scollegata.json() as StatoCollegate).collegate, []);

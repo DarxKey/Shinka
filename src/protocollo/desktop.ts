@@ -20,11 +20,28 @@ export interface StatoDesktop {
     /** I byte dell'installer. */
     dimensione: number;
   };
+  /** Le cartelle da cui si può pubblicare. */
+  fonti?: FonteDiPubblicazione[];
+}
+
+/**
+ * Da dove si può pubblicare: la cartella di un progetto, o una sua cartella collegata in un altro
+ * ambiente (ADR 0050). Le dice il centro nello stato.
+ */
+export interface FonteDiPubblicazione {
+  idProgetto: string;
+  nomeProgetto: string;
+  /** Presente per una cartella collegata: l'ambiente in cui sta. */
+  idAmbiente?: string;
+  nomeAmbiente: string;
+  cartella: string;
 }
 
 /** Ciò che serve per pubblicare una versione: da quale progetto e cartella, e la password di Shinka. */
 export interface RichiestaDiPubblicazione {
   idProgetto: string;
+  /** Per pubblicare da una cartella collegata del progetto: l'ambiente in cui sta. */
+  idAmbiente?: string;
   /** La cartella, dentro il progetto, in cui electron-builder ha messo latest.yml, l'installer e il .blockmap. */
   cartella: string;
   password: string;

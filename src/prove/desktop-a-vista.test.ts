@@ -55,8 +55,8 @@ test("Shinka Desktop nelle Impostazioni: pubblicare dalla cartella del progetto"
 
   const sezione = pagina.locator("section.sezione-desktop");
   await sezione.getByText("Nessuna versione pubblicata.").waitFor();
-  assert.equal(await sezione.locator("select").inputValue(), progetto.id);
-  assert.equal(await sezione.getByLabel("Cartella nel progetto").inputValue(), "dist");
+  assert.equal(await sezione.locator("select").inputValue(), `${progetto.id}|`);
+  await sezione.getByLabel("Cartella, dentro quella").fill("dist");
   await sezione.getByLabel("Password di Shinka").fill(PASSWORD);
   await sezione.getByRole("button", { name: "Pubblica" }).click();
   await sezione.getByText(/Pubblicata la versione 0\.2\.0: le app la prendono/).waitFor();

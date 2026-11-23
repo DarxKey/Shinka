@@ -50,7 +50,7 @@ import type { Canale } from "./canale.ts";
 import { MANIFESTO, type AggiornamentiDesktop } from "./desktop.ts";
 import type { CartelleCollegate } from "./cartelle-collegate.ts";
 import { intervalliChiesti, piuParti } from "./intervalli.ts";
-import { PROTOCOLLO_DEI_CLIENTI, type RichiestaDiPubblicazione } from "../protocollo/desktop.ts";
+import { PROTOCOLLO_DEI_CLIENTI, type FonteDiPubblicazione, type RichiestaDiPubblicazione } from "../protocollo/desktop.ts";
 import { inBreve, versioneDi } from "../protocollo/versione.ts";
 import { GENERI_DISPOSITIVO, type GenereDispositivo } from "../protocollo/sicurezza.ts";
 import type { AggiornamentoDeiNodi } from "./aggiornamento-nodi.ts";
@@ -2223,7 +2223,20 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
   // Shinka Desktop: la versione pubblicata, la pubblicazione dalle Impostazioni, e i file che
   // electron-updater scarica, a parti se le chiede (ADR 0049).
   const senzaDesktop = { errore: "Questa installazione non serve gli aggiornamenti di Shinka Desktop." };
-  app.get("/api/desktop", async (_richiesta, risposta) => (opzioni.desktop === undefined ? risposta.code(404).send(senzaDesktop) : opzioni.desktop.stato()));
+  // Da dove si può pubblicare: la cartella di ogni progetto, e le sue cartelle collegate.
+  const fontiDiPubblicazione = (): FonteDiPubblicazione[] =>
+    lavori.stato().progetti.flatMap((progetto) => [
+      { idProgetto: progetto.id, nomeProgetto: progetto.nome, nomeAmbiente: progetto.nomeAmbiente, cartella: progetto.cartella },
+      ...(opzioni.collegate?.stato(progetto.id)?.collegate ?? []).map((voce) => ({
+        idProgetto: progetto.id,
+        nomeProgetto: progetto.nome,
+        idAmbiente: voce.idAmbiente,
+        nomeAmbiente: voce.nomeAmbiente,
+        cartella: voce.cartella,
+      })),
+    ]);
+  const statoDesktop = (desktop: AggiornamentiDesktop) => ({ ...desktop.stato(), fonti: fontiDiPubblicazione() });
+  app.get("/api/desktop", async (_richiesta, risposta) => (opzioni.desktop === undefined ? risposta.code(404).send(senzaDesktop) : statoDesktop(opzioni.desktop)));
 
   app.post<{ Body: RichiestaDiPubblicazione }>(
     "/api/desktop/pubblicazione",
@@ -2235,6 +2248,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
           additionalProperties: false,
           properties: {
             idProgetto: { type: "string", minLength: 1, maxLength: 200 },
+            idAmbiente: { type: "string", minLength: 1, maxLength: 200 },
             cartella: { type: "string", maxLength: 1000 },
             password: { type: "string", minLength: 1, maxLength: 1024 },
           },
@@ -2258,16 +2272,23 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       }
       const file = opzioni.file;
       const { idProgetto } = richiesta.body;
+      // Da una cartella collegata del progetto, se la richiesta la indica: solo da una che lo è davvero.
+      let altrove: { idAmbiente: string; cartella: string } | undefined;
+      if (richiesta.body.idAmbiente !== undefined) {
+        const collegata = opzioni.collegate?.stato(idProgetto)?.collegate.find((voce) => voce.idAmbiente === richiesta.body.idAmbiente);
+        if (collegata === undefined) return risposta.code(409).send({ errore: "In quell'ambiente il progetto non ha una cartella collegata." });
+        altrove = { idAmbiente: collegata.idAmbiente, cartella: collegata.cartella };
+      }
       const cartella = richiesta.body.cartella.trim().replace(/^[/\\]+|[/\\]+$/g, "");
       const dentro = (nome: string): string => (cartella === "" ? nome : `${cartella}/${nome}`);
-      const letto = await file.leggi(idProgetto, dentro(MANIFESTO));
+      const letto = await file.leggi(idProgetto, dentro(MANIFESTO), altrove);
       const esito =
         "motivo" in letto
           ? { motivo: `${MANIFESTO}: ${letto.motivo}` }
           : await opzioni.desktop.pubblica({
               manifesto: Buffer.from(letto.dati, "base64"),
               apri: async (nome) => {
-                const scaricato = await file.scarica(idProgetto, dentro(nome));
+                const scaricato = await file.scarica(idProgetto, dentro(nome), altrove);
                 if ("motivo" in scaricato) return scaricato;
                 if (scaricato.comeArchivio) {
                   scaricato.flusso.destroy();
@@ -2281,7 +2302,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
         return risposta.code(409).send({ errore: esito.motivo });
       }
       registroAccessi.annota("desktop-pubblicato", chiDi(richiesta), { dettaglio: `versione ${esito.versione}` });
-      return opzioni.desktop.stato();
+      return statoDesktop(opzioni.desktop);
     },
   );
 

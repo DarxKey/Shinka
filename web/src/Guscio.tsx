@@ -255,7 +255,7 @@ export function Guscio({ allUscita }: { allUscita: () => void }): ReactNode {
   } else if (vista.tipo === "sicurezza") {
     contenuto = <PaginaSicurezza menu={menu} ambienti={quadro.ambienti?.ambienti ?? []} />;
   } else if (vista.tipo === "impostazioni") {
-    contenuto = <PaginaImpostazioni menu={menu} progetti={quadro.progetti?.progetti ?? []} />;
+    contenuto = <PaginaImpostazioni menu={menu} />;
   } else if (vista.tipo === "home") {
     contenuto = (
       <Chat

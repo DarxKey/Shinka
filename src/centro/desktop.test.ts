@@ -174,7 +174,7 @@ test("la pubblicazione rifiuta un gettone di dispositivo, la password sbagliata,
   const hashSbagliato = await pubblica();
   assert.equal(hashSbagliato.statusCode, 409);
   assert.match(hashSbagliato.json().errore, /SHA-512/);
-  assert.deepEqual((await banco.centro.inject({ method: "GET", url: "/api/desktop", headers: { authorization: `Bearer ${token}` } })).json(), {});
+  assert.equal((await banco.centro.inject({ method: "GET", url: "/api/desktop", headers: { authorization: `Bearer ${token}` } })).json().pubblicata, undefined);
 
   metti(costruita("0.2.0"));
   assert.equal((await pubblica()).statusCode, 200);

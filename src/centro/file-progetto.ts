@@ -61,6 +61,12 @@ interface InAttesa {
 
 export type Esito<T> = T | { motivo: string };
 
+/** Un'altra cartella di un progetto, in un ambiente: una cartella collegata (ADR 0050). */
+export interface Altrove {
+  idAmbiente: string;
+  cartella: string;
+}
+
 export class FileDeiProgetti {
   readonly #o: OpzioniFile;
   readonly #locale: PortaFile;
@@ -97,9 +103,13 @@ export class FileDeiProgetti {
     return this.#chiedi(idProgetto, (idRichiesta, cartella) => ({ tipo: "file-cerca", idRichiesta, cartella, testo: cercato }), leggiTrovati);
   }
 
-  async leggi(idProgetto: string, percorso: string): Promise<Esito<FileLetto>> {
+  /**
+   * Legge un file del progetto. Con `altrove` lo legge in un'altra cartella del progetto, come una
+   * cartella collegata in un altro ambiente (ADR 0050): chi chiama ha già controllato che sia sua.
+   */
+  async leggi(idProgetto: string, percorso: string, altrove?: Altrove): Promise<Esito<FileLetto>> {
     if (!percorsoRelativoValido(percorso) || percorso === "") return { motivo: "Il percorso non è valido." };
-    const letto = await this.#chiedi(idProgetto, (idRichiesta, cartella) => ({ tipo: "file-leggi", idRichiesta, cartella, percorso }), leggiFileLetto);
+    const letto = await this.#chiedi(idProgetto, (idRichiesta, cartella) => ({ tipo: "file-leggi", idRichiesta, cartella, percorso }), leggiFileLetto, altrove);
     if ("dati" in letto && letto.dimensione > FILE_LETTO_MASSIMO) return { motivo: "Il file è troppo grande per l'anteprima." };
     return letto;
   }
@@ -109,13 +119,13 @@ export class FileDeiProgetti {
    * flusso: i pezzi arrivano mentre il browser scarica. Il nodo ne manda pochi alla volta, e il
    * centro gli dice di andare avanti solo quando il browser li ha presi.
    */
-  async scarica(idProgetto: string, percorso: string): Promise<Esito<Scaricato>> {
+  async scarica(idProgetto: string, percorso: string, altrove?: Altrove): Promise<Esito<Scaricato>> {
     if (!percorsoRelativoValido(percorso)) return { motivo: "Il percorso non è valido." };
     const progetto = this.#o.progetti.trova(idProgetto);
     if (progetto === undefined) return { motivo: "Progetto non trovato." };
-    if (!this.#o.ambienti.attivo(progetto.idAmbiente)) return { motivo: "L'ambiente del progetto è spento." };
+    const { idAmbiente, cartella } = altrove ?? { idAmbiente: progetto.idAmbiente, cartella: progetto.cartella };
+    if (!this.#o.ambienti.attivo(idAmbiente)) return { motivo: altrove === undefined ? "L'ambiente del progetto è spento." : "L'ambiente della cartella è spento." };
     const idRichiesta = randomUUID();
-    const idAmbiente = progetto.idAmbiente;
     return new Promise((risolvi) => {
       const flusso = new PassThrough({ highWaterMark: 2 * 1024 * 1024 });
       const scaricamento: InScaricamento = {
@@ -139,7 +149,7 @@ export class FileDeiProgetti {
         this.#scaricamenti.delete(idRichiesta);
         if (!scaricamento.finito) this.#invia(idAmbiente, { tipo: "file-scarica-annulla", idRichiesta });
       });
-      if (!this.#invia(idAmbiente, { tipo: "file-scarica", idRichiesta, cartella: progetto.cartella, percorso })) {
+      if (!this.#invia(idAmbiente, { tipo: "file-scarica", idRichiesta, cartella, percorso })) {
         this.#chiudiScaricamento(idRichiesta, "L'ambiente del progetto è spento.");
       }
     });
@@ -215,10 +225,12 @@ export class FileDeiProgetti {
     idProgetto: string,
     comando: (idRichiesta: string, cartella: string) => ComandoFile,
     leggi: (valore: unknown) => T | undefined,
+    altrove?: Altrove,
   ): Promise<Esito<T>> {
-    const progetto = this.#o.progetti.trova(idProgetto);
-    if (progetto === undefined) return { motivo: "Progetto non trovato." };
-    if (!this.#o.ambienti.attivo(progetto.idAmbiente)) return { motivo: "L'ambiente del progetto è spento." };
+    const trovato = this.#o.progetti.trova(idProgetto);
+    if (trovato === undefined) return { motivo: "Progetto non trovato." };
+    const progetto = altrove === undefined ? trovato : { ...trovato, ...altrove };
+    if (!this.#o.ambienti.attivo(progetto.idAmbiente)) return { motivo: altrove === undefined ? "L'ambiente del progetto è spento." : "L'ambiente della cartella è spento." };
     let esito: unknown;
     try {
       esito = await this.#manda(progetto.idAmbiente, (idRichiesta) => comando(idRichiesta, progetto.cartella));
