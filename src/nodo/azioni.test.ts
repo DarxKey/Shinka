@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { cartellaDellArgomento, leggiAzione, leggiEsito, traIFileDellaHome } from "../protocollo/azioni.ts";
-import { eseguiAzione, leggiElaborato } from "./azioni.ts";
+import { eseguiAzione, eseguiAzioneInCartella, leggiElaborato } from "./azioni.ts";
 
 const ARGOMENTO = "2026-11-11-abc123";
 const diWindows = process.platform === "win32";
@@ -216,4 +216,30 @@ test("dimensione e data dei file passano dal nodo al centro, e un nodo di prima 
   const storti = leggiEsito({ riuscita: true, testo: "1 file", file: ["a.md"], dettagli: [{ byte: -1, modificatoIl: "x" }] });
   assert.deepEqual(storti?.file, ["a.md"]);
   assert.equal(storti?.dettagli, undefined);
+});
+
+test("in una cartella collegata: controllo, comandi e file, e la modifica di un pezzo che tiene il modo di andare a capo", async (t) => {
+  const cartella = await mkdtemp(join(tmpdir(), "shinka-collegata-"));
+  t.after(() => rm(cartella, { recursive: true, force: true }));
+
+  assert.equal((await eseguiAzioneInCartella(cartella, { tipo: "controlla-cartella" })).riuscita, true);
+  const manca = await eseguiAzioneInCartella(join(cartella, "non-c-e"), { tipo: "controlla-cartella" });
+  assert.deepEqual([manca.riuscita, /non c'è/.test(manca.testo)], [false, true]);
+  assert.equal((await eseguiAzioneInCartella("relativa", { tipo: "leggi-file", percorso: "a" })).riuscita, false);
+
+  await writeFile(join(cartella, "win.ts"), "﻿const a = 1;\r\nconst b = 2;\r\n");
+  const modificata = await eseguiAzioneInCartella(cartella, { tipo: "modifica-file", percorso: "win.ts", vecchio: "const a = 1;\nconst b", nuovo: "const a = 10;\nconst b" });
+  assert.equal(modificata.riuscita, true, modificata.testo);
+  assert.equal(await readFile(join(cartella, "win.ts"), "utf8"), "﻿const a = 10;\r\nconst b = 2;\r\n");
+
+  await writeFile(join(cartella, "doppio.txt"), "x x x");
+  const ambiguo = await eseguiAzioneInCartella(cartella, { tipo: "modifica-file", percorso: "doppio.txt", vecchio: "x", nuovo: "y" });
+  assert.deepEqual([ambiguo.riuscita, /3 volte/.test(ambiguo.testo)], [false, true]);
+  assert.equal((await eseguiAzioneInCartella(cartella, { tipo: "modifica-file", percorso: "doppio.txt", vecchio: "x", nuovo: "y", tutte: true })).riuscita, true);
+  assert.equal(await readFile(join(cartella, "doppio.txt"), "utf8"), "y y y");
+  const assente = await eseguiAzioneInCartella(cartella, { tipo: "modifica-file", percorso: "doppio.txt", vecchio: "zeta", nuovo: "y" });
+  assert.deepEqual([assente.riuscita, /non c'è/.test(assente.testo)], [false, true]);
+
+  const comando = await eseguiAzioneInCartella(cartella, { tipo: "esegui", comando: process.platform === "win32" ? "Get-Content doppio.txt" : "cat doppio.txt" });
+  assert.match(comando.testo, /y y y/);
 });

@@ -40,6 +40,7 @@ export async function eseguiAzione(
     return { riuscita: false, testo: "L'argomento indicato non è valido." };
   }
   const cartella = join(resolve(radiceProgetti), CARTELLA_HOME, idArgomento);
+  if (azione.tipo === "controlla-cartella") return { riuscita: false, testo: "Si controllano solo le cartelle collegate." };
   try {
     if (azione.tipo === "elenca-file") {
       // Guardare non crea nulla: un argomento che qui non ha lavorato non ha una cartella.
@@ -66,10 +67,68 @@ export async function eseguiAzione(
         return await scrivi(cartella, azione.percorso, azione.contenuto);
       case "leggi-file":
         return await leggi(cartella, azione.percorso);
+      case "modifica-file":
+        return await modifica(cartella, azione);
     }
   } catch (errore) {
     return { riuscita: false, testo: errore instanceof Error ? errore.message : String(errore) };
   }
+}
+
+/**
+ * Esegue un'azione in una cartella collegata a un progetto (ADR 0050): la cartella è data per
+ * intero, deve esistere, e non si crea. Non lancia mai: l'esito dice com'è andata.
+ */
+export async function eseguiAzioneInCartella(cartella: string, azione: AzioneInAmbiente): Promise<EsitoAzione> {
+  try {
+    if (!isAbsolute(cartella)) return { riuscita: false, testo: "La cartella collegata va indicata per intero." };
+    const info = await stat(cartella).catch(() => undefined);
+    if (info === undefined || !info.isDirectory()) return { riuscita: false, testo: `La cartella ${cartella} non c'è in questo ambiente.` };
+    switch (azione.tipo) {
+      case "esegui":
+        return await esegui(cartella, azione.comando, azione.durataMs ?? DURATA_COMANDO_MS);
+      case "scrivi-file":
+        return await scrivi(cartella, azione.percorso, azione.contenuto);
+      case "leggi-file":
+        return await leggi(cartella, azione.percorso);
+      case "modifica-file":
+        return await modifica(cartella, azione);
+      case "elenca-file": {
+        const { percorsi, quanti, dettagli } = await elencaFile(cartella);
+        return { riuscita: true, testo: `${quanti} file`, file: percorsi, quantiFile: quanti, ...(dettagli === undefined ? {} : { dettagli }) };
+      }
+      case "leggi-elaborato":
+        return { riuscita: false, testo: "Nelle cartelle collegate non si mostrano elaborati." };
+      case "controlla-cartella": {
+        const vera = await realpath(cartella);
+        return { riuscita: true, testo: `La cartella ${vera} c'è.`, percorso: vera };
+      }
+    }
+  } catch (errore) {
+    return { riuscita: false, testo: errore instanceof Error ? errore.message : String(errore) };
+  }
+}
+
+/** Cambia un pezzo di un file di testo, tenendo il suo modo di andare a capo e il segno iniziale. */
+async function modifica(cartella: string, azione: Extract<AzioneInAmbiente, { tipo: "modifica-file" }>): Promise<EsitoAzione> {
+  const letto = await leggi(cartella, azione.percorso);
+  if (!letto.riuscita || letto.percorso === undefined) return letto;
+  const completo = letto.percorso;
+  const grezzo = await readFile(completo, "utf8");
+  const segno = grezzo.startsWith("\uFEFF") ? "\uFEFF" : "";
+  const testo = grezzo.slice(segno.length);
+  // Un file di Windows va a capo con \r\n: il testo cercato, scritto con \n, va adattato.
+  const conCrlf = testo.includes("\r\n");
+  const adatta = (pezzo: string): string => (conCrlf && !pezzo.includes("\r") ? pezzo.replace(/\n/g, "\r\n") : pezzo);
+  const vecchio = adatta(azione.vecchio);
+  const nuovo = adatta(azione.nuovo);
+  const volte = testo.split(vecchio).length - 1;
+  if (volte === 0) return { riuscita: false, testo: `In ${completo} il testo da cambiare non c'è: rileggi il file e copialo com'è.`, percorso: completo };
+  if (volte > 1 && azione.tutte !== true) {
+    return { riuscita: false, testo: `In ${completo} il testo da cambiare compare ${volte} volte: aggiungi le righe intorno perché sia uno solo, o chiedi di cambiarli tutti.`, percorso: completo };
+  }
+  await writeFile(completo, segno + testo.split(vecchio).join(nuovo), "utf8");
+  return { riuscita: true, testo: volte === 1 ? `File modificato: ${completo}` : `File modificato in ${volte} punti: ${completo}`, percorso: completo };
 }
 
 /** Cartelle che non sono lavoro dell'argomento: il repository e le dipendenze scaricate. */

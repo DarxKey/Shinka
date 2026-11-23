@@ -194,6 +194,8 @@ export type ComandoPerNodo =
   | { tipo: "chiudi-conversazione"; idConversazione: string }
   /** Un'azione della Home in questo ambiente, nella cartella di un suo argomento. */
   | { tipo: "azione"; idRichiesta: string; idArgomento: string; azione: AzioneInAmbiente }
+  /** Un'azione di un progetto in una sua cartella collegata, in questo ambiente (ADR 0050). */
+  | { tipo: "azione-in-cartella"; idRichiesta: string; cartella: string; azione: AzioneInAmbiente }
   /** Il terminale di un progetto di questo ambiente. */
   | ComandoTerminale
   /** L'anteprima dell'applicazione di un progetto di questo ambiente. */

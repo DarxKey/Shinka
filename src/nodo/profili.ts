@@ -124,6 +124,13 @@ export const ISTRUZIONI_ANTEPRIMA = `# Anteprima dell'applicazione
 - L'anteprima mostra un'applicazione per volta, dalla radice del suo indirizzo: non serve cambiare i percorsi dell'applicazione.
 - Accanto alla chat il proprietario ha anche un terminale nella cartella del progetto, in questo ambiente. È suo: tu non lo vedi e non ci scrivi. Se un comando conviene che lo lanci lui, scriviglielo.`;
 
+/** Ciò che un progetto sa delle cartelle che il proprietario gli collega in altri ambienti (ADR 0050). */
+export const ISTRUZIONI_COLLEGATE = `# Cartelle collegate in altri ambienti
+
+- Il progetto vive in questo ambiente, ma il proprietario può collegargli cartelle di altri ambienti: per esempio il codice di un'app per Windows, che si costruisce sul PC. \`cartelle_collegate\` dice quali ci sono; se ne hai una, guardala all'inizio del lavoro che la riguarda.
+- Lì non hai Bash, Read, Write ed Edit: usi \`esegui_nella_collegata\`, \`leggi_nella_collegata\`, \`scrivi_nella_collegata\` e \`modifica_nella_collegata\`, nella shell di quell'ambiente (PowerShell su Windows). Comandi e file scritti seguono il modo dei permessi del progetto.
+- Una cartella collegata ha il suo repository: i commit lì li fai con un comando nella collegata, e quel lavoro non entra nel repository di questo progetto.`;
+
 /** Ciò che un progetto sa delle estensioni che Shinka accende nel suo ambiente. */
 export const ISTRUZIONI_ESTENSIONI = `# Estensioni di Shinka
 
@@ -203,7 +210,7 @@ export function configurazioneDiProgetto(
     istruzioniAggiunte: [
       istruzioniDelloStato(nomeDelloStato),
       ...(diShinka ? [ISTRUZIONI_SVILUPPO_DI_SHINKA] : []),
-      ...(servizi.chiama === undefined ? [] : [ISTRUZIONI_MEMORIA_E_SKILL, ISTRUZIONI_ANTEPRIMA]),
+      ...(servizi.chiama === undefined ? [] : [ISTRUZIONI_MEMORIA_E_SKILL, ISTRUZIONI_ANTEPRIMA, ISTRUZIONI_COLLEGATE]),
       ...(servizi.estensioni === undefined ? [] : [ISTRUZIONI_ESTENSIONI]),
       ...(servizi.browserDelPc === true ? [ISTRUZIONI_BROWSER_DEL_PC] : []),
     ].join("\n\n"),

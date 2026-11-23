@@ -100,6 +100,9 @@ for (const [nome, larghezza] of [["largo", 1400], ["telefono", 390]] as const) {
     await scheda.getByText("claude-opus-5-5").waitFor();
     await scheda.getByText("Contesto: 78%").waitFor();
     await scheda.getByText("Riserva per la compattazione").waitFor();
+    // Le cartelle collegate di un progetto in altri ambienti: qui nessuna, e nessun altro ambiente acceso.
+    await scheda.getByText("Cartelle collegate").waitFor();
+    await scheda.getByText("Nessuna: il progetto lavora solo nel suo ambiente.").waitFor();
     await scheda.getByText("Un file cambiato.").waitFor();
     await scheda.locator(".attivita.in-corso", { hasText: "Cerca dove si salta" }).getByText("ora: Grep").waitFor();
     await scheda.locator(".attivita", { hasText: "npm test" }).getByRole("button", { name: "Mostra l'uscita" }).click();

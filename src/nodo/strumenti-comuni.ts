@@ -482,6 +482,55 @@ function definizioneGateway(chiama: ChiamaStrumento) {
   );
 }
 
+/** Gli strumenti delle cartelle collegate di un progetto, in altri ambienti (ADR 0050). */
+function definizioniCollegate(chiama: ChiamaStrumento) {
+  const esegui = esecutore(chiama);
+  const ambiente = z.string().min(1).max(200).describe("Il nome dell'ambiente della cartella collegata, come lo dice cartelle_collegate.");
+  const percorso = z.string().min(1).max(1000).describe("Il percorso del file: relativo alla cartella collegata, o completo.");
+  return [
+    tool(
+      "cartelle_collegate",
+      "Dice quali cartelle di altri ambienti il proprietario ha collegato a questo progetto, con il sistema e la shell di ciascuna. Il progetto vive nel suo ambiente, dove usi Bash, Read, Write ed Edit; nelle cartelle collegate lavori con esegui_nella_collegata, leggi_nella_collegata, scrivi_nella_collegata e modifica_nella_collegata.",
+      {},
+      async (argomenti) => esegui("cartelle_collegate", argomenti),
+    ),
+    tool(
+      "esegui_nella_collegata",
+      "Esegue un comando nella cartella collegata di un altro ambiente, nella shell di quell'ambiente (PowerShell su Windows, bash su Linux), partendo da quella cartella. Restituisce codice di uscita e uscita. Per una build lunga indica i secondi, fino a 600.",
+      {
+        ambiente,
+        comando: z.string().min(1).max(20_000).describe("Il comando, scritto per la shell di quell'ambiente."),
+        secondi: z.number().int().min(1).max(600).optional().describe("Dopo quanti secondi fermare il comando. Se manca, 120."),
+      },
+      async (argomenti) => esegui("esegui_nella_collegata", argomenti),
+    ),
+    tool(
+      "leggi_nella_collegata",
+      "Legge un file di testo nella cartella collegata di un altro ambiente.",
+      { ambiente, percorso },
+      async (argomenti) => esegui("leggi_nella_collegata", argomenti),
+    ),
+    tool(
+      "scrivi_nella_collegata",
+      "Scrive un file di testo nella cartella collegata di un altro ambiente, creandolo o sostituendolo per intero. Per cambiare un pezzo di un file che c'è già usa modifica_nella_collegata.",
+      { ambiente, percorso, contenuto: z.string().max(1_000_000).describe("Il testo intero del file.") },
+      async (argomenti) => esegui("scrivi_nella_collegata", argomenti),
+    ),
+    tool(
+      "modifica_nella_collegata",
+      "Cambia un pezzo di un file di testo nella cartella collegata di un altro ambiente, come Edit: testo_vecchio deve comparire una volta sola nel file, così com'è (rileggi il file prima), oppure indica tutte per cambiarlo ogni volta che compare. Va a capo come il file.",
+      {
+        ambiente,
+        percorso,
+        testo_vecchio: z.string().min(1).max(1_000_000).describe("Il testo da cambiare, copiato dal file."),
+        testo_nuovo: z.string().max(1_000_000).describe("Il testo che prende il suo posto."),
+        tutte: z.boolean().optional().describe("Vero per cambiarlo ogni volta che compare."),
+      },
+      async (argomenti) => esegui("modifica_nella_collegata", argomenti),
+    ),
+  ];
+}
+
 /**
  * Il gruppo di strumenti di una conversazione di progetto: quelli comuni, memoria, skill e vault,
  * più l'anteprima. Il progetto Shinka ha anche quelli per chiedere l'installazione e per proporre
@@ -498,6 +547,7 @@ export function creaStrumentiDiProgetto(chiama: ChiamaStrumento, opzioni: { inst
       definizioneAnteprima(chiama),
       definizioneAvvioApplicazione(chiama),
       ...definizioniApplicazione(chiama),
+      ...definizioniCollegate(chiama),
       ...(opzioni.installazione === true ? [definizioneInstallazione(chiama), definizioneGateway(chiama)] : []),
     ],
   });

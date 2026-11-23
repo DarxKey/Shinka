@@ -50,6 +50,7 @@ import { fonteConfigurata } from "../harness/autenticazione.ts";
 import { TramiteAnteprima } from "../nodo/anteprima.ts";
 import { Applicazioni } from "../nodo/applicazioni.ts";
 import { ApplicazioniDeiProgetti } from "./applicazioni.ts";
+import { CartelleCollegate } from "./cartelle-collegate.ts";
 import { AggiornamentiDesktop } from "./desktop.ts";
 import { FileDeiProgetti } from "./file-progetto.ts";
 import { FileDeiProgettiQui } from "../nodo/file-progetto.ts";
@@ -300,6 +301,7 @@ const comuni = new StrumentiComuni(
       : sviluppo.aggiornaGateway(idProgetto, riassunto),
   portaAnteprima === null ? undefined : (chiave, nome, argomenti) => applicazioni.strumento(chiave, nome, argomenti),
   (chi, nome, argomenti) => programmati.strumento(chi, nome, argomenti),
+  (chiave, nome, argomenti) => collegate.strumento(chiave, nome, argomenti),
 );
 const strumentoDiProgetto = (idProgetto: string, nome: unknown, argomenti: unknown) =>
   comuni.esegui(
@@ -358,6 +360,13 @@ const lavori = await LavoriDeiProgetti.apri({
     const note = [sviluppo?.notaPerIlProgetto(idProgetto), memoria.daConsegnare(idProgetto)].filter((nota) => nota !== undefined);
     return note.length === 0 ? undefined : note.join("\n\n");
   },
+});
+// Le cartelle che il proprietario collega a un progetto in altri ambienti (ADR 0050).
+const collegate = new CartelleCollegate({
+  progetti,
+  ambienti,
+  esecutore: (idAmbiente) => lavori.esecutore(idAmbiente),
+  annota: (idProgetto, testo) => lavori.annota(idProgetto, testo),
 });
 
 // Un nodo tenuto acceso dal suo guardiano passa alla versione del centro quando il centro glielo
@@ -550,6 +559,7 @@ const desktop = new AggiornamentiDesktop(join(dati, "desktop"));
 
 const centro = await creaCentro({
   desktop,
+  collegate,
   accesso,
   primoAvvio,
   installata,

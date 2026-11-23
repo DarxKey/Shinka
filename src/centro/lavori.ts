@@ -535,6 +535,16 @@ export class LavoriDeiProgetti {
     return sospesi.turni > 0 ? "al-lavoro" : "fermo";
   }
 
+  /** Chi agisce in un ambiente per i progetti: qui al centro o su un nodo. */
+  esecutore(idAmbiente: string): Esecutore {
+    return this.#esecutore(idAmbiente);
+  }
+
+  /** Aggiunge un'informazione alla conversazione di un progetto, se è aperta, senza farla rispondere. */
+  annota(idProgetto: string, testo: string): void {
+    this.#porte.get(idProgetto)?.annota(testo);
+  }
+
   #esecutore(idAmbiente: string): Esecutore {
     return idAmbiente === ID_AMBIENTE_DEL_CENTRO ? this.#o.locale : this.#o.remoti.per(idAmbiente);
   }

@@ -6,7 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
-import { elencaFile, eseguiAzione } from "../nodo/azioni.ts";
+import { elencaFile, eseguiAzione, eseguiAzioneInCartella } from "../nodo/azioni.ts";
 import { adottaCartella, creaCartellaProgetto, type CartellaCreata } from "../nodo/cartelle.ts";
 import type { ConfigurazioneConversazione } from "../nodo/conversazione.ts";
 import { apriConversazione, motorePredefinito } from "../nodo/motore.ts";
@@ -68,6 +68,8 @@ export interface Esecutore {
   elencaFile(origine: OrigineFile): Promise<ElencoFile>;
   /** Compie un'azione della Home nella cartella di un suo argomento. Lancia `AmbienteSpento` se non può. */
   agisci(idArgomento: string, azione: AzioneInAmbiente): Promise<EsitoAzione>;
+  /** Compie un'azione di un progetto in una sua cartella collegata, in questo ambiente (ADR 0050). */
+  agisciInCartella(cartella: string, azione: AzioneInAmbiente): Promise<EsitoAzione>;
   /**
    * Prepara la cartella di un progetto nuovo per le estensioni scelte, prima del primo messaggio.
    * Lancia se l'ambiente non risponde; ogni esito dice com'è andata una preparazione.
@@ -150,6 +152,10 @@ export class EsecutoreLocale implements Esecutore {
 
   agisci(idArgomento: string, azione: AzioneInAmbiente): Promise<EsitoAzione> {
     return eseguiAzione(this.#radiceProgetti, idArgomento, azione);
+  }
+
+  agisciInCartella(cartella: string, azione: AzioneInAmbiente): Promise<EsitoAzione> {
+    return eseguiAzioneInCartella(cartella, azione);
   }
 
   preparaProgetto(cartella: string, preparazioni: PreparazioneDelProgetto[]): Promise<EsitoPreparazione[]> {
@@ -257,6 +263,8 @@ export class EsecutoriRemoti {
         return { percorsi, quanti: esito.quantiFile ?? percorsi.length };
       },
       agisci: (idArgomento, azione) => this.#agisci(idAmbiente, idArgomento, azione),
+      agisciInCartella: (cartella, azione) =>
+        this.#chiediAzione(idAmbiente, azione, (idRichiesta) => ({ tipo: "azione-in-cartella", idRichiesta, cartella, azione }), "L'ambiente non ha risposto in tempo: se il suo nodo è di una versione precedente non sa ancora lavorare in una cartella collegata, e va aggiornato."),
       preparaProgetto: (cartella, preparazioni) => this.#preparaProgetto(idAmbiente, cartella, preparazioni),
       apriConversazione: (idConversazione, cartella, idSessione, impostazioni, alEvento, alIdSessione, estensioni) => {
         const conversazione = new ConversazioneRemota(
@@ -401,15 +409,24 @@ export class EsecutoriRemoti {
   }
 
   #agisci(idAmbiente: string, idArgomento: string, azione: AzioneInAmbiente): Promise<EsitoAzione> {
+    return this.#chiediAzione(idAmbiente, azione, (idRichiesta) => ({ tipo: "azione", idRichiesta, idArgomento, azione }), "L'ambiente non ha risposto in tempo.");
+  }
+
+  #chiediAzione(
+    idAmbiente: string,
+    azione: AzioneInAmbiente,
+    comando: (idRichiesta: string) => Extract<ComandoPerNodo, { tipo: "azione" | "azione-in-cartella" }>,
+    seNonRisponde: string,
+  ): Promise<EsitoAzione> {
     return new Promise((risolvi, rifiuta) => {
       const idRichiesta = randomUUID();
       const concesso = azione.tipo === "esegui" ? (azione.durataMs ?? DURATA_COMANDO_MS) : 0;
       const scadenza = setTimeout(() => {
         this.#azioni.delete(idRichiesta);
-        rifiuta(new Error("L'ambiente non ha risposto in tempo."));
+        rifiuta(new Error(seNonRisponde));
       }, concesso + this.#margineAzioneMs);
       this.#azioni.set(idRichiesta, { idAmbiente, risolvi, rifiuta, scadenza });
-      const inviato = this.#ambienti.inviaAlNodo(idAmbiente, { tipo: "azione", idRichiesta, idArgomento, azione });
+      const inviato = this.#ambienti.inviaAlNodo(idAmbiente, comando(idRichiesta));
       if (!inviato) {
         clearTimeout(scadenza);
         this.#azioni.delete(idRichiesta);

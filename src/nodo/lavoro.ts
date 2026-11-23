@@ -16,7 +16,7 @@ import type { ComandoPerNodo, RiferitoDalNodo } from "../protocollo/nodi.ts";
 import { TramiteAnteprima } from "./anteprima.ts";
 import { Applicazioni, type OpzioniApplicazioni } from "./applicazioni.ts";
 import { FileDeiProgettiQui } from "./file-progetto.ts";
-import { eseguiAzione } from "./azioni.ts";
+import { eseguiAzione, eseguiAzioneInCartella } from "./azioni.ts";
 import { Terminali, type AccendiShell } from "./terminali.ts";
 import { adottaCartella, CartellaNonCreata, creaCartellaProgetto } from "./cartelle.ts";
 import type { ConfigurazioneConversazione } from "./conversazione.ts";
@@ -272,6 +272,11 @@ export class LavoroDelNodo {
         return;
       case "azione":
         void eseguiAzione(this.#contesto.radiceProgetti, comando.idArgomento, comando.azione).then((esito) =>
+          this.#contesto.riferisci({ tipo: "azione-conclusa", idRichiesta: comando.idRichiesta, esito }),
+        );
+        return;
+      case "azione-in-cartella":
+        void eseguiAzioneInCartella(comando.cartella, comando.azione).then((esito) =>
           this.#contesto.riferisci({ tipo: "azione-conclusa", idRichiesta: comando.idRichiesta, esito }),
         );
         return;

@@ -2,7 +2,7 @@
 
 ## Specifica funzionale e architetturale
 
-**Versione:** 2.19 | **Data:** 22 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
+**Versione:** 2.20 | **Data:** 23 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
 
 Sostituisce la specifica "Atlas Agent 1.0", conservata in [archivio/atlas-agent-v1.md](archivio/atlas-agent-v1.md). I termini usati qui sono definiti in [GLOSSARY.md](GLOSSARY.md). Le decisioni di fondo sono motivate in [docs/adr/](docs/adr/). Lo stato dei lavori è in [STATO.md](STATO.md).
 
@@ -41,6 +41,8 @@ La versione 2.17 aggiunge la pagina Sicurezza: le sessioni aperte del proprietar
 La versione 2.18 cifra il collegamento tra i nodi e il centro: il nodo riconosce il centro dal suo certificato, il segreto passato in chiaro si cambia, e il proprietario può scegliere di accettare solo i nodi cifrati. Lo ha scelto il 21 novembre 2026. Cambiano le sezioni 4.3, 5 e 6; si aggiungono le prove da A77 ad A80. È motivata in [docs/adr/0040](docs/adr/0040-collegamento-cifrato-tra-nodi-e-centro.md).
 
 La versione 2.19 aggiunge la copia di sicurezza e il trasloco dei dati: una copia cifrata dei dati del centro, che il proprietario scarica dalle Impostazioni e ricarica per ripristinare tutto o per portare memoria e skill in un'altra installazione; e la copia del vault, che scarica e ricarica dalla pagina del vault, senza passare dal centro. Lo ha scelto il 21 novembre 2026. Cambiano il perimetro e le sezioni 4.8, 5 e 6; si aggiungono le prove da A81 ad A85. È motivata in [docs/adr/0042](docs/adr/0042-copia-di-sicurezza-e-trasloco-dei-dati.md).
+
+La versione 2.20 permette a un progetto di lavorare in più ambienti: vive nel suo, con il suo motore e la sua cartella, e il proprietario può collegargli cartelle di altri ambienti, in cui il progetto lavora con gli strumenti di Shinka seguendo il modo dei suoi permessi. Cambiano la sezione 4.4 e un'assunzione della sezione 11. La scelta è del proprietario, del 23 novembre 2026, per far lavorare il progetto Shinka anche sul codice di Shinka Desktop, che si costruisce sul PC; è motivata in [docs/adr/0050](docs/adr/0050-un-progetto-in-piu-ambienti.md).
 
 ## 1. Cos'è Shinka
 
@@ -144,7 +146,8 @@ Aperto un progetto, il lavoro prosegue lì: la Home ne riferisce e vi inoltra is
 
 - Nasce solo per mano del proprietario: quando conferma una proposta della Home che indica nome, cartella e ambiente, oppure quando lo crea lui stesso dall'interfaccia, con le stesse scelte e un brief scritto da lui. Nessuna conversazione ne crea uno da sola.
 - La Home propone l'ambiente in base alla richiesta. Il proprietario lo conferma o lo cambia, scegliendo tra quelli attivi in quel momento.
-- Vive in un solo ambiente, con una cartella propria, repository Git, brief e conversazioni proprie. *(Assunzione: non si sposta, vedi sezione 11.)*
+- Vive in un ambiente, il suo, con una cartella propria, repository Git, brief e conversazioni proprie: lì gira il suo motore. *(Assunzione: non si sposta, vedi sezione 11.)*
+- Il proprietario può collegargli cartelle di altri ambienti, una per ambiente. Il progetto ci lavora con gli strumenti di Shinka (comandi, file letti, scritti e modificati), che seguono il modo dei permessi del progetto come i suoi comandi; terminale, anteprima e pannello File restano quelli del suo ambiente. Le collega e le scollega solo il proprietario.
 - La prima conversazione parte pulita: contiene il brief e nient'altro di ciò che è stato detto nella Home. Di un progetto creato dal proprietario la Home viene avvisata.
 - Può avere più conversazioni nel tempo, e ognuna si può riprendere.
 - Se il suo ambiente è spento resta visibile con stato e storia, ma non ci si può lavorare. *(Assunzione, vedi sezione 11.)*
@@ -464,7 +467,7 @@ Assunzioni da confermare:
 
 - La conoscenza non passa da un progetto all'altro se non tramite la Home, la memoria e le skill.
 - La Home può inoltrare istruzioni a un progetto, ma solo su richiesta del proprietario.
-- Un progetto vive in un solo ambiente e non si sposta.
+- Un progetto vive in un ambiente e non si sposta; può lavorare anche nelle cartelle di altri ambienti che il proprietario gli collega.
 - Con l'ambiente spento un progetto si può consultare ma non ci si può lavorare.
 - Ogni ambiente ha una descrizione di ciò che offre, scritta dal proprietario, su cui la Home basa le sue scelte.
 - I file prodotti in un argomento stanno in una cartella di quell'argomento, nell'ambiente in cui sono nati; con quell'ambiente spento la Home sa che esistono ma non li riapre.

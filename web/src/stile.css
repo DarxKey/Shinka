@@ -6457,3 +6457,48 @@ kbd {
 .conferma-sicurezza p {
   margin: 0 0 var(--s-2);
 }
+
+/* Le cartelle collegate di un progetto, nella scheda della sessione (ADR 0050). */
+.cartelle-collegate {
+  display: grid;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+
+.cartelle-collegate h4 {
+  margin: 0;
+  font-size: var(--t-piccolo);
+  font-weight: 600;
+  color: var(--tenue);
+}
+
+.cartelle-collegate ul {
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cartelle-collegate li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
+.cartelle-collegate code {
+  overflow-wrap: anywhere;
+  font-size: 0.8125rem;
+}
+
+.cartelle-collegate form {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.cartelle-collegate label {
+  display: grid;
+  gap: 4px;
+  font-size: var(--t-piccolo);
+}

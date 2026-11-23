@@ -7,7 +7,7 @@ import { dirname } from "node:path";
 import { leggiImpostazioni, type ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
 import { leggiAvvio, type AvvioApplicazione } from "../protocollo/applicazioni.ts";
 import { leggiEstensioniScelte } from "../protocollo/avvio-progetto.ts";
-import type { Progetto } from "../protocollo/progetti.ts";
+import type { CartellaCollegata, Progetto } from "../protocollo/progetti.ts";
 
 interface ProgettoSalvato extends Progetto {
   /** Identificativo da cui l'harness riprende la conversazione del progetto. */
@@ -18,6 +18,8 @@ interface ProgettoSalvato extends Progetto {
   estensioni?: string[];
   /** Come si avvia l'applicazione del progetto, e se il proprietario la vuole accesa. */
   applicazione?: AvvioApplicazione & { voluta?: boolean };
+  /** Le cartelle di altri ambienti in cui il progetto lavora anche (ADR 0050). */
+  collegate?: CartellaCollegata[];
 }
 
 /** L'applicazione di un progetto per come la ricorda il registro. */
@@ -156,6 +158,21 @@ export class RegistroProgetti {
     else delete progetto.fissato;
     await this.#salva();
     this.#avvisa();
+    return true;
+  }
+
+  /** Le cartelle di altri ambienti collegate al progetto. */
+  collegate(idProgetto: string): CartellaCollegata[] {
+    return (this.#progetti.get(idProgetto)?.collegate ?? []).map((voce) => ({ ...voce }));
+  }
+
+  /** Ricorda le cartelle collegate al progetto. Falso se il progetto non c'è. */
+  async ricordaCollegate(idProgetto: string, collegate: readonly CartellaCollegata[]): Promise<boolean> {
+    const progetto = this.#progetti.get(idProgetto);
+    if (progetto === undefined) return false;
+    if (collegate.length === 0) delete progetto.collegate;
+    else progetto.collegate = collegate.map((voce) => ({ idAmbiente: voce.idAmbiente, cartella: voce.cartella }));
+    await this.#salva();
     return true;
   }
 

@@ -519,6 +519,13 @@ function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | undefine
       if (idRichiesta === undefined || !idArgomentoValido(idArgomento) || azione === undefined) return undefined;
       return { tipo: "azione", idRichiesta, idArgomento, azione };
     }
+    case "azione-in-cartella": {
+      const idRichiesta = testo("idRichiesta");
+      const cartella = typeof campi.cartella === "string" && campi.cartella.length > 0 && campi.cartella.length <= 1000 ? campi.cartella : undefined;
+      const azione = leggiAzione(campi.azione);
+      if (idRichiesta === undefined || cartella === undefined || azione === undefined) return undefined;
+      return { tipo: "azione-in-cartella", idRichiesta, cartella, azione };
+    }
     default:
       return leggiComandoTerminale(campi) ?? leggiComandoAnteprima(campi) ?? leggiComandoApplicazione(campi) ?? leggiComandoFile(campi);
   }

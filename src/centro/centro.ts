@@ -48,6 +48,7 @@ import { CopiaRifiutata, type CopieDiSicurezza } from "./copie.ts";
 import type { CanaleNodo, RegistroAmbienti } from "./ambienti.ts";
 import type { Canale } from "./canale.ts";
 import { MANIFESTO, type AggiornamentiDesktop } from "./desktop.ts";
+import type { CartelleCollegate } from "./cartelle-collegate.ts";
 import { intervalliChiesti, piuParti } from "./intervalli.ts";
 import { PROTOCOLLO_DEI_CLIENTI, type RichiestaDiPubblicazione } from "../protocollo/desktop.ts";
 import { inBreve, versioneDi } from "../protocollo/versione.ts";
@@ -302,6 +303,8 @@ export interface OpzioniCentro {
   file?: FileDeiProgetti;
   /** Gli aggiornamenti di Shinka Desktop che il centro serve (ADR 0049). */
   desktop?: AggiornamentiDesktop;
+  /** Le cartelle collegate ai progetti in altri ambienti (ADR 0050). */
+  collegate?: CartelleCollegate;
   /** Cartella con l'interfaccia già costruita. Se manca, il centro serve solo le API. */
   cartellaWeb?: string;
   /** Il primo avvio guidato: c'è finché la password del proprietario non è stata scelta. */
@@ -2185,6 +2188,36 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       if (!risposta.raw.writableFinished) esito.flusso.destroy();
     });
     return risposta.send(esito.flusso);
+  });
+
+  // Le cartelle collegate di un progetto, in altri ambienti: le vede e le cambia il proprietario (ADR 0050).
+  const senzaCollegate = { errore: "In questa installazione le cartelle collegate non ci sono." };
+  app.get<{ Params: { id: string } }>("/api/progetti/:id/collegate", async (richiesta, risposta) => {
+    if (opzioni.collegate === undefined) return risposta.code(404).send(senzaCollegate);
+    return opzioni.collegate.stato(richiesta.params.id) ?? risposta.code(404).send({ errore: "Progetto non trovato." });
+  });
+  app.post<{ Params: { id: string }; Body: { idAmbiente: string; cartella: string } }>(
+    "/api/progetti/:id/collegate",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["idAmbiente", "cartella"],
+          additionalProperties: false,
+          properties: { idAmbiente: { type: "string", minLength: 1, maxLength: 200 }, cartella: { type: "string", minLength: 1, maxLength: 1000 } },
+        },
+      },
+    },
+    async (richiesta, risposta) => {
+      if (opzioni.collegate === undefined) return risposta.code(404).send(senzaCollegate);
+      const esito = await opzioni.collegate.collega(richiesta.params.id, richiesta.body);
+      return "motivo" in esito ? risposta.code(409).send({ errore: esito.motivo }) : esito;
+    },
+  );
+  app.delete<{ Params: { id: string; idAmbiente: string } }>("/api/progetti/:id/collegate/:idAmbiente", async (richiesta, risposta) => {
+    if (opzioni.collegate === undefined) return risposta.code(404).send(senzaCollegate);
+    const esito = await opzioni.collegate.scollega(richiesta.params.id, richiesta.params.idAmbiente);
+    return "motivo" in esito ? risposta.code(409).send({ errore: esito.motivo }) : esito;
   });
 
   // Shinka Desktop: la versione pubblicata, la pubblicazione dalle Impostazioni, e i file che

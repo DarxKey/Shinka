@@ -55,6 +55,9 @@ export type StrumentiApplicazione = (chiave: string, nome: string, argomenti: Re
 /** Gli strumenti dei lavori programmati: `chi` è la conversazione che li usa, ed è lì che il lavoro girerà. */
 export type StrumentiProgrammati = (chi: ChiChiama, nome: string, argomenti: Record<string, unknown>) => Promise<EsitoStrumento>;
 
+/** Gli strumenti delle cartelle collegate di un progetto (ADR 0050): `chiave` è il progetto che li usa. */
+export type StrumentiCollegate = (chiave: string, nome: string, argomenti: Record<string, unknown>) => Promise<EsitoStrumento>;
+
 /** Il progetto Shinka chiede di installare la versione che ha scritto: la si prepara, la si prova e si mostra la scheda. */
 export type ChiediInstallazione = (idProgetto: string, riassunto: unknown) => Promise<EsitoStrumento>;
 
@@ -68,6 +71,7 @@ export class StrumentiComuni {
   readonly #aggiornaGateway: ChiediInstallazione | undefined;
   readonly #applicazioni: StrumentiApplicazione | undefined;
   readonly #programmati: StrumentiProgrammati | undefined;
+  readonly #collegate: StrumentiCollegate | undefined;
 
   constructor(
     memoria: Memoria,
@@ -84,7 +88,10 @@ export class StrumentiComuni {
     applicazioni?: StrumentiApplicazione,
     /** Come una conversazione propone, elenca e toglie i lavori programmati. */
     programmati?: StrumentiProgrammati,
+    /** Come un progetto lavora nelle sue cartelle collegate. */
+    collegate?: StrumentiCollegate,
   ) {
+    this.#collegate = collegate;
     this.#applicazioni = applicazioni;
     this.#programmati = programmati;
     this.#memoria = memoria;
@@ -220,6 +227,15 @@ export class StrumentiComuni {
           if (this.#programmati === undefined) return fallito("In questa installazione di Shinka i lavori programmati non ci sono.");
           const campi = typeof argomenti === "object" && argomenti !== null ? (argomenti as Record<string, unknown>) : {};
           return await this.#programmati(chi, nome, campi);
+        }
+        case "cartelle_collegate":
+        case "esegui_nella_collegata":
+        case "leggi_nella_collegata":
+        case "scrivi_nella_collegata":
+        case "modifica_nella_collegata": {
+          if (this.#collegate === undefined) return fallito("In questa installazione di Shinka le cartelle collegate non ci sono.");
+          const campi = typeof argomenti === "object" && argomenti !== null ? (argomenti as Record<string, unknown>) : {};
+          return await this.#collegate(chi.chiave, nome, campi);
         }
         case "aggiorna_gateway": {
           if (this.#aggiornaGateway === undefined) {

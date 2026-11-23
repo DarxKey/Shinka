@@ -30,6 +30,7 @@ import type { AzioneInAmbiente, EsitoAzione } from "../protocollo/azioni.ts";
 import type { ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
 import { EsecutoreLocale, EsecutoriRemoti, type ServiziLocali } from "../centro/esecutori.ts";
 import { ApplicazioniDeiProgetti } from "../centro/applicazioni.ts";
+import { CartelleCollegate } from "../centro/cartelle-collegate.ts";
 import { AggiornamentiDesktop } from "../centro/desktop.ts";
 import { FileDeiProgetti } from "../centro/file-progetto.ts";
 import { FileDeiProgettiQui } from "../nodo/file-progetto.ts";
@@ -537,6 +538,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
         : sviluppo.aggiornaGateway(idProgetto, riassunto),
     (chiave, nome, argomenti) => applicazioni.strumento(chiave, nome, argomenti),
     (chi, nome, argomenti) => programmati.strumento(chi, nome, argomenti),
+    (chiave, nome, argomenti) => collegate.strumento(chiave, nome, argomenti),
   );
   const strumentoDiProgetto = (idProgetto: string, nome: unknown, argomenti: unknown) =>
     comuni.esegui(
@@ -608,6 +610,13 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
       const note = [sviluppo?.notaPerIlProgetto(idProgetto), memoria.daConsegnare(idProgetto)].filter((nota) => nota !== undefined);
       return note.length === 0 ? undefined : note.join("\n\n");
     },
+  });
+  // Le cartelle che il proprietario collega a un progetto in altri ambienti (ADR 0050).
+  const collegate = new CartelleCollegate({
+    progetti,
+    ambienti,
+    esecutore: (idAmbiente) => lavori.esecutore(idAmbiente),
+    annota: (idProgetto, testo) => lavori.annota(idProgetto, testo),
   });
   const aggiornamenti = new AggiornamentoDeiNodi({
     ambienti,
@@ -749,6 +758,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     applicazioni,
     file,
     desktop,
+    collegate,
     statoHome,
     immagini,
     ...(opzioni.immaginiEsterne === undefined ? {} : { immaginiEsterne: opzioni.immaginiEsterne }),

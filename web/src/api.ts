@@ -23,6 +23,7 @@ import type { DettaglioSkill, VersioniSkill } from "../../src/protocollo/skill.t
 import type { DettaglioVault } from "../../src/protocollo/vault.ts";
 import type { StatoSicurezza } from "../../src/protocollo/sicurezza.ts";
 import type { RichiestaDiPubblicazione, StatoDesktop } from "../../src/protocollo/desktop.ts";
+import type { StatoCollegate } from "../../src/protocollo/progetti.ts";
 import type { CopiaCaricata, CopiaPronta, EsitoTrasloco, ScelteDelTrasloco, StatoCopie } from "../../src/protocollo/copia.ts";
 
 export interface StatoAccesso {
@@ -587,6 +588,19 @@ export async function leggiSicurezza(soloDaGuardare: boolean): Promise<StatoSicu
 }
 
 /** Chiude una sessione dal suo identificativo: quel dispositivo dovrà rientrare. */
+/** Le cartelle collegate di un progetto in altri ambienti, e gli ambienti in cui se ne può collegare una. */
+export async function leggiCollegate(idProgetto: string): Promise<StatoCollegate> {
+  return (await chiama("GET", `${baseDelProgetto(idProgetto)}/collegate`)) as StatoCollegate;
+}
+
+export async function collegaCartella(idProgetto: string, idAmbiente: string, cartella: string): Promise<StatoCollegate> {
+  return (await chiama("POST", `${baseDelProgetto(idProgetto)}/collegate`, { idAmbiente, cartella })) as StatoCollegate;
+}
+
+export async function scollegaCartella(idProgetto: string, idAmbiente: string): Promise<StatoCollegate> {
+  return (await chiama("DELETE", `${baseDelProgetto(idProgetto)}/collegate/${encodeURIComponent(idAmbiente)}`)) as StatoCollegate;
+}
+
 /** La versione di Shinka Desktop che il centro serve agli aggiornamenti. */
 export async function leggiDesktop(): Promise<StatoDesktop> {
   return (await chiama("GET", "/api/desktop")) as StatoDesktop;
