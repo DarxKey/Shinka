@@ -47,6 +47,7 @@ import { CopiaNonValida, PasswordDellaCopiaSbagliata } from "./copia-di-sicurezz
 import { CopiaRifiutata, type CopieDiSicurezza } from "./copie.ts";
 import type { CanaleNodo, RegistroAmbienti } from "./ambienti.ts";
 import type { Canale } from "./canale.ts";
+import { GENERI_DISPOSITIVO, type GenereDispositivo } from "../protocollo/sicurezza.ts";
 import type { AggiornamentoDeiNodi } from "./aggiornamento-nodi.ts";
 import { ProgrammatoRifiutato, type LavoriProgrammati } from "./programmati.ts";
 import { NotificaRifiutata, type NotificheApp } from "./notifiche-app.ts";
@@ -98,6 +99,8 @@ export const PERCORSI_LIBERI = [
   "/api/accesso",
   "/api/uscita",
   "/api/primo-avvio",
+  // Un dispositivo riceve il suo gettone con la password, come un browser la sua sessione (ADR 0047).
+  "/api/dispositivi",
   PERCORSO_COLLEGAMENTO,
   // Lo script e il pacchetto di un ambiente nuovo: li chiama una macchina senza sessione, e chiedono un invito valido.
   PERCORSO_PREPARAZIONE,
@@ -113,6 +116,12 @@ export interface RottaRegistrata {
 
 /** Le rotte di ciascun centro creato, per le prove. */
 export const ROTTE_REGISTRATE = new WeakMap<object, RottaRegistrata[]>();
+
+/** Il gettone di dispositivo di una richiesta, da `Authorization: Bearer <gettone>`. */
+export function gettoneDi(autorizzazione: string | undefined): string | undefined {
+  const trovato = /^Bearer\s+([A-Za-z0-9_-]{16,200})\s*$/i.exec(autorizzazione ?? "");
+  return trovato?.[1];
+}
 
 /** Vero se la richiesta va a un'API del proprietario: ogni `/api/` che non sia tra quelle libere. */
 export function delProprietario(url: string): boolean {
@@ -379,17 +388,29 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       }
     }
     const riservata = delProprietario(richiesta.url);
-    if (riservata && !accesso.valida(richiesta.cookies[COOKIE_SESSIONE])) {
+    // Un dispositivo, come Shinka Desktop, entra con il suo gettone al posto del cookie (ADR 0047).
+    // Con il gettone vale solo il gettone: uno sbagliato risponde 401 e non conta tra i tentativi della password.
+    const gettone = gettoneDi(richiesta.headers.authorization);
+    if (riservata && gettone !== undefined) {
+      if (!accesso.validaDispositivo(gettone)) {
+        registroAccessi.annota("dispositivo-rifiutato", chiDi(richiesta), { percorso: richiesta.url });
+        return risposta.code(401).send({ errore: "Questo dispositivo non può più entrare: serve di nuovo la password." });
+      }
+      accesso.segnaDispositivo(gettone, chiDi(richiesta));
+    } else if (riservata && !accesso.valida(richiesta.cookies[COOKIE_SESSIONE])) {
       registroAccessi.annota("senza-sessione", chiDi(richiesta), { percorso: richiesta.url });
       return risposta.code(401).send({ errore: "Accesso richiesto." });
     }
     // Di ogni sessione si ricorda l'ultima volta che è stata usata, e da dove.
-    if (riservata) accesso.segna(richiesta.cookies[COOKIE_SESSIONE], chiDi(richiesta));
+    if (riservata && gettone === undefined) accesso.segna(richiesta.cookies[COOKIE_SESSIONE], chiDi(richiesta));
     // Un WebSocket si apre anche da un'altra origine, e il cookie viaggia verso ogni porta di questo
     // host: quello del proprietario si accetta solo dalla nostra interfaccia, non dall'anteprima.
+    // Un gettone invece non viaggia da solo, e un browser non lo può aggiungere a un WebSocket: chi
+    // lo manda è un programma, che di solito non dice l'origine.
     if (riservata && richiesta.headers.upgrade?.toLowerCase() === "websocket") {
       const origine = richiesta.headers.origin;
-      if (origine === undefined || hostDi(origine) !== richiesta.headers.host) {
+      const ammessa = origine === undefined ? gettone !== undefined : hostDi(origine) === richiesta.headers.host;
+      if (!ammessa) {
         return risposta.code(403).send({ errore: "Origine non ammessa." });
       }
     }
@@ -419,7 +440,10 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
 
   app.get("/api/stato", async (richiesta) => ({
     configurato: accesso.configurato,
-    autenticato: accesso.valida(richiesta.cookies[COOKIE_SESSIONE]),
+    autenticato:
+      gettoneDi(richiesta.headers.authorization) === undefined
+        ? accesso.valida(richiesta.cookies[COOKIE_SESSIONE])
+        : accesso.validaDispositivo(gettoneDi(richiesta.headers.authorization)),
     ...(opzioni.primoAvvio?.attivo === true ? { primoAvvio: true } : {}),
   }));
 
@@ -499,6 +523,47 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       return { autenticato: true };
     },
   );
+
+  // Un dispositivo, come Shinka Desktop, riceve il suo gettone con la password: con lo stesso limite
+  // ai tentativi dell'entrata. Il gettone si vede solo in questa risposta (ADR 0047).
+  app.post<{ Body: { password: string; nome: string; genere: GenereDispositivo } }>(
+    "/api/dispositivi",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["password", "nome", "genere"],
+          additionalProperties: false,
+          properties: {
+            password: { type: "string", minLength: 1, maxLength: 1024 },
+            nome: { type: "string", minLength: 1, maxLength: 60 },
+            genere: { type: "string", enum: [...GENERI_DISPOSITIVO] },
+          },
+        },
+      },
+    },
+    async (richiesta, risposta) => {
+      const nome = richiesta.body.nome.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+      if (nome === "") return risposta.code(400).send({ errore: "Serve un nome per il dispositivo." });
+      const esito = await accesso.aggiungiDispositivo(richiesta.body.password, { nome, genere: richiesta.body.genere }, Date.now(), chiDi(richiesta));
+      registroAccessi.annota(esito.esito === "ok" ? "dispositivo-aggiunto" : esito.esito === "rifiutato" ? "dispositivo-non-aggiunto" : "entrata-frenata", chiDi(richiesta), {
+        dettaglio: `«${nome.slice(0, 60)}»`,
+      });
+      if (esito.esito === "troppi-tentativi") {
+        return risposta.code(429).send({ errore: "Troppi tentativi falliti.", riprovaTraSecondi: Math.ceil(esito.riprovaTraMs / 1000) });
+      }
+      if (esito.esito === "rifiutato") return risposta.code(401).send({ errore: "Password non valida." });
+      return risposta.code(201).send({ id: esito.id, token: esito.token });
+    },
+  );
+
+  // Il dispositivo esce da questo centro: il suo gettone non vale più.
+  app.post("/api/dispositivi/chiusura", async (richiesta, risposta) => {
+    const gettone = gettoneDi(richiesta.headers.authorization);
+    if (gettone === undefined) return risposta.code(400).send({ errore: "Serve il gettone del dispositivo da chiudere." });
+    if (await accesso.esciDalDispositivo(gettone)) registroAccessi.annota("dispositivo-tolto", chiDi(richiesta), { dettaglio: "uscito da sé" });
+    return { chiuso: true };
+  });
 
   // La password si cambia dalla pagina Impostazioni, con quella attuale. Le altre sessioni si
   // chiudono; questo browser ne riceve subito una nuova.
@@ -1389,6 +1454,10 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
   // La pagina Sicurezza: le sessioni aperte e il registro di chi è entrato o ci ha provato.
   app.get<{ Querystring: { solo?: string } }>("/api/sicurezza", async (richiesta) => ({
     questa: accesso.idDi(richiesta.cookies[COOKIE_SESSIONE]),
+    dispositivi: accesso.dispositivi(),
+    ...(accesso.idDelDispositivo(gettoneDi(richiesta.headers.authorization)) === undefined
+      ? {}
+      : { questoDispositivo: accesso.idDelDispositivo(gettoneDi(richiesta.headers.authorization)) }),
     nodi: { soloCifrati: ambienti.soloCifrati, ...(perINodi === undefined ? {} : { impronta: perINodi.impronta }) },
     sessioni: accesso.sessioni(),
     voci: registroAccessi.ultime(300, richiesta.query.solo === "da-guardare"),
@@ -1399,6 +1468,13 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     if (!(await accesso.chiudiSessione(richiesta.params.id))) return risposta.code(404).send({ errore: "Questa sessione non c'è più." });
     registroAccessi.annota("sessione-chiusa", chiDi(richiesta), { dettaglio: "una, dalla pagina Sicurezza" });
     return { chiusa: true };
+  });
+
+  // Togliere un dispositivo: il suo gettone non vale più, e dovrà rientrare con la password.
+  app.post<{ Params: { id: string } }>("/api/sicurezza/dispositivi/:id/chiusura", async (richiesta, risposta) => {
+    if (!(await accesso.togliDispositivo(richiesta.params.id))) return risposta.code(404).send({ errore: "Questo dispositivo non c'è più." });
+    registroAccessi.annota("dispositivo-tolto", chiDi(richiesta), { dettaglio: "dalla pagina Sicurezza" });
+    return { tolto: true };
   });
 
   app.post("/api/sicurezza/chiusura-delle-altre", async (richiesta) => {

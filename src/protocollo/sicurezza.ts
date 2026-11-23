@@ -27,6 +27,10 @@ export const TIPI_ACCESSO = [
   "trasloco",
   "ripristino-chiesto",
   "ripristino-rifiutato",
+  "dispositivo-aggiunto",
+  "dispositivo-non-aggiunto",
+  "dispositivo-tolto",
+  "dispositivo-rifiutato",
 ] as const;
 export type TipoAccesso = (typeof TIPI_ACCESSO)[number];
 
@@ -43,6 +47,8 @@ export const DA_GUARDARE: readonly TipoAccesso[] = [
   "invito-rifiutato",
   "nodo-in-chiaro",
   "ripristino-rifiutato",
+  "dispositivo-non-aggiunto",
+  "dispositivo-rifiutato",
 ];
 
 /** Una riga del registro delle richieste. */
@@ -71,6 +77,25 @@ export interface SessioneInVista {
   scadeIl: string;
 }
 
+/** Che cos'è un dispositivo (ADR 0047): per ora solo l'app per il computer. */
+export const GENERI_DISPOSITIVO = ["desktop"] as const;
+export type GenereDispositivo = (typeof GENERI_DISPOSITIVO)[number];
+
+/** Un dispositivo come lo vede la pagina Sicurezza: l'identificativo non serve a entrare. */
+export interface DispositivoInVista {
+  id: string;
+  nome: string;
+  genere: GenereDispositivo;
+  aggiuntoIl: string;
+  /** Da dove è stato aggiunto, e con che cosa. */
+  da?: string;
+  programma?: string;
+  vistoIl?: string;
+  vistoDa?: string;
+  /** Se non viene più usato, decade da qui. */
+  scadeIl: string;
+}
+
 /** Il collegamento dei nodi con il centro (ADR 0040). */
 export interface CollegamentoDeiNodi {
   /** Vero se il centro accetta solo i nodi con il collegamento cifrato. */
@@ -85,6 +110,10 @@ export interface StatoSicurezza {
   /** L'identificativo della sessione di chi guarda. */
   questa?: string;
   sessioni: SessioneInVista[];
+  /** I dispositivi con un gettone loro, come Shinka Desktop. */
+  dispositivi?: DispositivoInVista[];
+  /** L'identificativo del dispositivo di chi guarda, se guarda da un dispositivo. */
+  questoDispositivo?: string;
   /** Le ultime righe del registro, dalla più recente. */
   voci: VoceAccesso[];
 }
@@ -113,6 +142,10 @@ const IN_PAROLE: Record<TipoAccesso, string> = {
   trasloco: "Memoria e skill portate da una copia",
   "ripristino-chiesto": "Ripristino dei dati da una copia",
   "ripristino-rifiutato": "Ripristino rifiutato: password sbagliata",
+  "dispositivo-aggiunto": "Dispositivo aggiunto con la password",
+  "dispositivo-non-aggiunto": "Dispositivo non aggiunto: password sbagliata",
+  "dispositivo-tolto": "Dispositivo tolto",
+  "dispositivo-rifiutato": "Richiesta con un gettone di dispositivo che non vale",
 };
 
 /** Che cosa è successo, in parole per il proprietario. */
@@ -126,5 +159,5 @@ const SETTE_GIORNI_MS = 7 * 24 * 60 * 60 * 1000;
 export function settimanaInBreve(voci: readonly VoceAccesso[], ora: number = Date.now()): { entrate: number; falliti: number } {
   const recenti = voci.filter((voce) => ora - Date.parse(voce.quando) < SETTE_GIORNI_MS);
   const somma = (tipi: readonly string[]): number => recenti.filter((voce) => tipi.includes(voce.tipo)).reduce((totale, voce) => totale + (voce.volte ?? 1), 0);
-  return { entrate: somma(["entrata"]), falliti: somma(["entrata-fallita", "entrata-frenata", "password-non-cambiata", "primo-avvio-fallito", "ripristino-rifiutato"]) };
+  return { entrate: somma(["entrata", "dispositivo-aggiunto"]), falliti: somma(["entrata-fallita", "entrata-frenata", "password-non-cambiata", "primo-avvio-fallito", "ripristino-rifiutato", "dispositivo-non-aggiunto"]) };
 }

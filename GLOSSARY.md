@@ -320,6 +320,10 @@ _Avoid_: canale sicuro, tunnel, HTTPS dei nodi
 Ciò che il centro annota di chi bussa: le entrate riuscite e fallite, le richieste senza una sessione, le pagine che non ci sono, con l'indirizzo, il programma e il percorso, mai il contenuto. Si legge nella pagina Sicurezza. Non è il registro del gateway, che annota l'uso delle credenziali.
 _Avoid_: log di accesso, audit log, registro degli accessi (l'accesso è quello di un motore)
 
+**Gettone di dispositivo**:
+Ciò con cui un'app del proprietario, come Shinka Desktop, entra nel centro senza il cookie del browser: lo riceve una volta con la password, vale quanto una sessione finché viene usato e decade dopo novanta giorni fermo. Si toglie dalla pagina Sicurezza; cambiare la password li toglie tutti.
+_Avoid_: token API, chiave, API key
+
 **Versione dell'archivio**:
 Un identificativo dell'archivio di una conversazione che resta lo stesso finché si aggiungono eventi in fondo, e cambia quando eventi già dati potrebbero non valere più (un taglio, numeri riassegnati, un ripristino). Con l'ultimo numero forma l'indice dell'archivio: chi tiene una copia della storia lo confronta con il suo, e chiede solo ciò che manca.
 _Avoid_: revisione, etag, epoca

@@ -581,6 +581,11 @@ export async function leggiSicurezza(soloDaGuardare: boolean): Promise<StatoSicu
 }
 
 /** Chiude una sessione dal suo identificativo: quel dispositivo dovrà rientrare. */
+/** Toglie un dispositivo: il suo gettone non vale più. */
+export async function togliDispositivo(id: string): Promise<void> {
+  await chiama("POST", `/api/sicurezza/dispositivi/${encodeURIComponent(id)}/chiusura`);
+}
+
 export async function chiudiSessione(id: string): Promise<void> {
   await chiama("POST", `/api/sicurezza/sessioni/${encodeURIComponent(id)}/chiusura`);
 }

@@ -1,11 +1,12 @@
 /**
- * Accesso del proprietario all'interfaccia: una password e le sessioni del browser.
+ * Accesso del proprietario all'interfaccia: una password, le sessioni del browser e i gettoni dei
+ * dispositivi, come Shinka Desktop (ADR 0047).
  *
  * La password non viene mai conservata: su disco resta solo il suo derivato scrypt.
- * Dei token di sessione su disco resta solo l'impronta, così chi legge il file non può usarli.
+ * Dei token di sessione e dei gettoni su disco resta solo l'impronta, così chi legge il file non può usarli.
  */
 
-import type { SessioneInVista } from "../protocollo/sicurezza.ts";
+import type { DispositivoInVista, GenereDispositivo, SessioneInVista } from "../protocollo/sicurezza.ts";
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
@@ -58,12 +59,34 @@ interface Sessione {
 /** Ogni quanto l'ultimo uso di una sessione finisce sul disco. */
 const USO_SALVATO_OGNI_MS = 10 * 60 * 1000;
 
+/** Un gettone di dispositivo decade dopo tanto tempo senza essere usato. */
+export const DISPOSITIVO_DECADE_DOPO_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Un dispositivo con il suo gettone: vale finché viene usato. */
+interface Dispositivo {
+  nome: string;
+  genere: GenereDispositivo;
+  aggiunto: number;
+  da?: string;
+  programma?: string;
+  visto?: number;
+  vistoDa?: string;
+}
+
+export type EsitoDispositivo =
+  | { esito: "ok"; id: string; token: string }
+  | { esito: "rifiutato" }
+  | { esito: "troppi-tentativi"; riprovaTraMs: number };
+
 export class Accesso {
   readonly #cartella: string;
   #proprietario: FileProprietario | undefined;
   /** Impronta del token → la sessione. */
   #sessioni = new Map<string, Sessione>();
+  /** Impronta del gettone → il dispositivo. */
+  #dispositivi = new Map<string, Dispositivo>();
   #usoSalvato = 0;
+  #usoDeiDispositiviSalvato = 0;
   #tentativiFalliti: number[] = [];
   /** Data di modifica del file della password all'ultima lettura; 0 se non esisteva. */
   #modificaLetta = -1;
@@ -101,6 +124,7 @@ export class Accesso {
     const sessioni = leggiJson<Record<string, number | Sessione>>(join(this.#cartella, "sessioni.json"));
     // Prima di questa versione di ogni sessione si teneva solo la scadenza.
     this.#sessioni = new Map(Object.entries(sessioni ?? {}).map(([chiave, valore]) => [chiave, typeof valore === "number" ? { scade: valore } : valore]));
+    this.#dispositivi = new Map(Object.entries(leggiJson<Record<string, Dispositivo>>(join(this.#cartella, "dispositivi.json")) ?? {}));
   }
 
   async impostaPassword(password: string): Promise<void> {
@@ -114,10 +138,13 @@ export class Accesso {
       sale: sale.toString("base64"),
       derivato: derivato.toString("base64"),
     };
-    // Cambiare password chiude tutte le sessioni aperte. Le sessioni si salvano per prime:
-    // chi si accorge della password nuova deve già trovare l'elenco vuoto.
+    // Cambiare password chiude tutte le sessioni aperte e toglie i gettoni dei dispositivi: chi la
+    // cambia può temere che qualcuno la conosca. Si salvano per primi: chi si accorge della password
+    // nuova deve già trovare gli elenchi vuoti.
     this.#sessioni.clear();
+    this.#dispositivi.clear();
     await this.#salvaSessioni();
+    await this.#salvaDispositivi();
     await scriviJson(join(this.#cartella, "proprietario.json"), this.#proprietario);
     this.#modificaLetta = dataDiModifica(join(this.#cartella, "proprietario.json"));
   }
@@ -210,6 +237,95 @@ export class Accesso {
     return this.#sessioni.has(propria) ? propria.slice(0, ID_SESSIONE) : undefined;
   }
 
+  /**
+   * Dà un gettone a un dispositivo, con la password del proprietario e lo stesso limite ai tentativi
+   * dell'entrata. Il gettone si vede solo qui: sul disco resta la sua impronta.
+   */
+  async aggiungiDispositivo(
+    password: string,
+    dispositivo: { nome: string; genere: GenereDispositivo },
+    ora: number = Date.now(),
+    chi?: ChiEntra,
+  ): Promise<EsitoDispositivo> {
+    const controllo = await this.#controlla(password, ora);
+    if (controllo !== undefined) return controllo;
+    const token = randomBytes(32).toString("base64url");
+    const chiave = impronta(token);
+    this.#dispositivi.set(chiave, {
+      nome: dispositivo.nome,
+      genere: dispositivo.genere,
+      aggiunto: ora,
+      ...(chi === undefined ? {} : { da: chi.da, programma: chi.programma, visto: ora, vistoDa: chi.da }),
+    });
+    await this.#salvaDispositivi(ora);
+    return { esito: "ok", id: chiave.slice(0, ID_SESSIONE), token };
+  }
+
+  /** Vero se il gettone è quello di un dispositivo che vale. Uno sbagliato non conta tra i tentativi della password. */
+  validaDispositivo(token: string | undefined, ora: number = Date.now()): boolean {
+    this.#sincronizza(ora);
+    if (token === undefined || token === "") return false;
+    const dispositivo = this.#dispositivi.get(impronta(token));
+    return dispositivo !== undefined && scadenzaDi(dispositivo) > ora;
+  }
+
+  /** Un dispositivo è stato usato: si ricorda quando e da dove, e il suo gettone vale altri novanta giorni. */
+  segnaDispositivo(token: string | undefined, chi: ChiEntra, ora: number = Date.now()): void {
+    if (token === undefined) return;
+    const dispositivo = this.#dispositivi.get(impronta(token));
+    if (dispositivo === undefined) return;
+    dispositivo.visto = ora;
+    dispositivo.vistoDa = chi.da;
+    // Il programma si aggiorna: l'app cambia versione.
+    dispositivo.programma = chi.programma;
+    if (ora - this.#usoDeiDispositiviSalvato < USO_SALVATO_OGNI_MS) return;
+    this.#usoDeiDispositiviSalvato = ora;
+    void this.#salvaDispositivi(ora).catch(() => {});
+  }
+
+  /** L'identificativo, per la pagina Sicurezza, del dispositivo di questo gettone. */
+  idDelDispositivo(token: string | undefined): string | undefined {
+    if (token === undefined || token === "") return undefined;
+    const propria = impronta(token);
+    return this.#dispositivi.has(propria) ? propria.slice(0, ID_SESSIONE) : undefined;
+  }
+
+  /** I dispositivi che valgono, dal più usato di recente. */
+  dispositivi(ora: number = Date.now()): DispositivoInVista[] {
+    this.#sincronizza(ora);
+    const quando = (ms: number): string => new Date(ms).toISOString();
+    return [...this.#dispositivi]
+      .filter(([, dispositivo]) => scadenzaDi(dispositivo) > ora)
+      .sort(([, a], [, b]) => (b.visto ?? b.aggiunto) - (a.visto ?? a.aggiunto))
+      .map(([chiave, dispositivo]) => ({
+        id: chiave.slice(0, ID_SESSIONE),
+        nome: dispositivo.nome,
+        genere: dispositivo.genere,
+        aggiuntoIl: quando(dispositivo.aggiunto),
+        ...(dispositivo.da === undefined ? {} : { da: dispositivo.da }),
+        ...(dispositivo.programma === undefined ? {} : { programma: dispositivo.programma }),
+        ...(dispositivo.visto === undefined ? {} : { vistoIl: quando(dispositivo.visto) }),
+        ...(dispositivo.vistoDa === undefined ? {} : { vistoDa: dispositivo.vistoDa }),
+        scadeIl: quando(scadenzaDi(dispositivo)),
+      }));
+  }
+
+  /** Toglie un dispositivo dal suo identificativo: il suo gettone non vale più. Falso se non c'è. */
+  async togliDispositivo(id: string): Promise<boolean> {
+    const chiave = [...this.#dispositivi.keys()].find((una) => id.length === ID_SESSIONE && una.startsWith(id));
+    if (chiave === undefined) return false;
+    this.#dispositivi.delete(chiave);
+    await this.#salvaDispositivi();
+    return true;
+  }
+
+  /** Il dispositivo esce da sé: il suo gettone non vale più. Falso se non valeva già. */
+  async esciDalDispositivo(token: string | undefined): Promise<boolean> {
+    if (token === undefined || !this.#dispositivi.delete(impronta(token))) return false;
+    await this.#salvaDispositivi();
+    return true;
+  }
+
   /** Le sessioni aperte, dalla più usata di recente. */
   sessioni(ora: number = Date.now()): SessioneInVista[] {
     this.#sincronizza(ora);
@@ -259,6 +375,18 @@ export class Accesso {
     }
     await scriviJson(join(this.#cartella, "sessioni.json"), Object.fromEntries(this.#sessioni));
   }
+
+  async #salvaDispositivi(ora: number = Date.now()): Promise<void> {
+    for (const [chiave, dispositivo] of this.#dispositivi) {
+      if (scadenzaDi(dispositivo) <= ora) this.#dispositivi.delete(chiave);
+    }
+    await scriviJson(join(this.#cartella, "dispositivi.json"), Object.fromEntries(this.#dispositivi));
+  }
+}
+
+/** Un dispositivo vale fino a novanta giorni dopo l'ultimo uso. */
+function scadenzaDi(dispositivo: Dispositivo): number {
+  return (dispositivo.visto ?? dispositivo.aggiunto) + DISPOSITIVO_DECADE_DOPO_MS;
 }
 
 function impronta(token: string): string {

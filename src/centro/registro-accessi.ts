@@ -14,7 +14,7 @@ import type { ChiEntra } from "./accesso.ts";
 export { DA_GUARDARE, TIPI_ACCESSO, type TipoAccesso, type VoceAccesso } from "../protocollo/sicurezza.ts";
 
 /** Ciò che si ripete a raffica: se ne scrive una riga, con quante volte è successo. */
-const RIPETUTI: readonly TipoAccesso[] = ["senza-sessione", "evento-accolto", "origine-rifiutata", "pagina-inesistente", "evento-rifiutato", "invito-rifiutato", "nodo-presentato", "nodo-in-chiaro", "entrata-frenata"];
+const RIPETUTI: readonly TipoAccesso[] = ["senza-sessione", "dispositivo-rifiutato", "evento-accolto", "origine-rifiutata", "pagina-inesistente", "evento-rifiutato", "invito-rifiutato", "nodo-presentato", "nodo-in-chiaro", "entrata-frenata"];
 /** Per quanto le ripetizioni di una stessa cosa, dallo stesso indirizzo, stanno in una riga sola. */
 const FINESTRA_MS = 10 * 60 * 1000;
 const VOCI_IN_MEMORIA = 2000;
@@ -23,6 +23,9 @@ const FILE_MASSIMO = 1024 * 1024;
 /** Il programma che fa la richiesta, in breve, da ciò che dice di sé. */
 export function programmaDa(dice: string | undefined): string {
   if (dice === undefined || dice.trim() === "") return "non lo dice";
+  // L'app di Shinka per il computer, con la sua versione (ADR 0047).
+  const desktop = /^ShinkaDesktop\/([0-9A-Za-z.+-]{1,24})/.exec(dice);
+  if (desktop !== null) return `Shinka Desktop ${desktop[1]}`;
   const strumento = /^(curl|Wget|python-requests|Go-http-client|node|PowerShell|okhttp|Java)\b[^\s]*/i.exec(dice);
   if (strumento !== null) return strumento[0].slice(0, 40);
   const macchina = /iPhone/.test(dice) ? "iPhone" : /iPad/.test(dice) ? "iPad" : /Android/.test(dice) ? "Android" : /Windows/.test(dice) ? "PC Windows" : /Macintosh/.test(dice) ? "Mac" : /Linux/.test(dice) ? "Linux" : "";
