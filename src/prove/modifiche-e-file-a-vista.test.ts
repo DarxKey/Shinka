@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -44,7 +44,7 @@ for (const [nome, larghezza] of [["largo", 1280], ["telefono", 390]] as const) {
       ...(disponibile?.eseguibile === undefined ? {} : { executablePath: disponibile.eseguibile }),
     });
     t.after(() => browser.close());
-    const pagina = await browser.newPage({ viewport: { width: larghezza, height: 860 } });
+    const pagina = await browser.newPage({ viewport: { width: larghezza, height: 860 }, acceptDownloads: true });
     const cartellaImmagini = process.env.SHINKA_PROVA_IMMAGINI;
     if (cartellaImmagini !== undefined) await mkdir(cartellaImmagini, { recursive: true });
     const fotografa = async (cosa: string) => {
@@ -125,6 +125,20 @@ for (const [nome, larghezza] of [["largo", 1280], ["telefono", 390]] as const) {
     // Il pannello File: la ricerca, il Markdown impaginato, l'immagine.
     await pagina.getByRole("tab", { name: "File" }).click();
     const file = pagina.locator(".pannello-file");
+    // Scaricare: il progetto intero come ZIP, una cartella, un file così com'è.
+    await file.getByRole("button", { name: /LEGGIMI\.md/ }).waitFor();
+    await fotografa("file-da-scaricare");
+    const progettoIntero = pagina.waitForEvent("download");
+    await file.getByRole("link", { name: "Scarica il progetto intero (ZIP)" }).click();
+    assert.match((await progettoIntero).suggestedFilename(), /\.zip$/);
+    const cartellaSrc = pagina.waitForEvent("download");
+    await file.getByRole("link", { name: "Scarica src (ZIP)" }).click({ force: true });
+    assert.equal((await cartellaSrc).suggestedFilename(), "src.zip");
+    const unFile = pagina.waitForEvent("download");
+    await file.getByRole("link", { name: "Scarica LEGGIMI.md" }).click({ force: true });
+    const scaricato = await unFile;
+    assert.equal(scaricato.suggestedFilename(), "LEGGIMI.md");
+    assert.match(await readFile((await scaricato.path()) ?? "", "utf8"), /in alto/);
     await file.getByRole("button", { name: /LEGGIMI\.md/ }).click();
     await file.locator(".markdown-file strong", { hasText: "in alto" }).waitFor();
     await file.getByRole("button", { name: "← Progetto" }).click();

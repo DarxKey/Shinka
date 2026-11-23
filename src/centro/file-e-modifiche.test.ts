@@ -53,6 +53,13 @@ test("i file di un progetto su un nodo passano dal suo collegamento", async (t) 
   await finche(() => nodo.conversazioni.length === 1, "il progetto nasce sul nodo");
   assert.deepEqual((await chiedi(banco, "GET", `/api/progetti/${id}/file/cerca?q=gioco`)).json(), { percorsi: ["src/gioco.ts"], incompleta: false });
   assert.equal((await chiedi(banco, "GET", `/api/progetti/${id}/file/contenuto?percorso=src/gioco.ts`)).body, "const vite = 3;\n");
+  // Anche scaricare passa dal collegamento: un file così com'è, una cartella come ZIP.
+  const scaricato = await chiedi(banco, "GET", `/api/progetti/${id}/file/scarica?percorso=src/gioco.ts`);
+  assert.deepEqual([scaricato.statusCode, scaricato.body], [200, "const vite = 3;\n"]);
+  const archivio = await chiedi(banco, "GET", `/api/progetti/${id}/file/scarica?percorso=src`);
+  assert.equal(archivio.headers["content-type"], "application/zip");
+  assert.equal(archivio.rawPayload.subarray(0, 4).toString("hex"), "504b0304");
+  assert.ok(archivio.rawPayload.includes(Buffer.from("src/gioco.ts")));
 });
 
 test("le modifiche di un turno si leggono, si accettano e si annullano dal pannello", async (t) => {

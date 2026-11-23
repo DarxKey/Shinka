@@ -209,6 +209,11 @@ export async function cercaFile(idProgetto: string, testo: string): Promise<File
 }
 
 /** L'indirizzo da cui il browser legge un file del progetto: per immagini, PDF, video e audio. */
+/** Dove si scarica un file del progetto così com'è, o una cartella come ZIP; il percorso vuoto è il progetto intero. */
+export function indirizzoDaScaricare(idProgetto: string, percorso: string): string {
+  return `${baseDelProgetto(idProgetto)}/file/scarica?percorso=${encodeURIComponent(percorso)}`;
+}
+
 export function indirizzoDelFile(idProgetto: string, percorso: string): string {
   return `${baseDelProgetto(idProgetto)}/file/contenuto?percorso=${encodeURIComponent(percorso)}`;
 }

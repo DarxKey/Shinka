@@ -5083,6 +5083,51 @@ button.pericolo {
   font-size: 0.75rem;
 }
 
+/* Scaricare: un'icona in fondo a ogni riga, alla cartella aperta e al file in anteprima. */
+.riga-file {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.riga-file .voce-file {
+  flex: 1;
+  min-width: 0;
+}
+
+.scarica-file {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--tenue);
+}
+
+.scarica-file:hover,
+.scarica-file:focus-visible {
+  background: var(--sfondo);
+  color: var(--testo);
+}
+
+/* Sugli schermi con il mouse l'icona di una riga compare passandoci sopra; al tocco c'è sempre. */
+@media (hover: hover) {
+  .riga-file .scarica-file {
+    opacity: 0;
+  }
+
+  .riga-file:hover .scarica-file,
+  .riga-file .scarica-file:focus-visible {
+    opacity: 1;
+  }
+}
+
+.briciole .scarica-file,
+.barra-file .scarica-file {
+  margin-left: auto;
+}
+
 .anteprima-file {
   display: grid;
   gap: var(--s-2);

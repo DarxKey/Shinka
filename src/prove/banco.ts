@@ -252,6 +252,8 @@ export class ShellFinta implements ShellAccesa {
 
 export interface Banco {
   cartella: string;
+  /** I file dei progetti, come li vede il centro. */
+  file: FileDeiProgetti;
   accesso: Accesso;
   centro: FastifyInstance;
   /** La Home vera, con conversazioni finte al posto dell'harness. */
@@ -792,6 +794,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     return cookie.value;
   };
   return {
+    file,
     cartella,
     stili,
     accesso,

@@ -2156,6 +2156,26 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     return risposta.send(Buffer.from(esito.dati, "base64"));
   });
 
+  // Scaricare un file del progetto così com'è, o una cartella come ZIP (con il percorso vuoto, il
+  // progetto intero). Arriva a flusso dall'ambiente del progetto, mentre il browser lo salva.
+  app.get<{ Params: { id: string }; Querystring: { percorso?: string } }>("/api/progetti/:id/file/scarica", async (richiesta, risposta) => {
+    if (opzioni.file === undefined) return risposta.code(404).send(senzaFile);
+    const esito = await opzioni.file.scarica(richiesta.params.id, richiesta.query.percorso ?? "");
+    if ("motivo" in esito) return risposta.code(409).send({ errore: esito.motivo });
+    const ascii = esito.nome.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+    void risposta.header("Content-Type", esito.comeArchivio ? "application/zip" : "application/octet-stream");
+    void risposta.header("Content-Disposition", `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(esito.nome)}`);
+    void risposta.header("X-Content-Type-Options", "nosniff");
+    void risposta.header("Cache-Control", "no-store");
+    void risposta.header("Content-Security-Policy", "sandbox; default-src 'none'");
+    if (esito.dimensione !== undefined) void risposta.header("Content-Length", String(esito.dimensione));
+    // Il browser se ne va a metà: il flusso si chiude subito, e l'ambiente smette di leggere.
+    risposta.raw.on("close", () => {
+      if (!risposta.raw.writableFinished) esito.flusso.destroy();
+    });
+    return risposta.send(esito.flusso);
+  });
+
   app.get<{ Params: { id: string } }>("/api/progetti/:id/applicazione", async (richiesta, risposta) => {
     if (opzioni.applicazioni === undefined) return risposta.code(409).send(senzaApplicazioni);
     const vista = await opzioni.applicazioni.vista(richiesta.params.id);

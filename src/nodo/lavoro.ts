@@ -291,6 +291,9 @@ export class LavoroDelNodo {
       case "file-elenca":
       case "file-cerca":
       case "file-leggi":
+      case "file-scarica":
+      case "file-scarica-avanti":
+      case "file-scarica-annulla":
         this.#file.esegui(comando);
         return;
       case "applicazione-avvia":
@@ -314,6 +317,7 @@ export class LavoroDelNodo {
    */
   chiudiTutto(): void {
     this.#anteprima.chiudiTutto();
+    this.#file.annullaTutti();
     for (const conversazione of this.#conversazioni.values()) conversazione.chiudi();
     this.#conversazioni.clear();
     for (const inAttesa of this.#strumenti.values()) {
