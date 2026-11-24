@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { chromium } from "playwright-core";
 import { allestisci, avviaNodoAccettato, finche, ID_NODO, PASSWORD } from "./banco.ts";
+import { Ponte } from "../nodo/ponte.ts";
 import { browserDiProva } from "./browser-di-prova.ts";
 
 const cartellaWeb = join(import.meta.dirname, "..", "..", "web", "dist");
@@ -97,4 +98,37 @@ test("nella pagina dell'ambiente i processi di Shinka stanno con il loro progett
   await server.getByRole("button", { name: "Termina", exact: true }).click();
   await blog.locator("li", { hasText: "node server.js" }).waitFor({ state: "detached" });
   void progetto;
+});
+
+test("un ambiente fa da ponte per un'altra macchina: si accende dalla pagina, dice il suo indirizzo, si spegne", { skip: salta, timeout: 120_000 }, async (t) => {
+  const banco = await allestisci(t, { cartellaWeb });
+  await banco.centro.listen({ host: "127.0.0.1", port: 0 });
+  const indirizzo = `http://localhost:${(banco.centro.server.address() as AddressInfo).port}`;
+  const ponte = new Ponte({ centro: indirizzo.replace("localhost", "127.0.0.1"), ascolta: "127.0.0.1" });
+  t.after(() => ponte.chiudi());
+  await avviaNodoAccettato(t, banco, { ponte });
+  const browser = await chromium.launch({
+    chromiumSandbox: disponibile?.recinto !== false,
+    ...(disponibile?.canale === undefined ? {} : { channel: disponibile.canale }),
+    ...(disponibile?.eseguibile === undefined ? {} : { executablePath: disponibile.eseguibile }),
+  });
+  t.after(() => browser.close());
+  const pagina = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await pagina.goto(`${indirizzo}/`);
+  await pagina.fill("#password", PASSWORD);
+  await pagina.click('button[type="submit"]');
+  await pagina.locator("form.scrittura textarea").waitFor();
+  await pagina.locator(".menu-pagine > summary").click();
+  await pagina.locator(".voci-pagine").getByRole("button", { name: /Ambienti/ }).click();
+  const nodo = pagina.getByRole("region", { name: "Ambienti" }).locator("li.ambiente", { hasText: "PC Windows" });
+  await nodo.getByRole("button", { name: "Fai da ponte per un'altra macchina" }).click();
+  await nodo.getByLabel("Porta").fill("47991");
+  await nodo.getByRole("button", { name: "Accendi il ponte" }).click();
+  await nodo.getByText("Ponte aperto sulla porta 47991.").waitFor();
+  await nodo.getByText(/come indirizzo di Shinka/).locator("code", { hasText: ":47991" }).waitFor();
+  assert.equal(ponte.porta, 47991);
+  if (process.env.SHINKA_PROVA_IMMAGINI !== undefined) await nodo.screenshot({ path: join(process.env.SHINKA_PROVA_IMMAGINI, "ponte.png") });
+  await nodo.getByRole("button", { name: "Spegni il ponte" }).click();
+  await nodo.getByRole("button", { name: "Fai da ponte per un'altra macchina" }).waitFor();
+  await finche(() => ponte.porta === undefined, "il nodo chiude il ponte");
 });

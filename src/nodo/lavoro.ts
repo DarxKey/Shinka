@@ -68,6 +68,8 @@ export interface ContestoLavoro {
   processiDiShinka?: { termina(pid: number): Promise<{ riuscita: boolean; testo: string }> };
   /** Su Windows: il collegamento che fa partire il nodo a ogni accesso. Senza, il nodo non lo sa cambiare. */
   avvioConWindows?: { imposta(attivo: boolean): Promise<{ attivo: boolean } | { motivo: string }> };
+  /** Il ponte per le macchine che non vedono il centro (ADR 0058). Senza, il nodo non lo sa aprire. */
+  ponte?: { apri(porta: number): Promise<number>; chiudi(): Promise<void> };
   /** Come si accende la shell di un terminale. Nei test se ne mette una finta. */
   accendiShell?: AccendiShell;
 }
@@ -203,6 +205,27 @@ export class LavoroDelNodo {
       case "lascia-modello":
         this.#lasciaDaFuori(comando.idPresa);
         return;
+      case "ponte": {
+        const ponte = this.#contesto.ponte;
+        const { porta } = comando;
+        if (ponte === undefined) {
+          this.#contesto.riferisci({ tipo: "ponte-esito", motivo: "Questo nodo non sa fare da ponte: va aggiornato." });
+          return;
+        }
+        if (porta === null) {
+          void ponte.chiudi().then(() => this.#contesto.riferisci({ tipo: "ponte-esito" }));
+          return;
+        }
+        void ponte.apri(porta).then(
+          (aperta) => this.#contesto.riferisci({ tipo: "ponte-esito", porta: aperta }),
+          (errore: unknown) =>
+            this.#contesto.riferisci({
+              tipo: "ponte-esito",
+              motivo: (errore as NodeJS.ErrnoException).code === "EADDRINUSE" ? `La porta ${porta} è già occupata su questa macchina: scegline un'altra.` : errore instanceof Error ? errore.message : String(errore),
+            }),
+        );
+        return;
+      }
       case "avvio-con-windows": {
         const { idRichiesta, attivo } = comando;
         const avvio = this.#contesto.avvioConWindows;

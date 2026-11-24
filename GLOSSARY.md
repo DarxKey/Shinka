@@ -230,6 +230,10 @@ _Avoid_: slot, widget, zona
 Ciò con cui una pagina di un'estensione dell'interfaccia parla con Shinka dal suo riquadro: lo stato, i messaggi alle conversazioni, e le API di Shinka che l'interfaccia chiama per lei, solo quelle dichiarate.
 _Avoid_: SDK, bridge, proxy
 
+**Ponte di un nodo**:
+Un nodo che lascia collegare al centro, attraverso di sé, una macchina che il centro non raggiunge: fa passare solo il collegamento cifrato dei nodi e lo scaricamento dell'installazione.
+_Avoid_: relay, proxy, gateway
+
 **Lavoro offline**:
 Il lavoro su un progetto di un ambiente fatto da quella macchina, con Shinka Desktop, mentre il centro non si raggiunge: lo porta avanti il nodo dell'ambiente, che ne tiene la storia e la consegna al centro quando torna.
 _Avoid_: modalità aereo, sincronizzazione, fork

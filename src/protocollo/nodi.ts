@@ -90,6 +90,8 @@ export type RiferitoDalNodo =
   | { tipo: "avvio-con-windows-esito"; idRichiesta: string; attivo?: boolean; motivo?: string }
   /** Il modello locale in rete chiesto dal centro risponde sulla sua porta, oppure perché no. */
   | { tipo: "modello-preso"; idPresa: string; porta?: number; motivo?: string }
+  /** Com'è il ponte di questo nodo per le macchine che non vedono il centro (ADR 0058): aperto su una porta, chiuso, o perché non si è aperto. */
+  | { tipo: "ponte-esito"; porta?: number; motivo?: string }
   /** Ciò che esce dal terminale di un progetto di questo ambiente. */
   | RiferitoTerminale
   /** Ciò che risponde l'applicazione di un progetto di questo ambiente, per l'anteprima. */
@@ -149,6 +151,8 @@ export type ComandoPerNodo =
   | { tipo: "prendi-modello"; idPresa: string; modello: string; impegno?: Impegno }
   /** La conversazione dell'altro ambiente ha finito con il modello: il server si spegne dopo il solito tempo. */
   | { tipo: "lascia-modello"; idPresa: string }
+  /** Apre il ponte su questa porta, o lo chiude (ADR 0058). Il centro lo ridice a ogni collegamento. */
+  | { tipo: "ponte"; porta: number | null }
   /**
    * Crea la cartella di un progetto nuovo. Fallisce se esiste già. Con `daArgomento` ci copia
    * i file che quell'argomento della Home ha in questo ambiente.
@@ -275,6 +279,11 @@ export interface Ambiente {
   indirizzoDelCentro?: string;
   /** L'indirizzo da cui il nodo si è collegato, visto dal centro: dove il centro raggiunge un suo modello in rete. */
   indirizzoDelNodo?: string;
+  /**
+   * Il ponte per le macchine che non vedono il centro (ADR 0058), se il proprietario lo ha acceso:
+   * la porta, se adesso è aperto, e perché non lo è.
+   */
+  ponte?: { porta: number; aperto: boolean; motivo?: string };
   /** Su Windows, per un nodo collegato che lo sa dire: se parte a ogni accesso. */
   avvioConWindows?: boolean;
 }

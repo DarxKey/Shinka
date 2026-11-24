@@ -50,6 +50,8 @@ interface NodoRegistrato {
   registratoIl: string;
   /** L'indirizzo con cui il nodo raggiunge il centro, come l'ha detto l'ultima volta. */
   indirizzoDelCentro?: string;
+  /** La porta del ponte, se il proprietario lo ha acceso (ADR 0058). */
+  ponte?: number;
 }
 
 /** Ciò che un nodo dice della sua versione quando si presenta. */
@@ -68,6 +70,8 @@ interface NodoCollegato extends VersioneDelNodo {
   cifrato: boolean;
   /** I progetti con lavoro fatto offline che il nodo ha detto di dover consegnare (ADR 0056). */
   offline?: string[];
+  /** Com'è andato il ponte l'ultima volta che il nodo lo ha detto. */
+  ponte?: { porta?: number; motivo?: string };
 }
 
 interface NodoInAttesa extends VersioneDelNodo {
@@ -247,6 +251,28 @@ export class RegistroAmbienti {
   }
 
   /** Il nodo collegato ha cambiato il suo avvio con Windows: lo si ricorda finché resta collegato. */
+  /** Accende il ponte di un ambiente su una porta, o lo spegne (ADR 0058): lo ricorda, e lo dice al nodo se è collegato. */
+  async impostaPonte(idAmbiente: string, porta: number | undefined): Promise<boolean> {
+    const nodo = this.#registrati.get(idAmbiente);
+    if (nodo === undefined) return false;
+    if (porta === undefined) delete nodo.ponte;
+    else nodo.ponte = porta;
+    await this.#salva();
+    const collegato = this.#collegati.get(idAmbiente);
+    if (collegato !== undefined) delete collegato.ponte;
+    this.inviaAlNodo(idAmbiente, { tipo: "ponte", porta: porta ?? null });
+    this.#avvisa();
+    return true;
+  }
+
+  /** Il nodo ha detto com'è il suo ponte. */
+  segnaPonte(idAmbiente: string, esito: { porta?: number; motivo?: string }): void {
+    const collegato = this.#collegati.get(idAmbiente);
+    if (collegato === undefined) return;
+    collegato.ponte = esito;
+    this.#avvisa();
+  }
+
   segnaAvvioConWindows(idAmbiente: string, attivo: boolean): void {
     const collegato = this.#collegati.get(idAmbiente);
     if (collegato === undefined || collegato.avvioConWindows === attivo) return;
@@ -406,6 +432,15 @@ export class RegistroAmbienti {
           ...(nodo.indirizzoDelCentro === undefined ? {} : { indirizzoDelCentro: nodo.indirizzoDelCentro }),
           ...(collegato?.avvioConWindows === undefined ? {} : { avvioConWindows: collegato.avvioConWindows }),
           ...(collegato?.canale.indirizzo === undefined ? {} : { indirizzoDelNodo: collegato.canale.indirizzo }),
+          ...(nodo.ponte === undefined
+            ? {}
+            : {
+                ponte: {
+                  porta: nodo.ponte,
+                  aperto: collegato?.ponte?.porta === nodo.ponte,
+                  ...(collegato === undefined ? { motivo: "L'ambiente è spento." } : collegato.ponte?.motivo === undefined ? {} : { motivo: collegato.ponte.motivo }),
+                },
+              }),
         };
       })
       .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
@@ -471,6 +506,8 @@ export class RegistroAmbienti {
       ...(offline === undefined ? {} : { offline: offline.filter((id) => typeof id === "string").slice(0, 1000) }),
     });
     canale.invia({ tipo: "accolto", nome: registrato.nome, ...(segretoCambiato ? { segretoCambiato: true as const } : {}) });
+    // Il ponte acceso dal proprietario si riapre a ogni collegamento (ADR 0058).
+    if (registrato.ponte !== undefined) canale.invia({ tipo: "ponte", porta: registrato.ponte });
     for (const ascoltatore of this.#ascoltatoriCollegamenti) ascoltatore(registrato.id);
     this.#avvisa();
   }

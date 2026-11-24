@@ -52,7 +52,7 @@ import { LUNGHEZZA_MINIMA_PASSWORD, type Accesso } from "./accesso.ts";
 import { COPIA_MASSIMA, leggiScelteDelTrasloco, type StatoCopie } from "../protocollo/copia.ts";
 import { CopiaNonValida, PasswordDellaCopiaSbagliata } from "./copia-di-sicurezza.ts";
 import { CopiaRifiutata, type CopieDiSicurezza } from "./copie.ts";
-import type { CanaleNodo, RegistroAmbienti } from "./ambienti.ts";
+import { ID_AMBIENTE_DEL_CENTRO, type CanaleNodo, type RegistroAmbienti } from "./ambienti.ts";
 import type { Canale } from "./canale.ts";
 import { MANIFESTO, type AggiornamentiDesktop } from "./desktop.ts";
 import type { CartelleCollegate } from "./cartelle-collegate.ts";
@@ -1729,6 +1729,21 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     },
   );
 
+  // Il ponte di un ambiente per le macchine che non vedono il centro (ADR 0058): lo accende e lo spegne il proprietario.
+  ambienti.iscriviRiferiti((idNodo, messaggio) => {
+    if (messaggio.tipo === "ponte-esito") ambienti.segnaPonte(idNodo, { ...(messaggio.porta === undefined ? {} : { porta: messaggio.porta }), ...(messaggio.motivo === undefined ? {} : { motivo: messaggio.motivo }) });
+  });
+  app.post<{ Params: { id: string }; Body: { porta: number | null } }>(
+    "/api/ambienti/:id/ponte",
+    { schema: { body: { type: "object", required: ["porta"], additionalProperties: false, properties: { porta: { type: ["integer", "null"], minimum: 1024, maximum: 65535 } } } } },
+    async (richiesta, risposta) => {
+      if (richiesta.params.id === ID_AMBIENTE_DEL_CENTRO) return risposta.code(409).send({ errore: "Il centro non fa da ponte a sé stesso: il ponte lo fa un nodo." });
+      const fatto = await ambienti.impostaPonte(richiesta.params.id, richiesta.body.porta ?? undefined);
+      if (!fatto) return risposta.code(404).send({ errore: "Ambiente non trovato." });
+      return { porta: richiesta.body.porta };
+    },
+  );
+
   // Un ambiente nuovo con un comando di una riga: il proprietario sceglie sistema e nome, il centro dà il comando.
   const inviti = opzioni.inviti ?? new InvitiDegliAmbienti(perINodi === undefined ? {} : { certificato: perINodi });
   app.post<{ Body: { sistema: string; centro: string; nome: string; descrizione?: string } }>(
@@ -2967,6 +2982,15 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
         idPresa,
         ...(typeof porta === "number" && Number.isInteger(porta) && porta > 0 && porta < 65536 ? { porta } : {}),
         ...(motivo === undefined ? {} : { motivo: motivo.slice(0, 2000) }),
+      };
+    }
+    case "ponte-esito": {
+      const porta = campi.porta;
+      const motivo = campo("motivo");
+      return {
+        tipo: "ponte-esito",
+        ...(typeof porta === "number" && Number.isInteger(porta) && porta > 0 && porta < 65536 ? { porta } : {}),
+        ...(motivo === undefined ? {} : { motivo: motivo.slice(0, 500) }),
       };
     }
     case "avvio-con-windows-esito": {

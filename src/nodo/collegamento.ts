@@ -500,6 +500,11 @@ export function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | u
       if (idRichiesta === undefined || typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return undefined;
       return { tipo: "termina-processo", idRichiesta, pid };
     }
+    case "ponte": {
+      const porta = campi.porta;
+      if (porta === null) return { tipo: "ponte", porta: null };
+      return typeof porta === "number" && Number.isInteger(porta) && porta > 0 && porta < 65536 ? { tipo: "ponte", porta } : undefined;
+    }
     case "avvio-con-windows": {
       const idRichiesta = testo("idRichiesta");
       if (idRichiesta === undefined || typeof campi.attivo !== "boolean") return undefined;

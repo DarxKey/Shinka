@@ -966,6 +966,10 @@ export async function avviaNodo(
     collegamento?: Partial<Pick<ConfigurazioneCollegamento, "identita" | "segreto" | "impronta" | "alImpronta" | "alCifrato">>;
     /** Con il lavoro offline: i suoi dati stanno in questa cartella, che resta tra un avvio e l'altro del nodo. */
     offline?: string;
+    /** L'indirizzo con cui il nodo raggiunge il centro, se non è quello diretto: per esempio un ponte. */
+    centro?: string;
+    /** Il ponte del nodo per le macchine che non vedono il centro (ADR 0058). */
+    ponte?: NonNullable<ContestoLavoro["ponte"]>;
   } = {},
 ): Promise<NodoInProva> {
   if (!banco.centro.server.listening) await banco.centro.listen({ host: "127.0.0.1", port: 0 });
@@ -997,6 +1001,7 @@ export async function avviaNodo(
     ...(opzioni.aggiorna === undefined ? {} : { aggiorna: opzioni.aggiorna }),
     ...(opzioni.preparaProgetto === undefined ? {} : { preparaProgetto: opzioni.preparaProgetto }),
     ...(opzioni.applicazioni === undefined ? {} : { applicazioni: opzioni.applicazioni }),
+    ...(opzioni.ponte === undefined ? {} : { ponte: opzioni.ponte }),
     apriConversazione: (configurazione) => {
       const conversazione = new ConversazioneFinta(configurazione);
       conversazioni.push(conversazione);
@@ -1016,7 +1021,7 @@ export async function avviaNodo(
         });
   if (offline !== undefined) lavoro.usaOffline(offline);
   const collegamento: CollegamentoAlCentro = new CollegamentoAlCentro({
-    centro: `http://127.0.0.1:${port}`,
+    centro: opzioni.centro ?? `http://127.0.0.1:${port}`,
     identita: { idNodo: ID_NODO, segreto: SEGRETO_NODO },
     ...opzioni.collegamento,
     nome: "PC Windows",

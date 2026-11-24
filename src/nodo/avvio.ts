@@ -54,6 +54,7 @@ import { custodiaDelSegreto, leggiOCreaIdentita } from "./identita.ts";
 import { LavoroDelNodo } from "./lavoro.ts";
 import { LavoroOffline } from "./offline.ts";
 import { Sportello } from "./sportello.ts";
+import { Ponte } from "./ponte.ts";
 import { preparaCartellaSkill } from "./skill.ts";
 import { sistemaDiQuestaMacchina } from "./sistema.ts";
 import { FILE_STATO_DEL_COLLEGAMENTO, scriviStatoDelCollegamento } from "./stato-del-collegamento.ts";
@@ -127,6 +128,8 @@ try {
     risorse: new CampionatoreRisorse({ radiceProgetti: impostazioni.progetti, etichettaDiShinka: ETICHETTA_STACK, processiDiShinka }),
     processiDiShinka,
     ...(avvioConWindows === undefined ? {} : { avvioConWindows }),
+    // Il ponte per le macchine che non vedono il centro (ADR 0058): lo apre il centro, se il proprietario lo ha acceso.
+    ponte: new Ponte({ centro: impostazioni.centro }),
     // Le estensioni che il centro accende qui: i plugin stanno tra i dati del nodo, e nella
     // configurazione di Claude Code di questa macchina non si scrive nulla.
     estensioni: (chiavi, alCambio) =>

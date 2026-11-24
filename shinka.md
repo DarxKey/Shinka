@@ -2,7 +2,7 @@
 
 ## Specifica funzionale e architetturale
 
-**Versione:** 2.26 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
+**Versione:** 2.27 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
 
 Sostituisce la specifica "Atlas Agent 1.0", conservata in [archivio/atlas-agent-v1.md](archivio/atlas-agent-v1.md). I termini usati qui sono definiti in [GLOSSARY.md](GLOSSARY.md). Le decisioni di fondo sono motivate in [docs/adr/](docs/adr/). Lo stato dei lavori è in [STATO.md](STATO.md).
 
@@ -55,6 +55,8 @@ La versione 2.24 aggiunge le estensioni dell'interfaccia: temi, pagine e pulsant
 La versione 2.25 lascia lavorare sui progetti di un PC anche quando il centro non si raggiunge: Shinka Desktop, su quel PC, li riprende dal suo nodo, e al ritorno il nodo consegna al centro ciò che è stato fatto. Cambiano le sezioni 4.3, 4.4 e 4.5; si aggiunge la prova A91. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0056](docs/adr/0056-il-lavoro-offline-sui-progetti-del-pc.md).
 
 La versione 2.26 rende l'interfaccia riscrivibile dalle estensioni: le loro pagine stanno in molti posti dell'interfaccia, possono nascondere o sostituire alcune parti, avere comandi e scorciatoie, e chiamano le API di Shinka con la sessione del proprietario, solo quelle che l'estensione dichiara e che la scheda mostra. Restano chiuse l'accesso a Shinka e le decisioni che spettano al proprietario. Cambiano le sezioni 4.11 e 6; si aggiunge la prova A92. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0057](docs/adr/0057-interfaccia-riscrivibile-dalle-estensioni.md).
+
+La versione 2.27 lascia che un nodo faccia da ponte per una macchina che non raggiunge il centro: il proprietario lo accende dalla pagina Ambienti, e il ponte fa passare solo il collegamento cifrato dei nodi e lo scaricamento dell'installazione. Cambia la sezione 4.3; si aggiunge la prova A93. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0058](docs/adr/0058-il-ponte-di-un-nodo.md).
 
 ## 1. Cos'è Shinka
 
@@ -147,6 +149,7 @@ Aperto un progetto, il lavoro prosegue lì: la Home ne riferisce e vi inoltra is
 ### 4.3 Ambienti
 
 - Un ambiente è attivo quando il suo nodo è collegato al centro. È il nodo a collegarsi al centro, non il contrario.
+- Una macchina che non raggiunge il centro può collegarsi attraverso un altro nodo, che le fa da ponte: lo accende il proprietario, ambiente per ambiente. Il ponte fa passare solo il collegamento cifrato dei nodi, che non vede, e lo scaricamento dell'installazione di un ambiente nuovo; l'interfaccia e le API di Shinka non passano.
 - Fa eccezione il lavoro offline: quando il centro non si raggiunge, chi sta sulla macchina di un ambiente, con Shinka Desktop, lavora ai progetti di quell'ambiente attraverso il suo nodo, che per questo ascolta solo da quella macchina e solo con un gettone che tiene tra i suoi dati. Offline lavora solo la conversazione principale di un progetto; gli strumenti di Shinka che passano dal centro dicono che manca, salvo leggere le skill, e ricordare in memoria o salvare una skill, che partono verso il centro al ritorno. Le credenziali del vault non arrivano mai al lavoro offline.
 - Il collegamento tra un nodo e il centro è cifrato. Il nodo riconosce il centro dal suo certificato e non parla con chi ne presenta un altro; non torna al collegamento in chiaro una volta che lo ha riconosciuto. Il centro accetta ancora i nodi in chiaro delle versioni di prima, finché il proprietario non sceglie di accettare solo quelli cifrati.
 - Ogni ambiente ha una breve descrizione di ciò che offre, per esempio "PC Windows: Unity, Blender". La Home la usa per scegliere dove lavorare e per proporre l'ambiente di un progetto. *(Assunzione, vedi sezione 11.)*
@@ -477,6 +480,7 @@ Ogni incremento deve essere usabile e dimostrabile prima di passare al successiv
 | A90 | La Home propone un tema con una pagina e un pulsante, e il proprietario la conferma | Il tema cambia l'aspetto; la pagina compare nel menu, legge lo stato e manda un messaggio con il suo nome, ma non raggiunge le API né la rete; il pulsante manda il suo testo; con «?senza-estensioni» non ci sono |
 | A91 | Con il centro irraggiungibile, il proprietario da Shinka Desktop scrive a un progetto del suo PC e ne crea uno nuovo; poi il centro torna | Offline i due progetti lavorano e chiedono i permessi lì; tornato il centro, le loro storie e il progetto nuovo ci sono, una volta sola, e i progetti riprendono dal centro dalla stessa sessione |
 | A92 | La Home propone un'estensione con una pagina nella barra destra, nella testata e nel pannello flottante, che legge le risorse di un ambiente; il proprietario la conferma | La scheda mostra posti e API; la pagina compare nei tre posti e legge le risorse; un'API non dichiarata le è negata, come l'anteprima di un progetto non arriva al ponte; le sue richieste sono nel registro con il suo nome; spenta, sparisce subito; con «?senza-estensioni» non c'è |
+| A93 | Il proprietario accende il ponte di un ambiente e prepara con il suo indirizzo una macchina che non vede il centro | La macchina si collega attraverso il ponte, cifrata da capo a capo, e il proprietario la approva come le altre; dal ponte le pagine e le API dell'interfaccia non si raggiungono; spento il ponte, la macchina risulta spenta |
 
 ## 10. Regole per chi implementa
 

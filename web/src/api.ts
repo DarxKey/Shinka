@@ -557,6 +557,11 @@ export async function leggiRisorseAmbiente(id: string): Promise<DettaglioDellAmb
 
 /** Chiede al nodo di un ambiente di passare alla versione del centro. */
 /** Fa partire un nodo Windows a ogni accesso, oppure no. */
+/** Accende il ponte di un ambiente su una porta, o lo spegne con null (ADR 0058). */
+export async function impostaPonte(idAmbiente: string, porta: number | null): Promise<void> {
+  await chiama("POST", `/api/ambienti/${encodeURIComponent(idAmbiente)}/ponte`, { porta });
+}
+
 export async function impostaAvvioConWindows(idAmbiente: string, attivo: boolean): Promise<{ attivo: boolean }> {
   return (await chiama("POST", `/api/ambienti/${encodeURIComponent(idAmbiente)}/avvio-con-windows`, { attivo })) as { attivo: boolean };
 }

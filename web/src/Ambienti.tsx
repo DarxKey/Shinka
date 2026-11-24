@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { DecisionePermesso } from "../../src/protocollo/eventi.ts";
 import type { Ambiente, RichiestaCollegamento, StatoAmbienti } from "../../src/protocollo/nodi.ts";
-import { aggiornaAmbiente, decidiRichiesta, impostaAvvioConWindows, invitaAmbiente, rimuoviAmbiente, type InvitoAmbiente } from "./api.ts";
+import { aggiornaAmbiente, decidiRichiesta, impostaAvvioConWindows, impostaPonte, invitaAmbiente, rimuoviAmbiente, type InvitoAmbiente } from "./api.ts";
 import { copia } from "./copia.ts";
 import { frammentoDi } from "./vista.ts";
 import { collegamentoAmbiente, sottotitoloAmbiente as sottotitolo, versioneAmbiente } from "./descrivi.ts";
@@ -179,6 +179,7 @@ function VistaAmbiente({ ambiente, indirizzoNoto, allaChiusura }: { ambiente: Am
       {ambiente.attivo && ambiente.avvioConWindows === undefined && eWindows(ambiente.sistema) && (
         <p className="tenue">Per scegliere da qui se parte con Windows, reinstalla il nodo con il comando di una riga.</p>
       )}
+      {!ambiente.delCentro && (ambiente.attivo || ambiente.ponte !== undefined) && <PonteDellAmbiente ambiente={ambiente} />}
       {ambiente.attivo && ambiente.indietro === true && ambiente.siAggiorna !== true && (
         <p className="tenue">Questo nodo non si aggiorna da qui: va aggiornato su quella macchina.</p>
       )}
@@ -409,6 +410,92 @@ function AggiungiAmbiente({ indirizzoNoto: noto, reinstalla, allaChiusura }: { i
           </p>
         )}
       </form>
+    </div>
+  );
+}
+
+/** La porta proposta per un ponte nuovo. */
+const PORTA_DEL_PONTE = 7851;
+
+/**
+ * Il ponte di un ambiente (ADR 0058): una macchina che non vede il centro, ma vede questo nodo, si
+ * collega attraverso di lui. Acceso, dice l'indirizzo da usare per la macchina nuova e, su Windows,
+ * la regola del firewall da creare una volta.
+ */
+function PonteDellAmbiente({ ambiente }: { ambiente: Ambiente }): ReactNode {
+  const [porta, setPorta] = useState(String(ambiente.ponte?.porta ?? PORTA_DEL_PONTE));
+  const [aperto, setAperto] = useState(false);
+  const [inCorso, setInCorso] = useState(false);
+  const [errore, setErrore] = useState<string>();
+  const ponte = ambiente.ponte;
+
+  async function cambia(nuova: number | null): Promise<void> {
+    setInCorso(true);
+    setErrore(undefined);
+    try {
+      await impostaPonte(ambiente.id, nuova);
+      setAperto(false);
+    } catch (causa) {
+      setErrore(causa instanceof Error ? causa.message : "Il ponte non è cambiato.");
+    } finally {
+      setInCorso(false);
+    }
+  }
+
+  const indirizzo = ponte !== undefined && ambiente.indirizzoDelNodo !== undefined ? `http://${ambiente.indirizzoDelNodo.includes(":") ? `[${ambiente.indirizzoDelNodo}]` : ambiente.indirizzoDelNodo}:${ponte.porta}` : undefined;
+  return (
+    <div className="ponte-ambiente">
+      {ponte === undefined ? (
+        aperto ? (
+          <>
+            <p className="tenue">
+              Una macchina che non raggiunge il centro, ma raggiunge {ambiente.nome}, si collega attraverso di lui. Il ponte fa passare solo i nodi di Shinka e lo scaricamento
+              dell'installazione, non le pagine.
+            </p>
+            <label>
+              Porta <input type="number" min={1024} max={65535} value={porta} onChange={(evento) => setPorta(evento.target.value)} />
+            </label>
+            <div className="pulsanti">
+              <button type="button" className="approva" disabled={inCorso || !/^\d{4,5}$/.test(porta)} onClick={() => void cambia(Number(porta))}>
+                Accendi il ponte
+              </button>
+              <button type="button" className="discreto" onClick={() => setAperto(false)}>
+                Annulla
+              </button>
+            </div>
+          </>
+        ) : (
+          <button type="button" className="discreto piccolo" onClick={() => setAperto(true)}>
+            Fai da ponte per un'altra macchina
+          </button>
+        )
+      ) : (
+        <>
+          <div className={ponte.aperto ? "tenue" : "errore"} role="status">
+            {ponte.aperto ? `Ponte aperto sulla porta ${ponte.porta}.` : `Ponte sulla porta ${ponte.porta}, non aperto: ${ponte.motivo ?? "il nodo non ha ancora risposto."}`}
+          </div>
+          {ponte.aperto && indirizzo !== undefined && (
+            <p className="tenue">
+              Per la macchina che passa da qui, in «Aggiungi un ambiente» scrivi come indirizzo di Shinka <code>{indirizzo}</code>
+              {indirizzo.includes("[") ? "" : ", o l'indirizzo con cui quella macchina vede questa"}.
+            </p>
+          )}
+          {ponte.aperto && eWindows(ambiente.sistema) && (
+            <p className="tenue">
+              Su Windows il firewall va aperto una volta, da un PowerShell da amministratore:{" "}
+              <code>New-NetFirewallRule -DisplayName "Ponte di Shinka" -Direction Inbound -Protocol TCP -LocalPort {ponte.porta} -Action Allow</code>
+            </p>
+          )}
+          <button type="button" className="discreto piccolo" disabled={inCorso} onClick={() => void cambia(null)}>
+            Spegni il ponte
+          </button>
+        </>
+      )}
+      {errore !== undefined && (
+        <p className="errore" role="alert">
+          {errore}
+        </p>
+      )}
     </div>
   );
 }
