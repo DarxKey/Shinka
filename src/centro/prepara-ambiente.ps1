@@ -42,7 +42,8 @@ function Prepara-AmbienteShinka {
     }
   }
   $node = (Get-Command node.exe).Source
-  & $node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=18)?0:1)'
+  # Niente virgolette doppie nel codice per node -e: Windows PowerShell 5.1 le toglie passandolo a un programma.
+  & $node -e 'const [a,b]=process.versions.node.split(''.'').map(Number);process.exit(a>22||(a===22&&b>=18)?0:1)'
   if ($LASTEXITCODE -ne 0) {
     Fallisci "Node.js è alla versione $(& $node --version): serve la 22.18 o più recente."
     return
@@ -122,7 +123,7 @@ function Prepara-AmbienteShinka {
   $env:SHINKA_DESCRIZIONE = $SHINKA_DESCRIZIONE
   # L'impronta del certificato con cui riconoscere il centro: quella del centro che ha dato questo comando.
   $env:SHINKA_IMPRONTA = $SHINKA_IMPRONTA
-  & $node -e 'const fs=require("node:fs");const f=process.env.SHINKA_FILE;let p={};try{p=JSON.parse(fs.readFileSync(f,"utf8"))}catch{}const s={...p,centro:process.env.SHINKA_CENTRO,nome:process.env.SHINKA_NOME,descrizione:process.env.SHINKA_DESCRIZIONE};delete s.improntaDelCentro;if(process.env.SHINKA_IMPRONTA)s.improntaDelCentro=process.env.SHINKA_IMPRONTA;fs.writeFileSync(f,JSON.stringify(s,null,2))'
+  & $node -e 'const fs=require(''node:fs'');const f=process.env.SHINKA_FILE;let p={};try{p=JSON.parse(fs.readFileSync(f,''utf8''))}catch{}const s={...p,centro:process.env.SHINKA_CENTRO,nome:process.env.SHINKA_NOME,descrizione:process.env.SHINKA_DESCRIZIONE};delete s.improntaDelCentro;if(process.env.SHINKA_IMPRONTA)s.improntaDelCentro=process.env.SHINKA_IMPRONTA;fs.writeFileSync(f,JSON.stringify(s,null,2))'
   foreach ($nome in 'SHINKA_FILE', 'SHINKA_CENTRO', 'SHINKA_NOME', 'SHINKA_DESCRIZIONE', 'SHINKA_IMPRONTA') { Remove-Item "Env:$nome" -ErrorAction SilentlyContinue }
   if ($LASTEXITCODE -ne 0) { Fallisci 'non è stato possibile salvare le scelte del nodo.'; return }
 
