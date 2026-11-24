@@ -30,7 +30,9 @@ test("index.html dà all'iPhone nome, icona e manifest, e i file ci sono", () =>
   assert.equal(collegamenti.get("/apple-touch-icon.png"), "apple-touch-icon");
   assert.match(html, /<link rel="apple-touch-icon" sizes="180x180" href="\/apple-touch-icon\.png" \/>/);
   assert.equal(collegamenti.get("/manifest.webmanifest"), "manifest");
-  assert.equal(collegamenti.get("/icona.svg"), "icon");
+  // Il favicon disegnato per le misure piccole; il logo intero resta per chi lo vuole grande.
+  assert.equal(collegamenti.get("/icona-piccola.svg"), "icon");
+  readFileSync(join(pubblica, "icona.svg"));
   for (const percorso of collegamenti.keys()) readFileSync(join(pubblica, percorso.slice(1)));
 
   const manifest = JSON.parse(readFileSync(join(pubblica, "manifest.webmanifest"), "utf8")) as {
@@ -76,6 +78,7 @@ test("il centro serve icone e manifest a chi non è ancora entrato, e la sua pol
     "/favicon-32.png": /^image\/png/,
     "/favicon.ico": /^image\/(x-icon|vnd\.microsoft\.icon)/,
     "/icona.svg": /^image\/svg\+xml/,
+    "/icona-piccola.svg": /^image\/svg\+xml/,
     "/manifest.webmanifest": /^application\/manifest\+json/,
   };
   for (const [percorso, tipo] of Object.entries(tipi)) {

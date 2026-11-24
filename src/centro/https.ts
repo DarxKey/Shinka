@@ -360,7 +360,7 @@ export function paginaDelCertificato(ca: DatiDelCertificato | undefined, indiriz
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<link rel="icon" href="/icona.svg" type="image/svg+xml">
+<link rel="icon" href="/icona-piccola.svg" type="image/svg+xml">
 <title>Il certificato di Shinka</title>
 <style>
   body { margin: 0 auto; max-width: 40rem; padding: 1.2rem; font: 16px/1.5 system-ui, -apple-system, sans-serif; color: #1d1c1a; background: #f7f6f3; }

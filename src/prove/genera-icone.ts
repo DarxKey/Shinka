@@ -16,6 +16,9 @@ import { browserDiProva } from "./browser-di-prova.ts";
 
 const cartella = join(import.meta.dirname, "..", "..", "web", "public");
 const disegno = readFileSync(join(cartella, "icona.svg"), "utf8");
+// Alle misure piccole il disegno pieno si perde: lì vale quello semplificato, senza griglia né glitch.
+const piccolo = readFileSync(join(cartella, "icona-piccola.svg"), "utf8");
+const LATO_PICCOLO = 64;
 
 /** Il lato in pixel e il file. iOS vuole un PNG quadrato e pieno: gli angoli li arrotonda lui. */
 const ICONE: [number, string][] = [
@@ -38,7 +41,7 @@ const aperto = await chromium.launch({
 try {
   for (const [lato, file] of ICONE) {
     const pagina = await aperto.newPage({ viewport: { width: lato, height: lato } });
-    const svg = disegno.replace('width="512" height="512"', `width="${lato}" height="${lato}"`);
+    const svg = (lato <= LATO_PICCOLO ? piccolo : disegno).replace('width="512" height="512"', `width="${lato}" height="${lato}"`);
     await pagina.setContent(`<!doctype html><html><body style="margin:0">${svg}</body></html>`);
     await pagina.screenshot({ path: join(cartella, file) });
     await pagina.close();

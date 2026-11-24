@@ -128,12 +128,13 @@ function Disegna-Icona([string] $colore) {
   $forma.AddArc($lato - 1 - $r * 2, $lato - 1 - $r * 2, $r * 2, $r * 2, 0, 90)
   $forma.AddArc(0, $lato - 1 - $r * 2, $r * 2, $r * 2, 90, 90)
   $forma.CloseFigure()
-  $pennello.FillPath((New-Object Drawing.SolidBrush([Drawing.ColorTranslator]::FromHtml('#2f5fd0'))), $forma)
+  # I colori del logo: il fondo viola scuro e la S ciano.
+  $pennello.FillPath((New-Object Drawing.SolidBrush([Drawing.ColorTranslator]::FromHtml('#2d0a52'))), $forma)
   $carattere = New-Object Drawing.Font('Segoe UI', 17, [Drawing.FontStyle]::Bold, [Drawing.GraphicsUnit]::Pixel)
   $centrato = New-Object Drawing.StringFormat
   $centrato.Alignment = [Drawing.StringAlignment]::Center
   $centrato.LineAlignment = [Drawing.StringAlignment]::Center
-  $pennello.DrawString('S', $carattere, [Drawing.Brushes]::White, (New-Object Drawing.RectangleF(-3, -1, $lato, $lato)), $centrato)
+  $pennello.DrawString('S', $carattere, (New-Object Drawing.SolidBrush([Drawing.ColorTranslator]::FromHtml('#00f0ff'))), (New-Object Drawing.RectangleF(-3, -1, $lato, $lato)), $centrato)
   $pennello.FillEllipse([Drawing.Brushes]::White, 17, 17, 15, 15)
   $pennello.FillEllipse((New-Object Drawing.SolidBrush([Drawing.ColorTranslator]::FromHtml($colore))), 19, 19, 11, 11)
   $pennello.Dispose()
