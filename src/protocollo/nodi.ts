@@ -7,7 +7,7 @@ import type { AzioneInAmbiente, EsitoAzione } from "./azioni.ts";
 import type { RichiestaAllaConversazione } from "./modifiche.ts";
 import type { AnteprimaRiavvolgimento, DecisionePermesso, EventoConversazione, RispostaAParte, RispostaAlleDomande } from "./eventi.ts";
 import type { Allegato, Immagine } from "./allegati.ts";
-import type { Impegno, ImpostazioniConversazione, Motore } from "./impostazioni.ts";
+import type { Impegno, ImpostazioniConversazione, ModelloDisponibile, Motore } from "./impostazioni.ts";
 import type { EsitoAccessi, RichiestaAccessi } from "./accessi.ts";
 import type { RisorseDellAmbiente } from "./risorse.ts";
 import type { SkillDistribuita } from "./skill.ts";
@@ -90,6 +90,8 @@ export type RiferitoDalNodo =
   | { tipo: "avvio-con-windows-esito"; idRichiesta: string; attivo?: boolean; motivo?: string }
   /** Il modello locale in rete chiesto dal centro risponde sulla sua porta, oppure perché no. */
   | { tipo: "modello-preso"; idPresa: string; porta?: number; motivo?: string }
+  /** I modelli tra cui scegliere in questo ambiente, per la scheda di un progetto che nasce qui. */
+  | { tipo: "modelli-esito"; idRichiesta: string; modelli: ModelloDisponibile[] }
   /** Com'è il ponte di questo nodo per le macchine che non vedono il centro (ADR 0058): aperto su una porta, chiuso, o perché non si è aperto. */
   | { tipo: "ponte-esito"; porta?: number; motivo?: string }
   /** Ciò che esce dal terminale di un progetto di questo ambiente. */
@@ -176,11 +178,21 @@ export type ComandoPerNodo =
       estensioni?: string[];
       /** Il motore predefinito dell'installazione, che è del centro: vale se le impostazioni non ne scelgono uno. */
       motorePredefinito?: Motore;
+      /**
+       * Il proprietario la sta guardando: il motore parte subito e dice modelli, comandi e contesto,
+       * prima del primo messaggio. Vale anche per una conversazione già aperta. Un nodo di prima lo ignora.
+       */
+      prepara?: true;
     }
   /** Una richiesta sugli accessi dei motori in questo ambiente: com'è, entrare, uscire. */
   | { tipo: "accessi"; idRichiesta: string; richiesta: RichiestaAccessi }
   /** Il proprietario sta guardando la pagina di questo ambiente: come stanno le sue risorse. */
   | { tipo: "risorse"; idRichiesta: string }
+  /**
+   * Il proprietario sta scegliendo il modello di un progetto che nasce qui: i modelli dei motori con
+   * un accesso in questo ambiente, e i modelli locali accesi qui. Un nodo di prima non lo conosce e tace.
+   */
+  | { tipo: "modelli"; idRichiesta: string }
   /** Cambia le impostazioni di una conversazione già aperta. */
   | { tipo: "imposta"; idConversazione: string; impostazioni: ImpostazioniConversazione }
   | { tipo: "messaggio"; idConversazione: string; testo: string; allegati?: Allegato[] }

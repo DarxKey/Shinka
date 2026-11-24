@@ -153,6 +153,7 @@ export class LavoriDeiProgetti {
     opzioni.progetti.iscrivi(() => lavori.#avvisa());
     opzioni.ambienti.iscrivi(() => lavori.#avvisa());
     opzioni.ambienti.iscriviScollegamenti((idAmbiente) => lavori.#ambienteScollegato(idAmbiente));
+    opzioni.ambienti.iscriviCollegamenti((idAmbiente) => lavori.#ambienteCollegato(idAmbiente));
     return lavori;
   }
 
@@ -939,6 +940,22 @@ export class LavoriDeiProgetti {
     const dellaConversazione = this.#attivitaDellaConversazione.get(idConversazione);
     if (dellaConversazione === undefined && incarichi.length === 0) return;
     this.#canali.get(idConversazione)?.pubblica({ tipo: "attivita", attivita: [...(dellaConversazione ?? []), ...incarichi] });
+  }
+
+  /**
+   * Il nodo di un ambiente si è collegato, magari dopo che il proprietario aveva già aperto una sua
+   * conversazione (succede dopo un riavvio di Shinka): quelle aperte in una pagina si preparano adesso,
+   * così modelli, comandi e contesto arrivano senza aspettare il primo messaggio. Quelle con lavoro
+   * offline da consegnare aspettano la consegna (ADR 0056).
+   */
+  #ambienteCollegato(idAmbiente: string): void {
+    const offline = new Set(this.#o.ambienti.offlineDichiarato(idAmbiente));
+    for (const [idConversazione, canale] of this.#canali) {
+      if (!canale.seguito) continue;
+      const progetto = this.#progettoDi(idConversazione);
+      if (progetto === undefined || progetto.idAmbiente !== idAmbiente || offline.has(progetto.id)) continue;
+      this.prepara(idConversazione);
+    }
   }
 
   /** Un ambiente si è scollegato: ciò che vi era in corso non arriverà più a conclusione. */

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { EventoConversazione, PortaConversazione, ScambioDellaStoria } from "../protocollo/eventi.ts";
-import type { ImpostazioniConversazione, Motore } from "../protocollo/impostazioni.ts";
+import type { ImpostazioniConversazione, ModelloDisponibile, Motore } from "../protocollo/impostazioni.ts";
 import { leggiSessioni } from "../protocollo/sessioni.ts";
 import type { ConfigurazioneConversazione } from "./conversazione.ts";
 import { apriConversazione, notaDelPassaggio } from "./motore.ts";
-import { ModelliDeiMotori } from "./sonde-motori.ts";
+import { ModelliDeiMotori, type SondaDeiModelli } from "./sonde-motori.ts";
 
 /** Una conversazione finta di un motore: ricorda ciò che riceve. */
 class Finta implements PortaConversazione {
@@ -48,15 +48,22 @@ class Finta implements PortaConversazione {
   }
 }
 
-function prepara(impostazioni: ImpostazioniConversazione, idSessione?: string, predefinito: Motore = "claude") {
+function prepara(
+  impostazioni: ImpostazioniConversazione,
+  idSessione?: string,
+  predefinito: Motore = "claude",
+  altro: { sonda?: SondaDeiModelli; locali?: ModelloDisponibile[] } = {},
+) {
   const aperte: Finta[] = [];
   const eventi: EventoConversazione[] = [];
   const sessioni: string[] = [];
   const sondati: Motore[] = [];
   const modelli = new ModelliDeiMotori(async (motore) => {
     sondati.push(motore);
+    if (altro.sonda !== undefined) return altro.sonda(motore);
     return motore === "codex" ? [{ valore: "gpt-5.5", nome: "GPT-5.5", descrizione: "" }] : undefined;
   });
+  const locali = altro.locali;
   const porta = apriConversazione(
     {
       cartella: "/tmp/x",
@@ -67,6 +74,7 @@ function prepara(impostazioni: ImpostazioniConversazione, idSessione?: string, p
       ...(idSessione === undefined ? {} : { idSessione }),
       alEvento: (evento) => eventi.push(evento),
       alIdSessione: (id) => sessioni.push(id),
+      ...(locali === undefined ? {} : { modelliLocali: { modelli: () => locali } as unknown as NonNullable<ConfigurazioneConversazione["modelliLocali"]> }),
     },
     {
       predefinito,
@@ -179,6 +187,38 @@ test("il menu ha i modelli di tutti e due i motori, ciascuno con il suo", async 
     ultimo.stato.modelli?.map((modello) => `${modello.motore}:${modello.valore}`),
     ["claude:opus", "codex:gpt-5.5"],
   );
+});
+
+test("aperta dopo un riavvio, la conversazione dice i modelli senza aspettare un messaggio né un cambio di motore", async () => {
+  const opus = { valore: "opus", nome: "Opus", descrizione: "" };
+  const qwen = { valore: "locale:qwen", nome: "Qwen (in rete, PC)", descrizione: "", motore: "claude" as const };
+  const { porta, aperte, eventi, sondati } = prepara({ motore: "claude", permessi: "chiedi" }, "s-1", "claude", {
+    sonda: async (motore) => (motore === "claude" ? [opus] : undefined),
+    locali: [qwen],
+  });
+  // Prima di sapere i modelli di Claude, uno stato non porta un elenco con i soli modelli locali:
+  // toglierebbe dal menu quelli di Claude.
+  aperte[0]?.cfg.alEvento({ tipo: "stato", stato: { inSfondo: 0 } });
+  const primo = eventi.find((evento) => evento.tipo === "stato");
+  assert.ok(primo?.tipo === "stato" && primo.stato.modelli === undefined);
+
+  // Il proprietario apre la conversazione: il motore si sonda e l'elenco arriva, prima di ogni messaggio.
+  porta.prepara();
+  await attesa();
+  await attesa();
+  assert.equal(aperte[0]?.preparata, 1);
+  assert.deepEqual(sondati.slice(0, 1), ["claude"]);
+  const conModelli = eventi.filter((evento) => evento.tipo === "stato" && evento.stato.modelli !== undefined).at(-1);
+  assert.ok(conModelli?.tipo === "stato");
+  assert.deepEqual(conModelli.stato.modelli?.map((modello) => modello.valore), ["opus", "locale:qwen"]);
+  assert.equal(conModelli.stato.motore, "claude");
+
+  // Riaperta, i modelli già noti si dicono subito, senza sondare di nuovo.
+  const quanti = eventi.length;
+  porta.prepara();
+  assert.ok(eventi.slice(quanti).some((evento) => evento.tipo === "stato" && evento.stato.modelli?.[0]?.valore === "opus"));
+  await attesa();
+  assert.equal(sondati.filter((motore) => motore === "claude").length, 1);
 });
 
 test("un ramo nato con Codex si riprende con Codex", async () => {

@@ -135,6 +135,30 @@ export interface ModelloDisponibile {
   motore?: Motore;
 }
 
+/** Quanti modelli al massimo in un elenco che arriva da un nodo. */
+const MODELLI_MASSIMI = 200;
+
+/** Un elenco di modelli arrivato da fuori, se è ben fatto; le voci malformate si lasciano fuori. */
+export function leggiModelliDisponibili(valore: unknown): ModelloDisponibile[] | undefined {
+  if (!Array.isArray(valore)) return undefined;
+  const testo = (campo: unknown, massimo: number): campo is string => typeof campo === "string" && campo.length <= massimo;
+  return valore.slice(0, MODELLI_MASSIMI).flatMap((voce: unknown): ModelloDisponibile[] => {
+    if (typeof voce !== "object" || voce === null) return [];
+    const { valore: chiave, nome, descrizione, impegni, motore } = voce as Record<string, unknown>;
+    if (!testo(chiave, 200) || chiave === "" || !testo(nome, 200) || !testo(descrizione, 1000)) return [];
+    const validi = Array.isArray(impegni) ? impegni.filter((uno): uno is Impegno => (IMPEGNI as readonly unknown[]).includes(uno)) : undefined;
+    return [
+      {
+        valore: chiave,
+        nome,
+        descrizione,
+        ...(validi === undefined ? {} : { impegni: validi }),
+        ...(eMotore(motore) ? { motore } : {}),
+      },
+    ];
+  });
+}
+
 /** Quanta parte di una finestra di utilizzo del piano è consumata. */
 export interface FinestraDiUtilizzo {
   /** Da 0 a 100. */

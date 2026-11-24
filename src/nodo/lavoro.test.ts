@@ -74,6 +74,29 @@ test("una conversazione si apre nella cartella indicata, come quella di un proge
   assert.equal(conversazioni.length, 1);
 });
 
+test("aperta perché il proprietario la guarda, la conversazione si prepara: nuova o già aperta", async (t) => {
+  const { lavoro, radice, conversazioni } = await allestisci(t);
+  const cartella = join(radice, "videogioco");
+  lavoro.esegui({ tipo: "apri-conversazione", idConversazione: "c1", cartella, impostazioni: IMPOSTAZIONI });
+  assert.equal(conversazioni[0]?.preparazioni, 0);
+  // Dopo un riavvio di Shinka il centro la riapre per il proprietario: il motore parte e dice i modelli.
+  lavoro.esegui({ tipo: "apri-conversazione", idConversazione: "c1", cartella, impostazioni: IMPOSTAZIONI, prepara: true });
+  lavoro.esegui({ tipo: "apri-conversazione", idConversazione: "c2", cartella, impostazioni: IMPOSTAZIONI, prepara: true });
+  assert.deepEqual(
+    conversazioni.map((conversazione) => conversazione.preparazioni),
+    [1, 1],
+  );
+  // Le stesse impostazioni, ripetute a ogni apertura, non fanno ripartire il motore; quelle cambiate sì.
+  assert.deepEqual(conversazioni[0]?.impostazioni, []);
+  lavoro.esegui({ tipo: "imposta", idConversazione: "c1", impostazioni: { ...IMPOSTAZIONI } });
+  assert.deepEqual(conversazioni[0]?.impostazioni, []);
+  const cambiate = { ...IMPOSTAZIONI, modello: "sonnet" };
+  lavoro.esegui({ tipo: "apri-conversazione", idConversazione: "c1", cartella, impostazioni: cambiate, prepara: true });
+  assert.deepEqual(conversazioni[0]?.impostazioni, [cambiate]);
+  lavoro.esegui({ tipo: "imposta", idConversazione: "c1", impostazioni: cambiate });
+  assert.equal(conversazioni[0]?.impostazioni.length, 1);
+});
+
 test("messaggi, decisioni e interruzioni arrivano alla conversazione giusta", async (t) => {
   const { lavoro, radice, conversazioni } = await allestisci(t);
   lavoro.esegui({ tipo: "apri-conversazione", idConversazione: "c1", cartella: join(radice, "a"), impostazioni: IMPOSTAZIONI });

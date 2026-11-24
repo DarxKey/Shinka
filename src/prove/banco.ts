@@ -29,7 +29,7 @@ import { CustodiaImmagini } from "../centro/immagini.ts";
 import { StatoHome } from "../centro/stato-home.ts";
 import type { Allegato } from "../protocollo/allegati.ts";
 import type { AzioneInAmbiente, EsitoAzione } from "../protocollo/azioni.ts";
-import type { ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
+import type { ImpostazioniConversazione, ModelloDisponibile } from "../protocollo/impostazioni.ts";
 import { EsecutoreLocale, EsecutoriRemoti, type ServiziLocali } from "../centro/esecutori.ts";
 import { ApplicazioniDeiProgetti } from "../centro/applicazioni.ts";
 import { CartelleCollegate } from "../centro/cartelle-collegate.ts";
@@ -54,6 +54,7 @@ import { LavoriDeiProgetti } from "../centro/lavori.ts";
 import { distribuisciSkill } from "../centro/distribuzione-skill.ts";
 import { colLavoroOffline } from "../centro/lavoro-offline.ts";
 import type { AggiornamentiDallOriginale } from "../centro/originale.ts";
+import { CatalogoDeiModelli } from "../centro/catalogo-modelli.ts";
 import { ProposteRicordate, postiDegliArchivi } from "../centro/proposte-ricordate.ts";
 import { LavoroOffline } from "../nodo/offline.ts";
 import { Memoria } from "../centro/memoria.ts";
@@ -344,6 +345,8 @@ export interface OpzioniBanco {
   cartella?: string;
   /** Un fork della copia pubblica: le versioni nuove dell'originale (ADR 0059). */
   originale?: AggiornamentiDallOriginale;
+  /** I modelli dell'ambiente del centro, per la scheda di un progetto nuovo. Senza, nessuno. */
+  modelliDelCentro?: ModelloDisponibile[];
   /** L'orologio e la quiete dei lavori programmati, per le prove che li fanno partire. */
   programmati?: Pick<OpzioniProgrammati, "adesso" | "quieteMs">;
   /** La cartella da cui nasce il pacchetto per un'installazione nuova. */
@@ -774,8 +777,10 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
   await sviluppo?.ripristina();
   await estensioni?.ripristina();
   await interfaccia.ripristina();
+  const catalogoModelli = new CatalogoDeiModelli({ ambienti, delCentro: async () => opzioni.modelliDelCentro ?? [], attesaMs: 2_000 });
   const centro = await creaCentro({
     interfaccia,
+    catalogoModelli,
     ...(opzioni.originale === undefined ? {} : { originale: opzioni.originale }),
     accesso,
     primoAvvio,
@@ -974,6 +979,8 @@ export async function avviaNodo(
     centro?: string;
     /** Il ponte del nodo per le macchine che non vedono il centro (ADR 0058). */
     ponte?: NonNullable<ContestoLavoro["ponte"]>;
+    /** I modelli dei motori nell'ambiente del nodo. Senza, nessun motore ha un accesso: le prove non sondano i motori veri. */
+    modelli?: NonNullable<ContestoLavoro["modelli"]>;
   } = {},
 ): Promise<NodoInProva> {
   if (!banco.centro.server.listening) await banco.centro.listen({ host: "127.0.0.1", port: 0 });
@@ -988,6 +995,7 @@ export async function avviaNodo(
     radiceProgetti,
     cartellaSkill,
     ...(opzioni.accessi === undefined ? {} : { accessi: opzioni.accessi }),
+    modelli: opzioni.modelli ?? { leggi: async () => undefined },
     // Le risorse le legge davvero, su questa macchina; Docker, nelle prove, non c'è.
     risorse: new CampionatoreRisorse({ radiceProgetti, esegui: async () => ({ codice: null, uscita: "", errori: "", assente: true }) }),
     ...(opzioni.senzaEstensioni === true

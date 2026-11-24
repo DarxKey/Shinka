@@ -8,6 +8,7 @@ import { POLITICA_PAGINA_ESTENSIONE, rottaEsclusa } from "../protocollo/interfac
 import { conLaLibreria } from "../protocollo/ponte-delle-pagine.ts";
 import type { EstensioniInterfaccia } from "./interfaccia.ts";
 import type { AggiornamentiDallOriginale } from "./originale.ts";
+import type { CatalogoDeiModelli } from "./catalogo-modelli.ts";
 import type { StatoEstensioniDelProgetto } from "../protocollo/progetti.ts";
 import { tipoInParole } from "../protocollo/estensioni.ts";
 import { AvvioConWindows } from "./avvio-con-windows.ts";
@@ -41,7 +42,7 @@ import {
   TEMPO_PER_PRESENTARSI_MS,
   type MessaggioNodo,
 } from "../protocollo/nodi.ts";
-import { IMPEGNI, MODI_PERMESSI, MOTORI, type ModificaImpostazioni, type Motore, type SceltaDelProprietario } from "../protocollo/impostazioni.ts";
+import { IMPEGNI, leggiModelliDisponibili, MODI_PERMESSI, MOTORI, type ModificaImpostazioni, type Motore, type SceltaDelProprietario } from "../protocollo/impostazioni.ts";
 import { leggiChiImplementa, progettoDellaConversazione, type StatoChiImplementa } from "../protocollo/incarichi.ts";
 import { DESCRIZIONE_MASSIMA, NOME_MASSIMO, sceltoDa, STILI_DI_SHINKA } from "../protocollo/stili.ts";
 import { BRIEF_MASSIMO, NOME_PROGETTO_MASSIMO, type NuovoProgettoAMano } from "../protocollo/progetti.ts";
@@ -290,6 +291,8 @@ export interface OpzioniCentro {
   interfaccia?: EstensioniInterfaccia;
   /** In un fork della copia pubblica: le versioni nuove dell'originale (ADR 0059). */
   originale?: AggiornamentiDallOriginale;
+  /** I modelli tra cui scegliere per un progetto che nasce in un ambiente. Se manca, la scheda usa quelli della Home. */
+  catalogoModelli?: CatalogoDeiModelli;
   /** Gli elaborati degli argomenti della Home. Se mancano, il pannello dice che non ci sono. */
   elaborati?: Elaborati;
   /**
@@ -1888,6 +1891,15 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
   // scegliere, e la creazione. Sono le stesse scelte della scheda di una proposta.
   app.get("/api/nuovo-progetto", async () => proposte.schedaNuovoProgetto());
 
+  // I modelli tra cui scegliere per un progetto che nasce in un ambiente: la scheda li chiede quando
+  // si apre e quando il proprietario cambia ambiente, anche per una proposta della Home.
+  app.get<{ Querystring: { ambiente?: string } }>("/api/nuovo-progetto/modelli", async (richiesta, risposta) => {
+    const idAmbiente = (richiesta.query.ambiente ?? "").slice(0, 64);
+    if (opzioni.catalogoModelli === undefined) return risposta.code(404).send({ errore: "Questa installazione non sa dire i modelli di un ambiente." });
+    const esito = await opzioni.catalogoModelli.perAmbiente(idAmbiente);
+    return "motivo" in esito ? risposta.code(409).send({ errore: esito.motivo }) : esito;
+  });
+
   app.post<{ Body: NuovoProgettoAMano }>(
     "/api/nuovo-progetto",
     {
@@ -2937,6 +2949,12 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
       const esito = leggiEsitoAccessi(campi.esito);
       if (idRichiesta === undefined || esito === undefined) return undefined;
       return { tipo: "accessi-esito", idRichiesta, esito };
+    }
+    case "modelli-esito": {
+      const idRichiesta = campo("idRichiesta");
+      const modelli = leggiModelliDisponibili(campi.modelli);
+      if (idRichiesta === undefined || modelli === undefined) return undefined;
+      return { tipo: "modelli-esito", idRichiesta, modelli };
     }
     case "risorse-esito": {
       const idRichiesta = campo("idRichiesta");

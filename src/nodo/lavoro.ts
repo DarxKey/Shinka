@@ -33,6 +33,7 @@ import { attesaDelloStrumento, type ChiamaStrumento, type EsitoStrumento } from 
 import type { EventoConversazione } from "../protocollo/eventi.ts";
 import type { ProgettoDelNodo } from "../protocollo/offline.ts";
 import type { LavoroOffline } from "./offline.ts";
+import { modelliDeiMotori, modelliDellAmbiente, type ModelliDeiMotori } from "./sonde-motori.ts";
 
 export interface ContestoLavoro {
   /** Cartella in cui nascono le cartelle dei progetti nuovi. */
@@ -64,6 +65,8 @@ export interface ContestoLavoro {
   accessi?: { esegui(richiesta: RichiestaAccessi): Promise<EsitoAccessi> };
   /** Le risorse di questa macchina, per la pagina dell'ambiente. Senza, il nodo non le dice. */
   risorse?: { leggi(): Promise<RisorseDellAmbiente> };
+  /** I modelli dei motori in questo ambiente. Senza, quelli che sa questo processo. Nei test se ne mettono di finti. */
+  modelli?: Pick<ModelliDeiMotori, "leggi">;
   /** I processi accesi da Shinka qui: per terminarne uno bloccato. */
   processiDiShinka?: { termina(pid: number): Promise<{ riuscita: boolean; testo: string }> };
   /** Su Windows: il collegamento che fa partire il nodo a ogni accesso. Senza, il nodo non lo sa cambiare. */
@@ -83,6 +86,8 @@ export class LavoroDelNodo {
   readonly #applicazioni: Applicazioni;
   readonly #file: FileDeiProgettiQui;
   readonly #conversazioni = new Map<string, PortaConversazione>();
+  /** Le impostazioni che ogni conversazione aperta ha ricevuto per ultime, per non ridarle uguali. */
+  readonly #impostazioniDate = new Map<string, string>();
   /** Gli strumenti chiesti al centro che aspettano risposta. */
   readonly #strumenti = new Map<string, { risolvi(esito: EsitoStrumento): void; scadenza: NodeJS.Timeout }>();
   /** Le scritture della copia delle skill si fanno una alla volta, nell'ordine in cui arrivano. */
@@ -161,6 +166,8 @@ export class LavoroDelNodo {
       }
       case "apri-conversazione":
         this.#apri(comando.idConversazione, comando.cartella, comando.idSessione, comando.impostazioni, comando.estensioni, comando.motorePredefinito);
+        // Il proprietario la sta guardando: il motore parte e dice subito i suoi modelli.
+        if (comando.prepara === true) this.#conversazioni.get(comando.idConversazione)?.prepara();
         return;
       case "accessi": {
         const { idRichiesta, richiesta } = comando;
@@ -239,6 +246,14 @@ export class LavoroDelNodo {
         );
         return;
       }
+      case "modelli": {
+        const { idRichiesta } = comando;
+        void modelliDellAmbiente(this.#contesto.modelli ?? modelliDeiMotori, this.#estensioni?.modelliLocali).then(
+          (modelli) => this.#contesto.riferisci({ tipo: "modelli-esito", idRichiesta, modelli }),
+          () => {},
+        );
+        return;
+      }
       case "risorse": {
         const { idRichiesta } = comando;
         void this.#contesto.risorse?.leggi().then(
@@ -248,7 +263,7 @@ export class LavoroDelNodo {
         return;
       }
       case "imposta":
-        this.#conversazioni.get(comando.idConversazione)?.imposta(comando.impostazioni);
+        this.#imposta(comando.idConversazione, comando.impostazioni);
         return;
       case "messaggio":
         this.#conversazioni.get(comando.idConversazione)?.invia(comando.testo, comando.allegati);
@@ -372,6 +387,7 @@ export class LavoroDelNodo {
       case "chiudi-conversazione":
         this.#conversazioni.get(comando.idConversazione)?.chiudi();
         this.#conversazioni.delete(comando.idConversazione);
+        this.#impostazioniDate.delete(comando.idConversazione);
         return;
       case "azione":
         void eseguiAzione(this.#contesto.radiceProgetti, comando.idArgomento, comando.azione).then((esito) =>
@@ -438,6 +454,7 @@ export class LavoroDelNodo {
     this.#file.annullaTutti();
     for (const conversazione of this.#conversazioni.values()) conversazione.chiudi();
     this.#conversazioni.clear();
+    this.#impostazioniDate.clear();
     for (const inAttesa of this.#strumenti.values()) {
       clearTimeout(inAttesa.scadenza);
       inAttesa.risolvi({ testo: "Il collegamento con il centro è caduto: riprova più tardi.", errore: true });
@@ -524,15 +541,15 @@ export class LavoroDelNodo {
     scelte?: readonly string[],
     motorePredefinito?: Motore,
   ): void {
-    const esistente = this.#conversazioni.get(idConversazione);
-    if (esistente !== undefined) {
+    if (this.#conversazioni.has(idConversazione)) {
       // Già aperta: valgono comunque le impostazioni più recenti del centro.
-      esistente.imposta(impostazioni);
+      this.#imposta(idConversazione, impostazioni);
       return;
     }
     // Il progetto sta finendo qui un lavoro cominciato offline: la conversazione è una, e il centro la
     // riprende dopo la consegna (ADR 0056).
     if (this.#offline?.aperta(idConversazione) === true) return;
+    this.#impostazioniDate.set(idConversazione, testoStabile(impostazioni));
     this.#conversazioni.set(
       idConversazione,
       this.#apriConversazione(
@@ -551,6 +568,19 @@ export class LavoroDelNodo {
         this.#chiama(idConversazione),
       ),
     );
+  }
+
+  /**
+   * Dà a una conversazione aperta le impostazioni del centro, solo se sono cambiate: impostazioni
+   * nuove fanno ripartire il motore, e il centro le ripete ogni volta che il proprietario la riapre.
+   */
+  #imposta(idConversazione: string, impostazioni: ImpostazioniConversazione): void {
+    const conversazione = this.#conversazioni.get(idConversazione);
+    if (conversazione === undefined) return;
+    const scritte = testoStabile(impostazioni);
+    if (this.#impostazioniDate.get(idConversazione) === scritte) return;
+    this.#impostazioniDate.set(idConversazione, scritte);
+    conversazione.imposta(impostazioni);
   }
 
   /** Apre la conversazione principale di un progetto per il lavoro offline: come per il centro, con chi ascolta di qui. */
@@ -593,4 +623,13 @@ export class LavoroDelNodo {
         apriConversazione(cfg, predefinito === undefined ? {} : { predefinito }));
     return apri(configurazione, motorePredefinito);
   }
+}
+
+/** Un valore scritto in JSON con le chiavi in ordine: due impostazioni uguali danno lo stesso testo. */
+function testoStabile(valore: unknown): string {
+  return JSON.stringify(valore, (_chiave, dentro: unknown) =>
+    typeof dentro === "object" && dentro !== null && !Array.isArray(dentro)
+      ? Object.fromEntries(Object.entries(dentro).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : dentro,
+  );
 }

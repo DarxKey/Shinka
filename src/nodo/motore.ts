@@ -187,8 +187,13 @@ class ConversazioneConMotore implements PortaConversazione {
     }
   }
 
-  /** I modelli di tutti i motori che si conoscono, ciascuno con il suo motore. */
+  /**
+   * I modelli di tutti i motori che si conoscono, ciascuno con il suo motore. Finché non si sa nulla
+   * del motore in uso non c'è elenco: uno con i soli modelli locali, o dell'altro motore, toglierebbe
+   * dal menu quelli del motore scelto.
+   */
   #elencoModelli(): { modelli?: ModelloDisponibile[] } {
+    if (!this.#modelli.sa(this.#motore)) return {};
     const tutti = [
       ...MOTORI.flatMap((motore) => (this.#modelli.noti(motore) ?? []).map((modello) => ({ ...modello, motore }))),
       // I modelli locali accesi in questo ambiente, dopo quelli degli accessi.
@@ -268,7 +273,27 @@ class ConversazioneConMotore implements PortaConversazione {
   }
 
   prepara(): void {
+    this.#riferisciModelli();
     this.#esegui(() => this.#interna.prepara());
+  }
+
+  /**
+   * Il proprietario ha aperto la conversazione: i modelli si dicono subito, senza aspettare che il
+   * motore parta. Quelli già noti in questo processo vanno adesso; altrimenti il motore si sonda, una
+   * volta sola, e l'elenco arriva appena lo si sa. Il motore che parte poi lo conferma.
+   */
+  #riferisciModelli(): void {
+    const motore = this.#motore;
+    const riferisci = (): void => {
+      if (motore !== this.#motore) return;
+      const elenco = this.#elencoModelli();
+      if (elenco.modelli !== undefined) this.#cfg.alEvento({ tipo: "stato", stato: { motore, ...elenco } });
+    };
+    if (this.#modelli.sa(motore)) {
+      riferisci();
+      return;
+    }
+    void this.#modelli.leggi(motore).then(riferisci);
   }
 
   invia(testo: string, allegati?: Allegato[]): void {

@@ -1,7 +1,8 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { BRIEF_MASSIMO, nomeCartellaDa, type NuovoProgettoAMano } from "../../src/protocollo/progetti.ts";
-import { annullaProposta, confermaProposta } from "./api.ts";
-import type { Impegno, ImpostazioniConversazione, ModoPermessi, Motore } from "../../src/protocollo/impostazioni.ts";
+import { annullaProposta, confermaProposta, leggiModelliDellAmbiente } from "./api.ts";
+import type { Impegno, ImpostazioniConversazione, ModelloDisponibile, ModoPermessi, Motore } from "../../src/protocollo/impostazioni.ts";
+import { sceltaRiallineata } from "./motori.ts";
 import { SceltaImpostazioni } from "./SceltaImpostazioni.tsx";
 import { SceltaEstensioni, SceltaSkillDiPartenza, type SceltaSkill } from "./AvvioProgetto.tsx";
 import { haLeSkillDiPartenza, sceltePredefinite, skillPredefinita } from "../../src/protocollo/avvio-progetto.ts";
@@ -100,9 +101,35 @@ export function PropostaInAttesa({ proposta, aMano }: { proposta: Omit<Proposta,
   const [sceltaSkill, setSceltaSkill] = useState<SceltaSkill>();
   const [inCorso, setInCorso] = useState<"conferma" | "annullamento">();
   const [errore, setErrore] = useState<string>();
+  // I modelli tra cui scegliere, ambiente per ambiente: li dice il centro, che li chiede al nodo.
+  const [modelliPerAmbiente, setModelliPerAmbiente] = useState<Record<string, ModelloDisponibile[]>>({});
 
   const elenco = ambienti?.ambienti ?? [];
   const scelto = elenco.find((a) => a.id === idAmbiente);
+  const conImpostazioni = proposta.impostazioni !== undefined;
+  const attivo = scelto?.attivo === true;
+  useEffect(() => {
+    if (!conImpostazioni || !attivo) return;
+    let valida = true;
+    leggiModelliDellAmbiente(idAmbiente).then(
+      (modelli) => {
+        if (valida && modelli !== undefined) setModelliPerAmbiente((prima) => ({ ...prima, [idAmbiente]: modelli }));
+      },
+      () => {},
+    );
+    return () => {
+      valida = false;
+    };
+  }, [idAmbiente, attivo, conImpostazioni]);
+  const modelliQui = modelliPerAmbiente[idAmbiente];
+  // Arrivati i modelli dell'ambiente, la scelta si riallinea: ciò che lì non c'è torna al predefinito.
+  useEffect(() => {
+    if (modelliQui === undefined) return;
+    const riallineata = sceltaRiallineata(modelliQui, motore, modello);
+    if (riallineata.motore !== motore) setMotore(riallineata.motore);
+    if (riallineata.modello !== modello) setModello(riallineata.modello);
+    // Solo quando cambiano i modelli: le scelte fatte nel menu sono già tra quelli.
+  }, [modelliQui]);
   const nomePulito = nome.trim();
   const occupata = inCorso !== undefined;
   const puoConfermare = !occupata && nomePulito !== "" && scelto?.attivo === true && (aMano === undefined || brief.trim() !== "");
@@ -292,7 +319,8 @@ export function PropostaInAttesa({ proposta, aMano }: { proposta: Omit<Proposta,
         <div className="voce-scheda">
           <div className="titolino">Con quali impostazioni nasce</div>
           <SceltaImpostazioni
-            modelli={proposta.modelli}
+            // Finché l'ambiente non li ha detti, quelli della Home.
+            modelli={modelliQui ?? proposta.modelli}
             motore={motore}
             modello={modello}
             impegno={impegno}

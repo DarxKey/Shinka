@@ -45,3 +45,23 @@ export function nomeDelModello(
   if (modello !== undefined) return modello;
   return gruppi.length > 1 && motore !== undefined ? `${NOMI_MOTORI[motore]} predefinito` : "Modello predefinito";
 }
+
+/**
+ * La scelta di motore e modello che resta valida quando cambiano i modelli tra cui scegliere, per
+ * esempio in un altro ambiente: il modello si tiene se lì c'è ancora, per quel motore, altrimenti
+ * torna il predefinito; il motore si tiene se lì ha dei modelli, cioè un accesso, altrimenti torna
+ * il predefinito anche lui. Il modello vuoto è il predefinito.
+ */
+export function sceltaRiallineata(
+  modelli: readonly ModelloDisponibile[],
+  motore: Motore | undefined,
+  modello: string,
+): { motore: Motore | undefined; modello: string } {
+  const utili = modelli.filter((voce) => voce.valore !== "default");
+  const conMotore = utili.some((voce) => voce.motore !== undefined);
+  const motoreValido = motore === undefined || !conMotore || utili.some((voce) => voce.motore === motore);
+  const nuovoMotore = motoreValido ? motore : undefined;
+  if (modello === "") return { motore: nuovoMotore, modello };
+  const trovato = utili.some((voce) => voce.valore === modello && (nuovoMotore === undefined || voce.motore === undefined || voce.motore === nuovoMotore));
+  return { motore: nuovoMotore, modello: trovato ? modello : "" };
+}

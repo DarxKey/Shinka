@@ -62,7 +62,8 @@ import { FileDeiProgetti } from "./file-progetto.ts";
 import { FileDeiProgettiQui } from "../nodo/file-progetto.ts";
 import { apriConversazione, impostaMotorePredefinito, motorePredefinito } from "../nodo/motore.ts";
 import { AccessiDeiMotori } from "../nodo/accessi.ts";
-import { modelliDeiMotori } from "../nodo/sonde-motori.ts";
+import { modelliDeiMotori, modelliDellAmbiente } from "../nodo/sonde-motori.ts";
+import { CatalogoDeiModelli } from "./catalogo-modelli.ts";
 import { AccessiNegliAmbienti } from "./accessi.ts";
 import { ImpostazioniDellInstallazione } from "./impostazioni-installazione.ts";
 import { EstensioniInAmbiente } from "../nodo/estensioni.ts";
@@ -353,6 +354,9 @@ const estensioniNegliAmbienti = new EstensioniNegliAmbienti({
 // I modelli locali in rete degli altri ambienti (ADR 0053): li usano anche la Home e i progetti di qui.
 const modelliInRete = new ModelliInRete({ modelli: () => estensioni?.modelliInRete() ?? [], ambienti });
 const modelliDelCentro = unisciModelli(estensioniDelCentro.modelliLocali, modelliInRete);
+// I modelli tra cui scegliere per un progetto nuovo, ambiente per ambiente: qui quelli dei motori di
+// questo processo, che le conversazioni di qui condividono, con i locali e quelli in rete.
+const catalogoModelli = new CatalogoDeiModelli({ ambienti, delCentro: () => modelliDellAmbiente(modelliDeiMotori, modelliDelCentro) });
 
 const locale = new EsecutoreLocale(radiceProgetti, undefined, {
   strumento: strumentoDiProgetto,
@@ -646,6 +650,7 @@ const centro = await creaCentro({
   proposte,
   estensioni,
   interfaccia,
+  catalogoModelli,
   ...(originale === undefined ? {} : { originale }),
   elaborati,
   posizione,

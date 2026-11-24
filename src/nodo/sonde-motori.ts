@@ -9,7 +9,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { tmpdir } from "node:os";
 import { ambientePerHarness, fonteConfigurata } from "../harness/autenticazione.ts";
-import type { ModelloDisponibile, Motore } from "../protocollo/impostazioni.ts";
+import { MOTORI, type ModelloDisponibile, type Motore } from "../protocollo/impostazioni.ts";
 import { ClienteAppServer } from "./codex/cliente.ts";
 import { modelliDiCodex } from "./codex/conversazione-codex.ts";
 
@@ -88,6 +88,11 @@ export class ModelliDeiMotori {
     return this.#noti.get(motore);
   }
 
+  /** Vero se del motore si sa già com'è: i suoi modelli, o che non ha un accesso. */
+  sa(motore: Motore): boolean {
+    return this.#noti.has(motore);
+  }
+
   /** I modelli del motore, sondandolo la prima volta. Se la sonda fallisce, il motore non ha modelli. */
   leggi(motore: Motore): Promise<ModelloDisponibile[] | undefined> {
     if (this.#noti.has(motore)) return Promise.resolve(this.#noti.get(motore));
@@ -113,3 +118,15 @@ export class ModelliDeiMotori {
 
 /** Quelli di questo processo. */
 export const modelliDeiMotori = new ModelliDeiMotori();
+
+/**
+ * I modelli tra cui scegliere in un ambiente, come nel menu di una conversazione: quelli dei motori
+ * con un accesso, ciascuno con il suo motore, e poi quelli locali. Per la scheda di un progetto nuovo.
+ */
+export async function modelliDellAmbiente(
+  modelli: Pick<ModelliDeiMotori, "leggi">,
+  locali?: { modelli(): ModelloDisponibile[] },
+): Promise<ModelloDisponibile[]> {
+  const deiMotori = await Promise.all(MOTORI.map(async (motore) => ((await modelli.leggi(motore)) ?? []).map((modello) => ({ ...modello, motore }))));
+  return [...deiMotori.flat(), ...(locali?.modelli() ?? [])];
+}

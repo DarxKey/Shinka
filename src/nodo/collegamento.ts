@@ -397,6 +397,7 @@ export function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | u
         impostazioni,
         ...(estensioni === undefined ? {} : { estensioni }),
         ...(eMotore(campi.motorePredefinito) ? { motorePredefinito: campi.motorePredefinito } : {}),
+        ...(campi.prepara === true ? { prepara: true as const } : {}),
       };
     }
     case "accessi": {
@@ -408,6 +409,10 @@ export function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | u
     case "risorse": {
       const idRichiesta = testo("idRichiesta");
       return idRichiesta === undefined ? undefined : { tipo: "risorse", idRichiesta };
+    }
+    case "modelli": {
+      const idRichiesta = testo("idRichiesta");
+      return idRichiesta === undefined ? undefined : { tipo: "modelli", idRichiesta };
     }
     case "imposta": {
       const impostazioni = leggiImpostazioni(campi.impostazioni);

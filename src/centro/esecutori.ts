@@ -654,7 +654,8 @@ class ConversazioneRemota implements PortaConversazione {
   }
 
   prepara(): void {
-    this.#apri();
+    // Anche se il nodo la sa già: il motore deve partire e dire modelli, comandi e contesto.
+    this.#apri(true);
   }
 
   invia(testo: string, allegati: Allegato[] = []): void {
@@ -782,8 +783,8 @@ class ConversazioneRemota implements PortaConversazione {
     });
   }
 
-  #apri(): boolean {
-    if (this.#aperta) return true;
+  #apri(prepara = false): boolean {
+    if (this.#aperta && !prepara) return true;
     const idSessione = this.#idSessione();
     const estensioni = this.#estensioni?.();
     this.#aperta = this.#ambienti.inviaAlNodo(this.idAmbiente, {
@@ -795,6 +796,7 @@ class ConversazioneRemota implements PortaConversazione {
       ...(estensioni === undefined ? {} : { estensioni: [...estensioni] }),
       // Il predefinito è dell'installazione, cioè del centro: il nodo di un altro ambiente non lo sa.
       motorePredefinito: motorePredefinito(),
+      ...(prepara ? { prepara: true as const } : {}),
     });
     return this.#aperta;
   }

@@ -18,7 +18,7 @@ import type { ElencoCartella, FileTrovati } from "../../src/protocollo/file-prog
 import type { Archiviazione, Uso } from "../../src/protocollo/uso.ts";
 import type { EsitoAnnullamento, VersioniDiUnFile } from "../../src/protocollo/modifiche.ts";
 import type { AvvioApplicazione, StatoApplicazione } from "../../src/protocollo/applicazioni.ts";
-import type { ModificaImpostazioni, Motore, SceltaDelProprietario } from "../../src/protocollo/impostazioni.ts";
+import type { ModelloDisponibile, ModificaImpostazioni, Motore, SceltaDelProprietario } from "../../src/protocollo/impostazioni.ts";
 import type { ConfermaProposta } from "../../src/protocollo/progetti.ts";
 import type { PosizioneDalBrowser } from "./posizione.ts";
 import type { StatoHttps } from "../../src/protocollo/https.ts";
@@ -391,6 +391,20 @@ export async function confermaProposta(id: string, scelte: ConfermaProposta): Pr
 /** Ciò che serve alla scheda con cui il proprietario crea un progetto da sé. */
 export async function leggiSchedaNuovoProgetto(): Promise<SchedaNuovoProgetto> {
   return (await chiama("GET", "/api/nuovo-progetto")) as SchedaNuovoProgetto;
+}
+
+/**
+ * I modelli tra cui scegliere per un progetto che nasce in un ambiente: nell'ambiente del centro anche
+ * quelli in rete degli altri. Undefined se il centro, o il nodo dell'ambiente, non li sa dire.
+ */
+export async function leggiModelliDellAmbiente(idAmbiente: string): Promise<ModelloDisponibile[] | undefined> {
+  try {
+    const dati = (await chiama("GET", `/api/nuovo-progetto/modelli?ambiente=${encodeURIComponent(idAmbiente)}`)) as { modelli?: ModelloDisponibile[] };
+    return dati.modelli;
+  } catch (errore) {
+    if (errore instanceof ErroreCentro && (errore.stato === 404 || errore.stato === 409)) return undefined;
+    throw errore;
+  }
 }
 
 /** Crea un progetto senza passare dalla Home: restituisce il suo identificativo. */
