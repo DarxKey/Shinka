@@ -32,6 +32,8 @@
  *                          come `indirizzo`, `gettone` e `pagina`.
  *   SHINKA_REPOSITORY      il repository di Shinka: se c'è, tra i progetti compare il progetto Shinka,
  *                          in cui Shinka sviluppa sé stessa
+ *   SHINKA_ORIGINALE       per un fork della copia pubblica: l'indirizzo Git dell'originale, da cui
+ *                          arrivano le versioni nuove, proposte con la scheda di uno sviluppo (ADR 0059)
  *   SHINKA_INSTALLATA      la cartella della versione in funzione (predefinita: quella da cui parte)
  *   SHINKA_RIPARTE_DA_SOLO "1" quando chi tiene acceso il centro lo riaccende se si spegne (Docker
  *                          con Compose): allora una scelta che vuole un riavvio lo fa da sé
@@ -39,6 +41,7 @@
  *                          solo allora una versione approvata viene messa in funzione
  */
 
+import { AggiornamentiDallOriginale } from "./originale.ts";
 import { ProposteRicordate, postiDegliArchivi } from "./proposte-ricordate.ts";
 import { colLavoroOffline } from "./lavoro-offline.ts";
 import { ProcessiDiShinka } from "../nodo/processi-di-shinka.ts";
@@ -537,6 +540,15 @@ home = await Home.apri({
     }),
 });
 
+// Un fork della copia pubblica guarda ogni tanto se l'originale ha versioni nuove, e le propone (ADR 0059).
+const indirizzoOriginale = process.env.SHINKA_ORIGINALE?.trim() || undefined;
+const conLoSviluppo = sviluppo;
+const originale =
+  indirizzoOriginale === undefined || repository === undefined || conLoSviluppo === undefined
+    ? undefined
+    : new AggiornamentiDallOriginale({ repository, originale: indirizzoOriginale, file: join(dati, "originale.json"), proponi: (proposta) => void conLoSviluppo.proponi(proposta) });
+originale?.avvia();
+
 // Le proposte che aspettavano il proprietario prima del riavvio tornano, con i loro pulsanti.
 ricordate.collega(postiDegliArchivi(laHome, lavori));
 await proposte.ripristina();
@@ -634,6 +646,7 @@ const centro = await creaCentro({
   proposte,
   estensioni,
   interfaccia,
+  ...(originale === undefined ? {} : { originale }),
   elaborati,
   posizione,
   https,

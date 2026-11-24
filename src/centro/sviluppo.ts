@@ -161,7 +161,6 @@ export class SviluppoDiShinka {
     return this.#o.adesso?.() ?? Date.now();
   }
 
-  /** La Home propone di sviluppare un pezzo nuovo: compare la scheda, e nient'altro. */
   /** Dopo un riavvio del centro: tornano le proposte che aspettavano il proprietario. */
   async ripristina(): Promise<void> {
     for (const { id, dati, canale } of (await this.#o.ricordate?.ripristina<{ titolo: string; richiesta: string }>("sviluppo")) ?? []) {
@@ -169,6 +168,7 @@ export class SviluppoDiShinka {
     }
   }
 
+  /** La Home propone di sviluppare un pezzo nuovo: compare la scheda, e nient'altro. */
   proponi(proposta: { titolo: string; richiesta: string }, canale: Canale = this.#o.canaleHome()): string {
     const idProposta = randomUUID();
     this.#proposte.set(idProposta, { ...proposta, canale });

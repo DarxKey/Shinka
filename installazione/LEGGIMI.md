@@ -36,3 +36,16 @@ I dati restano nei volumi Docker `shinka_centro` e `shinka_gateway`.
 - `Dockerfile.gateway`: l'immagine di Playwright con Chromium, il recinto di Chromium acceso con
   `seccomp-chromium.json` (le regole di Playwright) e la sola capacità `SYS_CHROOT`.
 - `.env`: lo scrive `installa.sh`. Contiene il gettone: non va condiviso.
+
+## Un fork, che si aggiorna dall'originale
+
+C'è anche un altro modo, senza pacchetto (ADR 0059): sul server nuovo, con Docker,
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DarxKey/Shinka/main/installazione/fork/installa.sh | bash
+```
+
+Questa Shinka nasce dalla copia pubblica con la sua storia, si sviluppa da sé con il suo progetto
+Shinka, e riceve le versioni nuove dell'originale come proposte di sviluppo nella Home: con un sì,
+il progetto le fonde con le modifiche fatte lì, rifà le prove e chiede l'installazione. I file
+dell'installazione stanno in `~/shinka`; rilanciare lo script ricostruisce le immagini e tiene i dati.

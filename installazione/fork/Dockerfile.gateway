@@ -1,0 +1,12 @@
+# Il gateway di un fork (ADR 0059): l'immagine di Playwright con Git; il codice lo prende
+# prepara-gateway.sh dalla copia pubblica, al primo avvio, nel suo volume.
+FROM mcr.microsoft.com/playwright:v1.65.0-noble
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /dati /gateway && chown pwuser:pwuser /dati /gateway
+COPY prepara-gateway.sh /opt/shinka-fork/prepara-gateway.sh
+USER pwuser
+ENV SHINKA_GATEWAY_DATI=/dati \
+    SHINKA_GATEWAY_INDIRIZZO=0.0.0.0 \
+    SHINKA_INSTALLATA=/gateway/shinka
+EXPOSE 7851
+CMD ["bash", "/opt/shinka-fork/prepara-gateway.sh"]

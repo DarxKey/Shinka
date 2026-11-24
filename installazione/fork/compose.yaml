@@ -1,0 +1,57 @@
+# Shinka come fork della copia pubblica (ADR 0059): il centro e il gateway, ciascuno sotto il suo
+# guardiano, con il codice in un volume e non nell'immagine, perché si aggiorna da sé. Si avvia con
+# installa.sh, che prepara il file .env.
+name: shinka
+
+services:
+  centro:
+    build:
+      context: .
+      dockerfile: Dockerfile.centro
+    image: shinka-fork-centro:locale
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    environment:
+      SHINKA_ORIGINALE: ${SHINKA_ORIGINALE:-https://github.com/DarxKey/Shinka.git}
+      SHINKA_AMBIENTE_NOME: ${SHINKA_AMBIENTE_NOME:-Server}
+      SHINKA_MOTORE: ${SHINKA_MOTORE:-claude}
+      SHINKA_GATEWAY: http://gateway:7851
+      SHINKA_GATEWAY_GETTONE: ${SHINKA_GATEWAY_GETTONE:?manca il gettone: lancia installa.sh}
+      SHINKA_GATEWAY_PAGINA: http://${SHINKA_SERVER:?manca l'indirizzo del server: lancia installa.sh}:7851
+    ports:
+      - "${SHINKA_ASCOLTO:-0.0.0.0}:7850:7850"
+      - "${SHINKA_ASCOLTO:-0.0.0.0}:7852:7852"
+    volumes:
+      - centro:/home/node
+    mem_limit: 6g
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    image: shinka-fork-gateway:locale
+    restart: unless-stopped
+    environment:
+      SHINKA_ORIGINALE: ${SHINKA_ORIGINALE:-https://github.com/DarxKey/Shinka.git}
+      SHINKA_GATEWAY_GETTONE: ${SHINKA_GATEWAY_GETTONE:?manca il gettone: lancia installa.sh}
+      SHINKA_GATEWAY_PAGINA: http://${SHINKA_SERVER:?manca l'indirizzo del server: lancia installa.sh}:7851
+    ports:
+      - "${SHINKA_ASCOLTO:-0.0.0.0}:7851:7851"
+    volumes:
+      - gateway-dati:/dati
+      - gateway-codice:/gateway
+    # Il recinto di Chromium: le regole seccomp di Playwright e una sola capacità.
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_CHROOT
+    security_opt:
+      - seccomp=./seccomp-chromium.json
+    shm_size: 1gb
+    mem_limit: 2g
+
+volumes:
+  centro:
+  gateway-dati:
+  gateway-codice:

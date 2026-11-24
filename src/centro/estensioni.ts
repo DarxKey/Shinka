@@ -318,10 +318,6 @@ export class Estensioni {
     return this.#o.ambienti().find((uno) => uno.id === idAmbiente);
   }
 
-  /**
-   * La Home propone un'estensione: se la richiesta sta in piedi compare la scheda, e nient'altro.
-   * Di un plugin viene letto prima il contenuto, perché la scheda lo dica; non viene eseguito nulla.
-   */
   /** Dopo un riavvio del centro: tornano le proposte che aspettavano il proprietario. */
   async ripristina(): Promise<void> {
     for (const { id, dati, canale } of (await this.#o.ricordate?.ripristina<Omit<PropostaInAttesa, "canale" | "inProva">>("estensione")) ?? []) {
@@ -329,6 +325,10 @@ export class Estensioni {
     }
   }
 
+  /**
+   * La Home propone un'estensione: se la richiesta sta in piedi compare la scheda, e nient'altro.
+   * Di un plugin viene letto prima il contenuto, perché la scheda lo dica; non viene eseguito nulla.
+   */
   async proponi(richiesta: RichiestaEstensione, canaleDellaChat?: Canale): Promise<{ idProposta: string } | { motivo: string }> {
     const nome = richiesta.nome.trim();
     const difetto = difettoDelNome(nome);

@@ -7,6 +7,7 @@ import { leggiConsegnaOffline } from "../protocollo/offline.ts";
 import { POLITICA_PAGINA_ESTENSIONE, rottaEsclusa } from "../protocollo/interfaccia.ts";
 import { conLaLibreria } from "../protocollo/ponte-delle-pagine.ts";
 import type { EstensioniInterfaccia } from "./interfaccia.ts";
+import type { AggiornamentiDallOriginale } from "./originale.ts";
 import type { StatoEstensioniDelProgetto } from "../protocollo/progetti.ts";
 import { tipoInParole } from "../protocollo/estensioni.ts";
 import { AvvioConWindows } from "./avvio-con-windows.ts";
@@ -286,6 +287,8 @@ export interface OpzioniCentro {
   estensioni?: Estensioni;
   /** Le estensioni dell'interfaccia (ADR 0054). */
   interfaccia?: EstensioniInterfaccia;
+  /** In un fork della copia pubblica: le versioni nuove dell'originale (ADR 0059). */
+  originale?: AggiornamentiDallOriginale;
   /** Gli elaborati degli argomenti della Home. Se mancano, il pannello dice che non ci sono. */
   elaborati?: Elaborati;
   /**
@@ -979,6 +982,14 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       if (motivo !== undefined) return risposta.code(409).send({ errore: motivo });
       return { inRete: richiesta.body.indirizzo !== null };
     },
+  );
+
+  // Gli aggiornamenti dall'originale, in un fork della copia pubblica (ADR 0059).
+  app.get("/api/sviluppo/originale", async (_richiesta, risposta) =>
+    opzioni.originale === undefined ? risposta.code(404).send({ errore: "Questa Shinka non è un fork: non ha un originale da cui aggiornarsi." }) : opzioni.originale.stato(),
+  );
+  app.post("/api/sviluppo/originale/controllo", async (_richiesta, risposta) =>
+    opzioni.originale === undefined ? risposta.code(404).send({ errore: "Questa Shinka non è un fork: non ha un originale da cui aggiornarsi." }) : await opzioni.originale.controlla(),
   );
 
   // Le estensioni dell'interfaccia (ADR 0054). Una pagina si serve chiusa nel suo recinto, anche se la

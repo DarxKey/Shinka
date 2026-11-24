@@ -1,0 +1,13 @@
+# Il centro di un fork (ADR 0059): l'immagine ha solo Node, Git e gli strumenti per compilare; il
+# codice lo prende prepara-centro.sh dalla copia pubblica, al primo avvio, nel volume.
+FROM node:24-bookworm
+COPY prepara-centro.sh /opt/shinka-fork/prepara-centro.sh
+USER node
+ENV HOME=/home/node \
+    SHINKA_INSTALLATA=/home/node/shinka \
+    SHINKA_DATI=/home/node/dati \
+    SHINKA_PROGETTI=/home/node/progetti \
+    SHINKA_REPOSITORY=/home/node/repository.git \
+    SHINKA_INDIRIZZO=0.0.0.0
+EXPOSE 7850 7852
+CMD ["bash", "/opt/shinka-fork/prepara-centro.sh"]

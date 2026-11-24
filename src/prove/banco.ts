@@ -53,6 +53,7 @@ import { GatewayAssente, type PortaGateway } from "../centro/gateway.ts";
 import { LavoriDeiProgetti } from "../centro/lavori.ts";
 import { distribuisciSkill } from "../centro/distribuzione-skill.ts";
 import { colLavoroOffline } from "../centro/lavoro-offline.ts";
+import type { AggiornamentiDallOriginale } from "../centro/originale.ts";
 import { ProposteRicordate, postiDegliArchivi } from "../centro/proposte-ricordate.ts";
 import { LavoroOffline } from "../nodo/offline.ts";
 import { Memoria } from "../centro/memoria.ts";
@@ -341,6 +342,8 @@ export interface OpzioniBanco {
   primoAvvio?: true;
   /** I dati di un altro banco: questo è lo stesso centro dopo un riavvio. */
   cartella?: string;
+  /** Un fork della copia pubblica: le versioni nuove dell'originale (ADR 0059). */
+  originale?: AggiornamentiDallOriginale;
   /** L'orologio e la quiete dei lavori programmati, per le prove che li fanno partire. */
   programmati?: Pick<OpzioniProgrammati, "adesso" | "quieteMs">;
   /** La cartella da cui nasce il pacchetto per un'installazione nuova. */
@@ -773,6 +776,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
   await interfaccia.ripristina();
   const centro = await creaCentro({
     interfaccia,
+    ...(opzioni.originale === undefined ? {} : { originale: opzioni.originale }),
     accesso,
     primoAvvio,
     ...(perINodi === undefined ? {} : { perINodi }),

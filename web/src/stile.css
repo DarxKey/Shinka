@@ -7303,3 +7303,19 @@ kbd {
 .ponte-ambiente p {
   margin: 0;
 }
+
+/* Il comando per un fork, e le versioni nuove dell'originale (ADR 0059). */
+.comando-fork {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--codice);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.titoli-originale {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+  font-size: 0.875rem;
+}

@@ -11,7 +11,10 @@ import {
   chiediAccessi,
   leggiAccessi,
   leggiImpostazioniInstallazione,
+  controllaOriginale,
+  leggiOriginale,
 } from "./api.ts";
+import type { StatoOriginale } from "../../src/protocollo/originale.ts";
 import { SezioneHttps } from "./Https.tsx";
 import { frammentoDi } from "./vista.ts";
 import { SezioneCopiaDiSicurezza } from "./CopiaDiSicurezza.tsx";
@@ -139,11 +142,18 @@ export function PaginaImpostazioni({ menu }: { menu: ReactNode }): ReactNode {
           <SezioneHttps />
           <SezioneCopiaDiSicurezza />
           <SezioneDesktop />
+          <SezioneOriginale />
           <section aria-labelledby="titolo-pacchetto">
             <h2 id="titolo-pacchetto">Un'altra installazione</h2>
             <p className="tenue">
-              Per installare Shinka su un altro server con Docker, per esempio al lavoro: il pacchetto ha il codice di questa versione e i file per
-              installarla, senza memoria, skill, conversazioni né vault. Dentro, LEGGIMI.md dice come si fa; per aggiornarla, scarichi un pacchetto nuovo.
+              Per un'altra Shinka, per esempio al lavoro o per un amico, che si sviluppa da sé e riceve le versioni nuove dalla copia pubblica su GitHub: sul
+              server nuovo, con Docker, lancia questo comando. Avrà i suoi dati, i suoi accessi e il suo vault; le versioni nuove arrivano lì come proposte di
+              sviluppo, che si approvano dalla scheda.
+            </p>
+            <code className="comando-fork">{COMANDO_FORK}</code>
+            <p className="tenue">
+              Oppure il pacchetto di questa versione, senza sviluppo né aggiornamenti: dentro, LEGGIMI.md dice come si installa; per aggiornarla, se ne scarica
+              uno nuovo.
             </p>
             <a className="pulsante" href={INDIRIZZO_PACCHETTO} download>
               Scarica il pacchetto
@@ -481,6 +491,70 @@ function CambioPassword(): ReactNode {
           </p>
         )}
       </form>
+    </section>
+  );
+}
+
+/** Il comando che installa un fork della copia pubblica su un altro server (ADR 0059). */
+const COMANDO_FORK = "curl -fsSL https://raw.githubusercontent.com/DarxKey/Shinka/main/installazione/fork/installa.sh | bash";
+
+/** In un fork: da dove arrivano le versioni nuove, quante ce ne sono, e un controllo a richiesta. Altrove non c'è. */
+function SezioneOriginale(): ReactNode {
+  const [stato, setStato] = useState<StatoOriginale>();
+  const [inCorso, setInCorso] = useState(false);
+  const [errore, setErrore] = useState<string>();
+  useEffect(() => {
+    void leggiOriginale().then(setStato, () => {});
+  }, []);
+  if (stato === undefined) return null;
+
+  async function controlla(): Promise<void> {
+    setInCorso(true);
+    setErrore(undefined);
+    try {
+      setStato(await controllaOriginale());
+    } catch (causa) {
+      setErrore(causa instanceof Error ? causa.message : "Il controllo non è riuscito.");
+    } finally {
+      setInCorso(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="titolo-originale">
+      <h2 id="titolo-originale">Aggiornamenti dall'originale</h2>
+      <p className="tenue">
+        Questa Shinka è un fork di <code>{stato.originale}</code>: ogni sei ore guarda se lì ci sono versioni nuove, e la Home te le propone con la scheda di
+        uno sviluppo. Con il tuo sì il progetto Shinka le fonde con le modifiche fatte qui, rifà le prove e chiede l'installazione.
+      </p>
+      {stato.motivo !== undefined ? (
+        <p className="errore" role="alert">
+          {stato.motivo}
+        </p>
+      ) : stato.nuovi === 0 ? (
+        <p>{stato.ultimoControllo === undefined ? "Non ancora controllato." : "Nessuna versione nuova: questa Shinka ha tutto ciò che ha l'originale."}</p>
+      ) : (
+        <>
+          <p>
+            {stato.nuovi === 1 ? "Una versione nuova" : `${stato.nuovi} versioni nuove`} nell'originale
+            {stato.proposti === true ? ": la Home te le ha proposte." : "."}
+          </p>
+          <ul className="titoli-originale">
+            {stato.titoli.slice(0, 10).map((titolo) => (
+              <li key={titolo}>{titolo}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {stato.ultimoControllo !== undefined && <p className="tenue">Ultimo controllo: {new Date(stato.ultimoControllo).toLocaleString("it-IT")}</p>}
+      <button type="button" disabled={inCorso} onClick={() => void controlla()}>
+        {inCorso ? "Controllo…" : "Controlla adesso"}
+      </button>
+      {errore !== undefined && (
+        <p className="errore" role="alert">
+          {errore}
+        </p>
+      )}
     </section>
   );
 }

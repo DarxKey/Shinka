@@ -2,7 +2,7 @@
 
 ## Specifica funzionale e architetturale
 
-**Versione:** 2.27 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
+**Versione:** 2.28 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
 
 Sostituisce la specifica "Atlas Agent 1.0", conservata in [archivio/atlas-agent-v1.md](archivio/atlas-agent-v1.md). I termini usati qui sono definiti in [GLOSSARY.md](GLOSSARY.md). Le decisioni di fondo sono motivate in [docs/adr/](docs/adr/). Lo stato dei lavori è in [STATO.md](STATO.md).
 
@@ -57,6 +57,8 @@ La versione 2.25 lascia lavorare sui progetti di un PC anche quando il centro no
 La versione 2.26 rende l'interfaccia riscrivibile dalle estensioni: le loro pagine stanno in molti posti dell'interfaccia, possono nascondere o sostituire alcune parti, avere comandi e scorciatoie, e chiamano le API di Shinka con la sessione del proprietario, solo quelle che l'estensione dichiara e che la scheda mostra. Restano chiuse l'accesso a Shinka e le decisioni che spettano al proprietario. Cambiano le sezioni 4.11 e 6; si aggiunge la prova A92. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0057](docs/adr/0057-interfaccia-riscrivibile-dalle-estensioni.md).
 
 La versione 2.27 lascia che un nodo faccia da ponte per una macchina che non raggiunge il centro: il proprietario lo accende dalla pagina Ambienti, e il ponte fa passare solo il collegamento cifrato dei nodi e lo scaricamento dell'installazione. Cambia la sezione 4.3; si aggiunge la prova A93. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0058](docs/adr/0058-il-ponte-di-un-nodo.md).
+
+La versione 2.28 aggiunge i fork: un'altra installazione di Shinka nasce dalla copia pubblica con un comando, si sviluppa da sé e riceve le versioni nuove dall'originale, che la Home propone e il proprietario di quell'installazione approva. Cambia la sezione 4.10; si aggiunge la prova A94. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0059](docs/adr/0059-un-fork-che-si-aggiorna-dall-originale.md).
 
 ## 1. Cos'è Shinka
 
@@ -236,6 +238,7 @@ Shinka si sviluppa da dentro Shinka, in un progetto.
 - I guardiani, del centro, dei nodi e del gateway, entrano in funzione solo da fuori, su richiesta del proprietario.
 - Ciò che riguarda il server e non il codice, come ricreare un container di Shinka o cambiarne immagine e porte, il progetto Shinka lo fa con la credenziale del server, se il proprietario l'ha inserita nel vault: un comando alla volta, ognuno con il sì dato al gateway.
 - Le regole di questa sezione 4 e i divieti fissi il progetto Shinka li cambia solo se il proprietario lo chiede in modo esplicito.
+- Un'altra installazione può nascere come fork della copia pubblica: si sviluppa da sé come questa, e le versioni nuove dell'originale le arrivano come proposte di sviluppo. Con il sì del suo proprietario il suo progetto Shinka le fonde con le modifiche fatte lì, rifà le prove e chiede l'installazione come sempre. Nulla entra da solo, e nulla torna verso l'originale.
 
 ### 4.11 Estensioni
 
@@ -481,6 +484,7 @@ Ogni incremento deve essere usabile e dimostrabile prima di passare al successiv
 | A91 | Con il centro irraggiungibile, il proprietario da Shinka Desktop scrive a un progetto del suo PC e ne crea uno nuovo; poi il centro torna | Offline i due progetti lavorano e chiedono i permessi lì; tornato il centro, le loro storie e il progetto nuovo ci sono, una volta sola, e i progetti riprendono dal centro dalla stessa sessione |
 | A92 | La Home propone un'estensione con una pagina nella barra destra, nella testata e nel pannello flottante, che legge le risorse di un ambiente; il proprietario la conferma | La scheda mostra posti e API; la pagina compare nei tre posti e legge le risorse; un'API non dichiarata le è negata, come l'anteprima di un progetto non arriva al ponte; le sue richieste sono nel registro con il suo nome; spenta, sparisce subito; con «?senza-estensioni» non c'è |
 | A93 | Il proprietario accende il ponte di un ambiente e prepara con il suo indirizzo una macchina che non vede il centro | La macchina si collega attraverso il ponte, cifrata da capo a capo, e il proprietario la approva come le altre; dal ponte le pagine e le API dell'interfaccia non si raggiungono; spento il ponte, la macchina risulta spenta |
+| A94 | Su un altro server il proprietario lancia il comando del fork; più tardi l'originale pubblica una versione nuova | Il fork si avvia con la sua storia, sotto i suoi guardiani; la Home del fork propone la versione nuova, e con il sì il suo progetto Shinka la fonde, rifà le prove e chiede l'installazione; le modifiche fatte nel fork restano |
 
 ## 10. Regole per chi implementa
 

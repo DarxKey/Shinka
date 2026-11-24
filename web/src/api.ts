@@ -1,5 +1,6 @@
 /** Chiamate dal browser al centro. */
 
+import type { StatoOriginale } from "../../src/protocollo/originale.ts";
 import type { StatoEstensioniDelProgetto } from "../../src/protocollo/progetti.ts";
 import type { ChiImplementa, StatoChiImplementa } from "../../src/protocollo/incarichi.ts";
 import type { ScelteAvvisi } from "../../src/protocollo/avvisi.ts";
@@ -557,6 +558,21 @@ export async function leggiRisorseAmbiente(id: string): Promise<DettaglioDellAmb
 
 /** Chiede al nodo di un ambiente di passare alla versione del centro. */
 /** Fa partire un nodo Windows a ogni accesso, oppure no. */
+/** In un fork della copia pubblica: le versioni nuove dell'originale; nulla se questa Shinka non è un fork (ADR 0059). */
+export async function leggiOriginale(): Promise<StatoOriginale | undefined> {
+  try {
+    return (await chiama("GET", "/api/sviluppo/originale")) as StatoOriginale;
+  } catch (errore) {
+    if (errore instanceof ErroreCentro && errore.stato === 404) return undefined;
+    throw errore;
+  }
+}
+
+/** Guarda adesso se l'originale ha versioni nuove; se sì, la Home le propone. */
+export async function controllaOriginale(): Promise<StatoOriginale> {
+  return (await chiama("POST", "/api/sviluppo/originale/controllo")) as StatoOriginale;
+}
+
 /** Accende il ponte di un ambiente su una porta, o lo spegne con null (ADR 0058). */
 export async function impostaPonte(idAmbiente: string, porta: number | null): Promise<void> {
   await chiama("POST", `/api/ambienti/${encodeURIComponent(idAmbiente)}/ponte`, { porta });
