@@ -39,6 +39,7 @@
  *                          solo allora una versione approvata viene messa in funzione
  */
 
+import { ProcessiDiShinka } from "../nodo/processi-di-shinka.ts";
 import { PrimoAvvio } from "./primo-avvio.ts";
 import { existsSync } from "node:fs";
 import { CODICE_RIAVVIO, FILE_INSTALLAZIONE } from "../guardiano/guardiano.ts";
@@ -242,9 +243,12 @@ const registroAccessi = new RegistroAccessi({ file: join(dati, "accessi.jsonl") 
 
 // Le risorse degli ambienti, per la loro pagina: quelle di questa macchina le legge il centro, le
 // altre i nodi; i container degli host per gli stack li legge il gateway.
+// I processi che il centro accende nel suo ambiente (conversazioni, comandi, terminali, applicazioni).
+const processiDelCentro = new ProcessiDiShinka();
 const risorse = new RisorseDegliAmbienti({
   ambienti,
-  locale: new CampionatoreRisorse({ radiceProgetti, etichettaDiShinka: ETICHETTA_STACK }),
+  locale: new CampionatoreRisorse({ radiceProgetti, etichettaDiShinka: ETICHETTA_STACK, processiDiShinka: processiDelCentro }),
+  processiLocali: processiDelCentro,
   ...(gateway instanceof GatewayAssente ? {} : { contenitori: () => gateway.contenitori() }),
 });
 

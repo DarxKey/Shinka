@@ -109,6 +109,8 @@ export class LavoriDeiProgetti {
   /** Le attività che la conversazione di ogni progetto ha riferito per ultime: vi si aggiungono quelle degli incarichi. */
   readonly #attivitaDellaConversazione = new Map<string, Attivita[]>();
   readonly #incarichi: Incarichi;
+  /** I progetti la cui conversazione va riaperta appena è ferma: le estensioni scelte sono cambiate. */
+  readonly #daRiaprire = new Set<string>();
   /** Ciò che la conversazione di un progetto deve sapere e non ha ancora saputo, perché non era aperta. */
   readonly #daDire = new Map<string, string[]>();
 
@@ -401,9 +403,12 @@ export class LavoriDeiProgetti {
     return nuove;
   }
 
-  decidiPermesso(idProgetto: string, idPermesso: string, decisione: DecisionePermesso): boolean {
+  decidiPermesso(idProgetto: string, idPermesso: string, decisione: DecisionePermesso, sempre?: boolean): boolean {
     // Il permesso può essere di chi svolge un incarico del progetto.
-    return (this.#porte.get(idProgetto)?.decidiPermesso(idPermesso, decisione) ?? false) || this.#incarichi.decidiPermesso(idProgetto, idPermesso, decisione);
+    return (
+      (this.#porte.get(idProgetto)?.decidiPermesso(idPermesso, decisione, sempre) ?? false) ||
+      this.#incarichi.decidiPermesso(idProgetto, idPermesso, decisione, sempre)
+    );
   }
 
   /**
@@ -415,6 +420,36 @@ export class LavoriDeiProgetti {
     if (progetto === undefined) return Promise.resolve({ testo: "Progetto non trovato.", errore: true });
     if (!this.#o.ambienti.attivo(progetto.idAmbiente)) return Promise.resolve({ testo: "L'ambiente del progetto è spento.", errore: true });
     return this.#incarichi.affida(progetto, this.#o.progetti.chiImplementa(idProgetto), this.impostazioniInUso(idProgetto).permessi, argomenti);
+  }
+
+  /**
+   * Il proprietario cambia le estensioni del progetto mentre c'è già: la conversazione riparte con
+   * quelle nuove, dalla stessa sessione, appena non sta lavorando. Falso se il progetto non c'è.
+   */
+  async cambiaEstensioni(idProgetto: string, scelte: readonly string[] | undefined): Promise<boolean> {
+    if (!(await this.#o.progetti.ricordaEstensioni(idProgetto, scelte))) return false;
+    // Ferma, la conversazione si chiude subito e la nota arriva con il prossimo messaggio; al lavoro, dopo il turno.
+    if ((this.#canali.get(idProgetto)?.sospesi.turni ?? 0) > 0) this.#daRiaprire.add(idProgetto);
+    else this.#riapri(idProgetto);
+    this.#annotaOPoi(
+      idProgetto,
+      `[Shinka] Il proprietario ha cambiato le estensioni di questo progetto: ${scelte === undefined ? "ora ha tutte quelle accese nel suo ambiente" : scelte.length === 0 ? "ora non ne ha nessuna" : `ora ha ${scelte.join(", ")}`}. Gli strumenti e i modelli locali sono quelli nuovi.`,
+    );
+    return true;
+  }
+
+  /** Chiude la conversazione del progetto: alla prossima richiesta riparte, dalla stessa sessione, con le scelte di adesso. */
+  #riapri(idProgetto: string): void {
+    this.#daRiaprire.delete(idProgetto);
+    const porta = this.#porte.get(idProgetto);
+    if (porta === undefined) return;
+    this.#porte.delete(idProgetto);
+    porta.chiudi();
+  }
+
+  /** Le estensioni scelte per il progetto; nulla se ha tutte quelle accese nel suo ambiente. */
+  estensioniScelte(idProgetto: string): string[] | undefined {
+    return this.#o.progetti.estensioni(idProgetto);
   }
 
   /** Chi implementa gli incarichi del progetto, se il proprietario lo ha scelto. */
@@ -556,15 +591,20 @@ export class LavoriDeiProgetti {
   }
 
   /**
-   * Elimina un progetto da Shinka: la sua conversazione si chiude e il suo archivio si cancella, con
-   * le immagini. La cartella con i file resta dov'è. Il progetto Shinka non si elimina. Il motivo,
-   * se non si può.
+   * Elimina un progetto da Shinka: se sta lavorando si ferma, la sua conversazione si chiude, con ciò
+   * che aveva acceso in background, e il suo archivio si cancella, con le immagini. Con `cartella` si
+   * elimina anche la cartella con i file, nel suo ambiente; senza, resta dov'è. Il progetto Shinka
+   * non si elimina. Il motivo, se non si può; altrimenti com'è andata la cartella, se era chiesta.
    */
-  async elimina(idProgetto: string): Promise<string | undefined> {
+  async elimina(idProgetto: string, opzioni: { cartella?: boolean } = {}): Promise<{ motivo: string } | { cartella?: { riuscita: boolean; testo: string } }> {
     const progetto = this.#o.progetti.trova(idProgetto);
-    if (progetto === undefined) return "Progetto non trovato.";
-    if (progetto.diShinka === true) return "Il progetto Shinka non si elimina: è quello in cui Shinka sviluppa sé stessa.";
-    if ((this.#canali.get(idProgetto)?.sospesi.turni ?? 0) > 0) return "Il progetto sta lavorando: fermalo prima di eliminarlo.";
+    if (progetto === undefined) return { motivo: "Progetto non trovato." };
+    if (progetto.diShinka === true) return { motivo: "Il progetto Shinka non si elimina: è quello in cui Shinka sviluppa sé stessa." };
+    // Un progetto al lavoro si ferma: il proprietario ha scelto di eliminarlo.
+    if ((this.#canali.get(idProgetto)?.sospesi.turni ?? 0) > 0 || this.#incarichi.inCorso(idProgetto)) {
+      await this.interrompi(idProgetto).catch(() => {});
+    }
+    this.#incarichi.chiudiDelProgetto(idProgetto);
     this.#porte.get(idProgetto)?.chiudi();
     this.#porte.delete(idProgetto);
     this.#perQuestoLavoro.delete(idProgetto);
@@ -577,7 +617,16 @@ export class LavoriDeiProgetti {
     if (this.#o.cartellaModifiche !== undefined) {
       await rm(join(this.#o.cartellaModifiche, nomeDiCartella(idProgetto)), { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
     }
-    return undefined;
+    if (opzioni.cartella !== true) return {};
+    if (!this.#o.ambienti.attivo(progetto.idAmbiente)) {
+      return { cartella: { riuscita: false, testo: `L'ambiente è spento: la cartella ${progetto.cartella} è rimasta, e va eliminata a mano.` } };
+    }
+    // Ciò che il processo chiuso lasciava (shell, server) ha un attimo per uscire e lasciare i file.
+    await new Promise((fatto) => setTimeout(fatto, 500));
+    const esito = await this.#esecutore(progetto.idAmbiente)
+      .agisciInCartella(progetto.cartella, { tipo: "elimina-cartella" })
+      .catch((errore: unknown) => ({ riuscita: false, testo: errore instanceof Error ? errore.message : String(errore) }));
+    return { cartella: { riuscita: esito.riuscita, testo: esito.riuscita ? esito.testo : `La cartella ${progetto.cartella} non si è potuta eliminare: ${esito.testo}` } };
   }
 
   /** Chiude le conversazioni aperte, per esempio allo spegnimento del centro. */
@@ -660,7 +709,10 @@ export class LavoriDeiProgetti {
     canale.ascolta((archiviato) => {
       const { evento } = archiviato;
       // Un lavoro con impostazioni sue finisce quando il progetto non ha più turni aperti.
-      if (evento.tipo === "turno-concluso" && canale.sospesi.turni === 0) this.#tornaAlleSalvate(idProgetto);
+      if (evento.tipo === "turno-concluso" && canale.sospesi.turni === 0) {
+        this.#tornaAlleSalvate(idProgetto);
+        if (this.#daRiaprire.has(idProgetto)) this.#riapri(idProgetto);
+      }
       for (const ascoltatore of this.#ascoltatoriDegliEventi) ascoltatore(idProgetto, archiviato);
       if (
         evento.tipo === "turno-iniziato" ||

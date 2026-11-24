@@ -26,7 +26,10 @@ test("la pagina di un ambiente: quello del centro risponde da sé, senza session
   const letto = await banco.centro.inject({ method: "GET", url: "/api/ambienti/centro/risorse", cookies });
   assert.equal(letto.statusCode, 200);
   // Senza gateway non si parla di host Docker.
-  assert.deepEqual(letto.json(), RISORSE_DI_PROVA);
+  // Senza progetti, dei processi di Shinka c'è solo la shell del banco.
+  const { processiDiShinka, ...resto } = letto.json() as typeof RISORSE_DI_PROVA;
+  assert.deepEqual(resto, RISORSE_DI_PROVA);
+  assert.deepEqual(processiDiShinka?.map((uno) => uno.pid), [4200]);
   assert.equal((await banco.centro.inject({ method: "GET", url: "/api/ambienti/inventato/risorse", cookies })).statusCode, 404);
 });
 

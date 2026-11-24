@@ -22,6 +22,7 @@ import { adottaCartella, CartellaNonCreata, creaCartellaProgetto } from "./carte
 import type { ConfigurazioneConversazione } from "./conversazione.ts";
 import { apriConversazione } from "./motore.ts";
 import { eIncarico } from "../protocollo/incarichi.ts";
+import { soloIModelliScelti } from "./modelli-locali.ts";
 import { configurazioneDiProgetto } from "./profili.ts";
 import { nomeDiCartella } from "../protocollo/modifiche.ts";
 import { EstensioniInAmbiente, soloLeScelte } from "./estensioni.ts";
@@ -60,6 +61,8 @@ export interface ContestoLavoro {
   accessi?: { esegui(richiesta: RichiestaAccessi): Promise<EsitoAccessi> };
   /** Le risorse di questa macchina, per la pagina dell'ambiente. Senza, il nodo non le dice. */
   risorse?: { leggi(): Promise<RisorseDellAmbiente> };
+  /** I processi accesi da Shinka qui: per terminarne uno bloccato. */
+  processiDiShinka?: { termina(pid: number): Promise<{ riuscita: boolean; testo: string }> };
   /** Su Windows: il collegamento che fa partire il nodo a ogni accesso. Senza, il nodo non lo sa cambiare. */
   avvioConWindows?: { imposta(attivo: boolean): Promise<{ attivo: boolean } | { motivo: string }> };
   /** Come si accende la shell di un terminale. Nei test se ne mette una finta. */
@@ -137,6 +140,16 @@ export class LavoroDelNodo {
         const { idRichiesta, richiesta } = comando;
         const esito = this.#contesto.accessi?.esegui(richiesta) ?? Promise.resolve({ motivo: "Questo nodo non sa dire gli accessi dei motori." });
         void esito.then((letto) => this.#contesto.riferisci({ tipo: "accessi-esito", idRichiesta, esito: letto }));
+        return;
+      }
+      case "termina-processo": {
+        const { idRichiesta, pid } = comando;
+        const processi = this.#contesto.processiDiShinka;
+        if (processi === undefined) {
+          this.#contesto.riferisci({ tipo: "processo-terminato", idRichiesta, riuscita: false, testo: "Questo nodo non sa terminare i processi: va aggiornato." });
+          return;
+        }
+        void processi.termina(pid).then((esito) => this.#contesto.riferisci({ tipo: "processo-terminato", idRichiesta, ...esito }));
         return;
       }
       case "avvio-con-windows": {
@@ -235,7 +248,7 @@ export class LavoroDelNodo {
       case "decidi-permesso":
         this.#conversazioni
           .get(comando.idConversazione)
-          ?.decidiPermesso(comando.idPermesso, comando.decisione);
+          ?.decidiPermesso(comando.idPermesso, comando.decisione, comando.sempre === true);
         return;
       case "riavvolgi": {
         const { idRichiesta, idMessaggio } = comando;
@@ -449,7 +462,9 @@ export class LavoroDelNodo {
           : { estensioni: scelte === undefined ? this.#estensioni : soloLeScelte(this.#estensioni, () => scelte) }),
         ...(this.#contesto.browserDelPc === true ? { browserDelPc: true } : {}),
         ...(eIncarico(idConversazione) ? { incarico: true } : {}),
-        ...(this.#estensioni === undefined ? {} : { modelliLocali: this.#estensioni.modelliLocali }),
+        ...(this.#estensioni === undefined
+          ? {}
+          : { modelliLocali: scelte === undefined ? this.#estensioni.modelliLocali : soloIModelliScelti(this.#estensioni.modelliLocali, () => scelte) }),
         ...(this.#contesto.cartellaModifiche === undefined ? {} : { cartellaModifiche: join(this.#contesto.cartellaModifiche, nomeDiCartella(idConversazione)) }),
       },
     );

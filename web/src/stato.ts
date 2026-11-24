@@ -17,6 +17,8 @@ export interface Permesso {
   id: string;
   stato: StatoPermesso;
   motivo?: string;
+  /** Ciò che «Approva sempre» salverebbe, se l'harness lo propone. */
+  regola?: string;
 }
 
 export type Elemento =
@@ -413,6 +415,7 @@ export function applica(stato: StatoChat, evento: EventoConversazione): StatoCha
         id: evento.idPermesso,
         stato: "in-attesa",
         ...(evento.motivo === undefined ? {} : { motivo: evento.motivo }),
+        ...(evento.regola === undefined ? {} : { regola: evento.regola }),
       };
       // La richiesta può arrivare prima dell'azione a cui si riferisce.
       if (trova(stato, evento.idAzione) === undefined) {

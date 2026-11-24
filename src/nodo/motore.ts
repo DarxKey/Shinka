@@ -340,8 +340,8 @@ class ConversazioneConMotore implements PortaConversazione {
     return this.#interna.storia?.() ?? Promise.resolve([]);
   }
 
-  decidiPermesso(idPermesso: string, decisione: DecisionePermesso): boolean {
-    return this.#interna.decidiPermesso(idPermesso, decisione);
+  decidiPermesso(idPermesso: string, decisione: DecisionePermesso, sempre?: boolean): boolean {
+    return this.#interna.decidiPermesso(idPermesso, decisione, sempre);
   }
 
   rispondiDomande(idDomande: string, risposta: RispostaAlleDomande): boolean {

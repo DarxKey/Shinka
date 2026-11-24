@@ -39,3 +39,16 @@ test("acceso, il collegamento avvia l'icona del nodo; spento, si tolgono anche g
 test("fuori da Windows non c'è nulla da cambiare", () => {
   if (process.platform !== "win32") assert.equal(AvvioConWindows.diQuestaMacchina(), undefined);
 });
+
+test("il nodo accetta dal centro il comando per l'avvio con Windows e il consenso per sempre", async () => {
+  const { leggiComando } = await import("./collegamento.ts");
+  assert.deepEqual(leggiComando({ tipo: "avvio-con-windows", idRichiesta: "r1", attivo: true }), { tipo: "avvio-con-windows", idRichiesta: "r1", attivo: true });
+  assert.equal(leggiComando({ tipo: "avvio-con-windows", idRichiesta: "r1", attivo: "si" }), undefined);
+  assert.deepEqual(leggiComando({ tipo: "decidi-permesso", idConversazione: "c", idPermesso: "p", decisione: "approvato", sempre: true }), {
+    tipo: "decidi-permesso",
+    idConversazione: "c",
+    idPermesso: "p",
+    decisione: "approvato",
+    sempre: true,
+  });
+});

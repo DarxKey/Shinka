@@ -340,7 +340,7 @@ function leggiMessaggioCentro(dati: unknown): MessaggioCentro | undefined {
 }
 
 /** Riconosce un comando del centro, controllando che abbia i campi che gli servono. */
-function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | undefined {
+export function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | undefined {
   const testo = (nome: string): string | undefined => {
     const valore = campi[nome];
     return typeof valore === "string" ? valore : undefined;
@@ -487,7 +487,18 @@ function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | undefine
       const decisione = campi.decisione;
       if (idConversazione === undefined || idPermesso === undefined) return undefined;
       if (decisione !== "approvato" && decisione !== "negato") return undefined;
-      return { tipo: "decidi-permesso", idConversazione, idPermesso, decisione };
+      return { tipo: "decidi-permesso", idConversazione, idPermesso, decisione, ...(campi.sempre === true ? { sempre: true as const } : {}) };
+    }
+    case "termina-processo": {
+      const idRichiesta = testo("idRichiesta");
+      const pid = campi.pid;
+      if (idRichiesta === undefined || typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return undefined;
+      return { tipo: "termina-processo", idRichiesta, pid };
+    }
+    case "avvio-con-windows": {
+      const idRichiesta = testo("idRichiesta");
+      if (idRichiesta === undefined || typeof campi.attivo !== "boolean") return undefined;
+      return { tipo: "avvio-con-windows", idRichiesta, attivo: campi.attivo };
     }
     case "riavvolgi": {
       const idRichiesta = testo("idRichiesta");

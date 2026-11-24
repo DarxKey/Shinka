@@ -69,3 +69,32 @@ test("gli ambienti si aprono dal menu delle pagine, e un nodo si reinstalla con 
   const ambiente = banco.ambienti.stato().ambienti.find((uno) => uno.id === ID_NODO);
   assert.deepEqual(chiesto, { sistema: /windows/i.test(ambiente?.sistema ?? "") ? "windows" : "linux", centro: indirizzoDelNodo, nome: "PC Windows", descrizione: ambiente?.descrizione });
 });
+
+test("nella pagina dell'ambiente i processi di Shinka stanno con il loro progetto, e uno si termina", { skip: salta, timeout: 120_000 }, async (t) => {
+  const banco = await allestisci(t, { cartellaWeb });
+  const progetto = await banco.lavori.crea("Blog", "centro", "Un blog.");
+  await banco.centro.listen({ host: "127.0.0.1", port: 0 });
+  const indirizzo = `http://127.0.0.1:${(banco.centro.server.address() as AddressInfo).port}`;
+  const browser = await chromium.launch({
+    chromiumSandbox: disponibile?.recinto !== false,
+    ...(disponibile?.canale === undefined ? {} : { channel: disponibile.canale }),
+    ...(disponibile?.eseguibile === undefined ? {} : { executablePath: disponibile.eseguibile }),
+  });
+  t.after(() => browser.close());
+  const pagina = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await pagina.goto(`${indirizzo}/`);
+  await pagina.fill("#password", PASSWORD);
+  await pagina.click('button[type="submit"]');
+  await pagina.locator("form.scrittura textarea").waitFor();
+  await pagina.goto(`${indirizzo}/#/ambienti/centro`);
+  const sezione = pagina.locator(".processi-di-shinka");
+  const blog = sezione.locator(".gruppo-processi", { has: pagina.getByRole("link", { name: "Blog" }) });
+  await blog.waitFor();
+  assert.deepEqual(await blog.locator(".riga-processo .nome").allTextContents(), ["claude · conversazione", "node"]);
+  await sezione.locator(".gruppo-processi", { hasText: "Shinka" }).locator(".riga-processo", { hasText: "bash" }).waitFor();
+  const server = blog.locator("li", { hasText: "node server.js" });
+  await server.getByRole("button", { name: "Termina…" }).click();
+  await server.getByRole("button", { name: "Termina", exact: true }).click();
+  await blog.locator("li", { hasText: "node server.js" }).waitFor({ state: "detached" });
+  void progetto;
+});

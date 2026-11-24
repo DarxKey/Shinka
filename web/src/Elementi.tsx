@@ -625,6 +625,7 @@ function VistaAzione({ azione, senzaImmagini }: { azione: Azione; senzaImmagini?
         <RichiestaPermesso
           idPermesso={azione.permesso.id}
           motivo={azione.permesso.motivo}
+          regola={azione.permesso.regola}
           comando={comandoSuHost(azione.strumento, azione.ingresso)}
         />
       )}
@@ -645,10 +646,13 @@ function VistaAzione({ azione, senzaImmagini }: { azione: Azione; senzaImmagini?
 function RichiestaPermesso({
   idPermesso,
   motivo,
+  regola,
   comando,
 }: {
   idPermesso: string;
   motivo: string | undefined;
+  /** Ciò che «Approva sempre» salva nelle impostazioni del progetto; senza, il pulsante non c'è. */
+  regola?: string | undefined;
   /** Il comando per un host, per intero: il consenso vale per quello, e la riga in alto lo tronca. */
   comando: string | undefined;
 }): ReactNode {
@@ -656,11 +660,11 @@ function RichiestaPermesso({
   const [inviata, setInviata] = useState<DecisionePermesso>();
   const [errore, setErrore] = useState<string>();
 
-  async function decidi(decisione: DecisionePermesso): Promise<void> {
+  async function decidi(decisione: DecisionePermesso, sempre = false): Promise<void> {
     setInviata(decisione);
     setErrore(undefined);
     try {
-      await decidiPermesso(base, idPermesso, decisione);
+      await decidiPermesso(base, idPermesso, decisione, sempre);
     } catch (causa) {
       setInviata(undefined);
       setErrore(causa instanceof Error ? causa.message : "Decisione non registrata.");
@@ -680,10 +684,16 @@ function RichiestaPermesso({
         >
           Approva
         </button>
+        {regola !== undefined && base.startsWith("/api/progetti/") && (
+          <button type="button" disabled={inviata !== undefined} title={`Salva nel progetto la regola: ${regola}`} onClick={() => void decidi("approvato", true)}>
+            Approva sempre
+          </button>
+        )}
         <button type="button" disabled={inviata !== undefined} onClick={() => void decidi("negato")}>
           Nega
         </button>
       </div>
+      {regola !== undefined && base.startsWith("/api/progetti/") && <p className="tenue regola-permesso">«Approva sempre» vale in questo progetto anche le prossime volte per: {regola}</p>}
       {errore !== undefined && (
         <p className="errore" role="alert">
           {errore}

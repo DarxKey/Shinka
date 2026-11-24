@@ -27,6 +27,7 @@
  *   SHINKA_GUARDIANO  "1" quando il nodo è tenuto acceso dal suo guardiano, che lo imposta da sé
  */
 
+import { ProcessiDiShinka } from "./processi-di-shinka.ts";
 import { AvvioConWindows } from "./avvio-con-windows.ts";
 import { AccessiDeiMotori } from "./accessi.ts";
 import { CampionatoreRisorse } from "./risorse.ts";
@@ -110,6 +111,8 @@ try {
 
   let ultimoStato = "";
   let inAggiornamento = false;
+  // I processi che il nodo accende: la pagina dell'ambiente li mostra per progetto, e ne termina uno bloccato.
+  const processiDiShinka = new ProcessiDiShinka();
   // Su Windows il proprietario sceglie dalla pagina degli ambienti se il nodo parte a ogni accesso.
   const avvioConWindows = AvvioConWindows.diQuestaMacchina();
   const lavoro = new LavoroDelNodo({
@@ -119,7 +122,8 @@ try {
     // Gli accessi di Claude e Codex su questa macchina: li fa il proprietario dalla pagina Impostazioni.
     accessi: new AccessiDeiMotori({ dopoIlCambio: () => modelliDeiMotori.dimentica() }),
     // Le risorse di questa macchina: si leggono quando il proprietario guarda la pagina dell'ambiente.
-    risorse: new CampionatoreRisorse({ radiceProgetti: impostazioni.progetti, etichettaDiShinka: ETICHETTA_STACK }),
+    risorse: new CampionatoreRisorse({ radiceProgetti: impostazioni.progetti, etichettaDiShinka: ETICHETTA_STACK, processiDiShinka }),
+    processiDiShinka,
     ...(avvioConWindows === undefined ? {} : { avvioConWindows }),
     // Le estensioni che il centro accende qui: i plugin stanno tra i dati del nodo, e nella
     // configurazione di Claude Code di questa macchina non si scrive nulla.

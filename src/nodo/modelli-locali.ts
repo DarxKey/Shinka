@@ -35,6 +35,29 @@ export interface PresaDelModello {
   lascia(): void;
 }
 
+/** Ciò che una conversazione vede dei modelli locali del suo ambiente: quelli del suo progetto. */
+export interface FonteModelliLocali {
+  modelli(): ModelloDisponibile[];
+  prendi(modello: string, impegno?: Impegno): PresaDelModello | { motivo: string };
+}
+
+/**
+ * Solo i modelli locali delle estensioni scelte per il progetto, chieste ogni volta: senza una scelta,
+ * tutti quelli accesi nell'ambiente.
+ */
+export function soloIModelliScelti(fonte: FonteModelliLocali, scelte: () => readonly string[] | undefined): FonteModelliLocali {
+  const scelto = (valore: string): boolean => {
+    const elenco = scelte();
+    const nome = estensioneDelModello(valore);
+    return elenco === undefined || (nome !== undefined && elenco.includes(nome));
+  };
+  return {
+    modelli: () => fonte.modelli().filter((voce) => scelto(voce.valore)),
+    prendi: (modello, impegno) =>
+      scelto(modello) ? fonte.prendi(modello, impegno) : { motivo: `Il modello locale "${estensioneDelModello(modello) ?? modello}" non è tra le estensioni scelte per questo progetto.` },
+  };
+}
+
 /** Come si fa partire il server. Nei test, uno finto. */
 export type AvviaServer = (comando: string, argomenti: string[], variabili: Record<string, string>) => ChildProcess;
 
@@ -148,7 +171,7 @@ function spegniProcesso(processo: ChildProcess, tettoMs: number): Promise<void> 
   return Promise.race([fine, new Promise<void>((fatto) => setTimeout(fatto, tettoMs).unref())]);
 }
 
-export class ModelliLocali {
+export class ModelliLocali implements FonteModelliLocali {
   readonly #o: OpzioniModelliLocali;
   #accese: { nome: string; definizione: DefinizioneModelloLocale }[] = [];
   readonly #server = new Map<string, ServerAcceso>();

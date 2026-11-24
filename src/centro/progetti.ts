@@ -105,6 +105,16 @@ export class RegistroProgetti {
     return leggiEstensioniScelte(this.#progetti.get(idProgetto)?.estensioni);
   }
 
+  /** Ricorda le estensioni scelte per il progetto; nulla perché abbia tutte quelle accese nel suo ambiente. */
+  async ricordaEstensioni(idProgetto: string, scelte: readonly string[] | undefined): Promise<boolean> {
+    const progetto = this.#progetti.get(idProgetto);
+    if (progetto === undefined) return false;
+    if (scelte === undefined) delete progetto.estensioni;
+    else progetto.estensioni = [...new Set(scelte)];
+    await this.#salva();
+    return true;
+  }
+
   /** Come si avvia l'applicazione del progetto, e se è voluta accesa. */
   applicazione(idProgetto: string): ApplicazioneRicordata {
     const salvata = this.#progetti.get(idProgetto)?.applicazione;

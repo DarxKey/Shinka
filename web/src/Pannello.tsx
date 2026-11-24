@@ -6,7 +6,7 @@ import { PannelloModifiche, type TurnoModificato } from "./PannelloModifiche.tsx
 import type { FileDeiComandi } from "../../src/protocollo/modifiche.ts";
 
 // Il terminale porta con sé una libreria pesante: si carica solo quando lo si apre.
-const Terminale = lazy(() => import("./Terminale.tsx").then((modulo) => ({ default: modulo.Terminale })));
+const Terminale = lazy(() => import("./Terminale.tsx").then((modulo) => ({ default: modulo.TerminaliDelProgetto })));
 
 export type Scheda = "modifiche" | "file" | "terminale" | "anteprima";
 

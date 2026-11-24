@@ -1,5 +1,6 @@
 /** Chiamate dal browser al centro. */
 
+import type { StatoEstensioniDelProgetto } from "../../src/protocollo/progetti.ts";
 import type { ChiImplementa, StatoChiImplementa } from "../../src/protocollo/incarichi.ts";
 import type { ScelteAvvisi } from "../../src/protocollo/avvisi.ts";
 import type { DettaglioDellAmbiente } from "../../src/protocollo/risorse.ts";
@@ -154,9 +155,13 @@ export async function fissaProgetto(idProgetto: string, fissato: boolean): Promi
   await chiama("POST", `${baseDelProgetto(idProgetto)}/fissato`, { fissato });
 }
 
-/** Elimina un progetto da Shinka: la sua cartella resta. */
-export async function eliminaProgetto(idProgetto: string): Promise<void> {
-  await chiama("DELETE", baseDelProgetto(idProgetto));
+/**
+ * Elimina un progetto da Shinka, fermando ciò che sta facendo. Con `cartella` se ne va anche la
+ * cartella con i file; com'è andata, se lo si è chiesto.
+ */
+export async function eliminaProgetto(idProgetto: string, cartella = false): Promise<{ riuscita: boolean; testo: string } | undefined> {
+  const risposta = (await chiama("DELETE", `${baseDelProgetto(idProgetto)}${cartella ? "?cartella=si" : ""}`)) as { cartella?: { riuscita: boolean; testo: string } };
+  return risposta.cartella;
 }
 
 /** Elimina un argomento archiviato, con la sua cartella nell'ambiente del centro. */
@@ -246,8 +251,8 @@ export async function leggiAzione(base: string, id: string): Promise<{ ingresso:
   return (await chiama("GET", `${base}/azioni/${encodeURIComponent(id)}`)) as { ingresso: unknown; esito?: string };
 }
 
-export async function decidiPermesso(base: string, id: string, decisione: DecisionePermesso): Promise<void> {
-  await chiama("POST", `${base}/permessi/${encodeURIComponent(id)}`, { decisione });
+export async function decidiPermesso(base: string, id: string, decisione: DecisionePermesso, sempre = false): Promise<void> {
+  await chiama("POST", `${base}/permessi/${encodeURIComponent(id)}`, { decisione, ...(sempre ? { sempre: true } : {}) });
 }
 
 /** Risponde alle domande che Claude ha posto in questa conversazione, oppure le salta. */
@@ -402,9 +407,9 @@ export async function scegliHttps(scelta: { attivo: boolean; nomi: string[]; rei
 }
 
 /** L'indirizzo del collegamento con il terminale di un progetto. */
-export function indirizzoDelTerminale(idProgetto: string): string {
+export function indirizzoDelTerminale(idProgetto: string, scheda = 1): string {
   const schema = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${schema}://${window.location.host}${baseDelProgetto(idProgetto)}/terminale`;
+  return `${schema}://${window.location.host}${baseDelProgetto(idProgetto)}/terminale${scheda > 1 ? `?scheda=${scheda}` : ""}`;
 }
 
 /** Apre l'anteprima del progetto su una porta del suo ambiente: prende il posto di quella aperta prima. */
@@ -495,6 +500,11 @@ export async function decidiRichiesta(id: string, decisione: DecisionePermesso):
 }
 
 /** Come stanno adesso le risorse di un ambiente: lo chiede la sua pagina, finché è aperta. */
+/** Termina un processo acceso da Shinka in un ambiente, con ciò che ha avviato. */
+export async function terminaProcesso(idAmbiente: string, pid: number): Promise<void> {
+  await chiama("POST", `/api/ambienti/${encodeURIComponent(idAmbiente)}/processi/${pid}/termina`);
+}
+
 export async function leggiRisorseAmbiente(id: string): Promise<DettaglioDellAmbiente> {
   return (await chiama("GET", `/api/ambienti/${encodeURIComponent(id)}/risorse`)) as DettaglioDellAmbiente;
 }
@@ -605,6 +615,16 @@ export async function collegaCartella(idProgetto: string, idAmbiente: string, ca
 
 export async function scollegaCartella(idProgetto: string, idAmbiente: string): Promise<StatoCollegate> {
   return (await chiama("DELETE", `${baseDelProgetto(idProgetto)}/collegate/${encodeURIComponent(idAmbiente)}`)) as StatoCollegate;
+}
+
+/** Le estensioni del progetto: quelle accese nel suo ambiente, e quali ha. */
+export async function leggiEstensioniDelProgetto(idProgetto: string): Promise<StatoEstensioniDelProgetto> {
+  return (await chiama("GET", `${baseDelProgetto(idProgetto)}/estensioni`)) as StatoEstensioniDelProgetto;
+}
+
+/** Sceglie le estensioni del progetto, anche a progetto avviato; null per averle tutte. */
+export async function cambiaEstensioniDelProgetto(idProgetto: string, scelte: string[] | null): Promise<StatoEstensioniDelProgetto> {
+  return (await chiama("PUT", `${baseDelProgetto(idProgetto)}/estensioni`, { scelte })) as StatoEstensioniDelProgetto;
 }
 
 /** Chi implementa gli incarichi del progetto (ADR 0051). */

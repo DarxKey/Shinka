@@ -340,6 +340,8 @@ function MenuPagine({
 function VoceProgettoLaterale({ progetto, attuale, allaScelta }: { progetto: VoceProgetto; attuale: boolean; allaScelta: () => void }): ReactNode {
   const [inRinomina, setInRinomina] = useState<string>();
   const [elimina, setElimina] = useState(false);
+  // Eliminando, anche la cartella con i file: la scelta parte spuntata, e si toglie per tenerli.
+  const [conLaCartella, setConLaCartella] = useState(true);
   const [errore, setErrore] = useState<string>();
   const [lavoro, setLavoro] = useState(false);
   const chiudiMenu = (evento: { currentTarget: HTMLElement }): void => evento.currentTarget.closest("details")?.removeAttribute("open");
@@ -441,15 +443,27 @@ function VoceProgettoLaterale({ progetto, attuale, allaScelta }: { progetto: Voc
       {elimina && (
         <div className="conferma-annulla" role="alertdialog" aria-label={`Eliminare ${progetto.nome}`}>
           <p>
-            «{progetto.nome}» sparisce da Shinka con la sua conversazione. La cartella con i suoi file resta in {progetto.nomeAmbiente}. Non si torna indietro.
+            «{progetto.nome}» sparisce da Shinka con la sua conversazione. Se sta lavorando si ferma, e con lui l'applicazione, il terminale e i comandi in background. Non si torna indietro.
           </p>
+          <label className="con-la-cartella">
+            <input type="checkbox" checked={conLaCartella} disabled={lavoro} onChange={(evento) => setConLaCartella(evento.target.checked)} />
+            <span>
+              Elimina anche la cartella con i file
+              <br />
+              <code>{progetto.cartella}</code> <span className="tenue">in {progetto.nomeAmbiente}</span>
+            </span>
+          </label>
           <div className="pulsanti">
             <button
               type="button"
               className="mini pericolo"
               disabled={lavoro}
               onClick={() =>
-                void fai(() => eliminaProgetto(progetto.id)).then((riuscito) => {
+                void fai(async () => {
+                  const cartella = await eliminaProgetto(progetto.id, conLaCartella);
+                  // Il progetto non c'è più, ma la cartella è rimasta: lo si dice, perché va tolta a mano.
+                  if (cartella !== undefined && !cartella.riuscita) window.alert(cartella.testo);
+                }).then((riuscito) => {
                   if (!riuscito) return;
                   setElimina(false);
                   if (attuale) window.location.hash = frammentoDi({ tipo: "home" });

@@ -25,14 +25,14 @@ async function collega(
   t: TestContext,
   banco: Banco,
   idProgetto: string,
-  opzioni: { senzaSessione?: boolean; origine?: string } = {},
+  opzioni: { senzaSessione?: boolean; origine?: string; scheda?: number } = {},
 ): Promise<BrowserInProva> {
   const porta = await portaDelCentro(banco);
   const intestazioni: Record<string, string> = { origin: opzioni.origine ?? `http://127.0.0.1:${porta}` };
   if (opzioni.senzaSessione !== true) intestazioni.cookie = `${COOKIE_SESSIONE}=${await banco.entra()}`;
   // Il WebSocket di Node accetta le intestazioni, quello dei tipi del browser no.
   const Socket = WebSocket as unknown as new (indirizzo: string, opzioni: { headers: Record<string, string> }) => WebSocket;
-  const socket = new Socket(`ws://127.0.0.1:${porta}/api/progetti/${idProgetto}/terminale`, { headers: intestazioni });
+  const socket = new Socket(`ws://127.0.0.1:${porta}/api/progetti/${idProgetto}/terminale${opzioni.scheda === undefined ? "" : `?scheda=${opzioni.scheda}`}`, { headers: intestazioni });
   const browser: BrowserInProva = {
     ricevuti: [],
     manda: (messaggio) => socket.send(JSON.stringify(messaggio)),
@@ -188,4 +188,29 @@ test("il terminale si apre solo dall'interfaccia di Shinka, con la sessione del 
   await finche(() => sconosciuto.chiuso !== undefined, "il collegamento viene chiuso");
   assert.equal(sconosciuto.chiuso, 1008);
   assert.equal(banco.shellLocali.length, 0);
+});
+
+test("un progetto ha più terminali, uno per scheda, ciascuno con la sua shell", async (t) => {
+  const banco = await allestisci(t);
+  const progetto = await banco.lavori.crea("Sito", "centro", "Un sito.");
+  const primo = await collega(t, banco, progetto.id);
+  const secondo = await collega(t, banco, progetto.id, { scheda: 2 });
+  primo.manda({ tipo: "apri", colonne: 80, righe: 24 });
+  secondo.manda({ tipo: "apri", colonne: 80, righe: 24 });
+  await finche(() => di(primo, "aperto").length === 1 && di(secondo, "aperto").length === 1, "i due terminali si aprono");
+  assert.equal(banco.shellLocali.length, 2);
+  primo.manda({ tipo: "scrivi", dati: "npm run dev\r" });
+  secondo.manda({ tipo: "scrivi", dati: "git status\r" });
+  await finche(() => banco.shellLocali.every((shell) => shell.scritti.length === 1), "ciascuno scrive nella sua shell");
+  assert.deepEqual(banco.shellLocali.map((shell) => shell.scritti[0]).sort(), ["git status\r", "npm run dev\r"]);
+  banco.shellLocali[1]?.emetti("solo nel secondo\r\n");
+  await finche(() => di(secondo, "uscita").length === 1, "l'uscita arriva al suo terminale");
+  assert.equal(di(primo, "uscita").length, 0);
+  // Oltre le schede che un progetto può avere, il terminale non c'è.
+  const troppo = await collega(t, banco, progetto.id, { scheda: 9 });
+  await finche(() => troppo.chiuso !== undefined, "il collegamento si chiude");
+  assert.equal(troppo.chiuso, 1008);
+  // Eliminando il progetto si spengono tutti.
+  banco.terminali?.spegni(progetto);
+  await finche(() => banco.shellLocali.every((shell) => shell.spenta), "le shell si spengono");
 });

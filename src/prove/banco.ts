@@ -135,9 +135,12 @@ export class ConversazioneFinta implements PortaConversazione {
     this.emetti({ tipo: "messaggio-proprietario", id: `m${this.inviati.length}`, testo, modificabile: true });
     this.emetti({ tipo: "turno-iniziato" });
   }
-  decidiPermesso(idPermesso: string, decisione: DecisionePermesso): boolean {
+  /** I permessi approvati per sempre. */
+  sempre: string[] = [];
+  decidiPermesso(idPermesso: string, decisione: DecisionePermesso, sempre?: boolean): boolean {
     if (!this.permessiInAttesa.delete(idPermesso)) return false;
     this.decisioni.push([idPermesso, decisione]);
+    if (sempre === true) this.sempre.push(idPermesso);
     this.emetti({ tipo: "permesso-deciso", idPermesso, decisione });
     return true;
   }
@@ -481,9 +484,28 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
   const schede = approvazioni ?? new Approvazioni({ gateway: new GatewayAssente(), pubblica: pubblicaLeSchede });
   // Le risorse degli ambienti: quelle della macchina del centro, nelle prove, sono sempre queste.
   const gatewayDelBanco = opzioni.gateway;
+  // I processi di Shinka nell'ambiente del centro: una conversazione del primo progetto, con un suo comando.
+  const processiTerminati: number[] = [];
   const risorse = new RisorseDegliAmbienti({
     ambienti,
-    locale: { leggi: async () => RISORSE_DI_PROVA },
+    locale: {
+      leggi: async () => {
+        const primo = progetti.elenco().find((progetto) => progetto.idAmbiente === ID_AMBIENTE_DEL_CENTRO);
+        return {
+          ...RISORSE_DI_PROVA,
+          processiDiShinka: [
+            ...(primo === undefined
+              ? []
+              : [
+                  { pid: 4100, genitore: 0, nome: "claude", cpu: 2.5, memoria: 300_000_000, comando: "claude --output-format stream-json", cartella: primo.cartella },
+                  { pid: 4101, genitore: 4100, nome: "node", cpu: 95, memoria: 120_000_000, comando: "node server.js", cartella: primo.cartella },
+                ]),
+            { pid: 4200, genitore: 0, nome: "bash", cpu: 0, memoria: 4_000_000, comando: "bash" },
+          ].filter((uno) => !processiTerminati.includes(uno.pid)),
+        };
+      },
+    },
+    processiLocali: { termina: async (pid) => (processiTerminati.push(pid), { riuscita: true, testo: `Il processo ${pid} è stato terminato.` }) },
     ...(gatewayDelBanco === undefined ? {} : { contenitori: () => gatewayDelBanco.contenitori() }),
     contenitoriOgniMs: 0,
     attesaMs: 2_000,

@@ -43,6 +43,13 @@ export interface StatoCollegate {
   possibili: { idAmbiente: string; nomeAmbiente: string; sistema: string }[];
 }
 
+/** Le estensioni di un progetto: quelle accese nel suo ambiente, e quali ha scelto il proprietario. */
+export interface StatoEstensioniDelProgetto {
+  voci: { nome: string; tipo: string; descrizione: string }[];
+  /** Le estensioni scelte; manca se il progetto ha tutte quelle accese nel suo ambiente. */
+  scelte?: string[];
+}
+
 /** Quante cartelle collegate può avere un progetto. */
 export const COLLEGATE_MASSIME = 4;
 

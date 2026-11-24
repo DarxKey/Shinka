@@ -215,10 +215,10 @@ export class Incarichi {
   }
 
   /** Decide un permesso chiesto dall'incarico del progetto. Falso se non è suo o non aspetta più. */
-  decidiPermesso(idProgetto: string, idPermesso: string, decisione: DecisionePermesso): boolean {
+  decidiPermesso(idProgetto: string, idPermesso: string, decisione: DecisionePermesso, sempre?: boolean): boolean {
     const inCorso = this.#inCorso.get(idProgetto);
     if (inCorso === undefined || !inCorso.permessi.has(idPermesso)) return false;
-    return inCorso.porta.decidiPermesso(idPermesso, decisione);
+    return inCorso.porta.decidiPermesso(idPermesso, decisione, sempre);
   }
 
   /** Risponde alle domande dell'incarico del progetto. Falso se non sono sue o non aspettano più. */
@@ -241,6 +241,14 @@ export class Incarichi {
       if (inCorso.idAmbiente !== idAmbiente) continue;
       inCorso.concludi({ riuscito: false, durataMs: Date.now() - inCorso.inizio, errore: "L'ambiente si è scollegato mentre chi implementa lavorava." });
     }
+  }
+
+  /** Il progetto se ne va: il suo incarico, se ce n'è uno, si chiude, e le sue attività si dimenticano. */
+  chiudiDelProgetto(idProgetto: string): void {
+    const inCorso = this.#inCorso.get(idProgetto);
+    inCorso?.concludi({ riuscito: false, durataMs: Date.now() - inCorso.inizio, interrotto: true, errore: "Il progetto è stato eliminato." });
+    for (const finita of this.#finiti.get(idProgetto) ?? []) this.#uscite.delete(finita.id);
+    this.#finiti.delete(idProgetto);
   }
 
   /** Chiude le conversazioni degli incarichi, per esempio allo spegnimento del centro. */

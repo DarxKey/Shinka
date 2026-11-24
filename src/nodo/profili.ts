@@ -15,7 +15,7 @@ import {
 import type { ConfigurazioneConversazione } from "./conversazione.ts";
 import type { FonteEstensioni } from "./estensioni.ts";
 import { creaStrumentiDiProgetto } from "./strumenti-comuni.ts";
-import type { ModelliLocali } from "./modelli-locali.ts";
+import type { FonteModelliLocali } from "./modelli-locali.ts";
 
 /** Ciò che Shinka mette a disposizione di una conversazione di progetto, oltre a Claude Code. */
 export interface ServiziDiShinka {
@@ -37,7 +37,7 @@ export interface ServiziDiShinka {
    */
   incarico?: boolean;
   /** I modelli locali dell'ambiente (ADR 0051): un progetto può sceglierne uno come modello. */
-  modelliLocali?: ModelliLocali;
+  modelliLocali?: FonteModelliLocali;
 }
 
 /**

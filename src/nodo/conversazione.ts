@@ -11,17 +11,18 @@ import {
   getSessionMessages,
   query,
   type CanUseTool,
+  type PermissionUpdate,
   type Options,
   type PermissionResult,
   type Query,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ambientePerHarness, ambientePerModelloLocale, fonteConfigurata, verificaFonte, type ServerDelModelloLocale } from "../harness/autenticazione.ts";
 import { estensioneDelModello } from "../protocollo/estensioni.ts";
-import type { ModelliLocali, PresaDelModello } from "./modelli-locali.ts";
+import type { FonteModelliLocali, PresaDelModello } from "./modelli-locali.ts";
 import type {
   DecisionePermesso,
   EventoConversazione,
@@ -108,7 +109,7 @@ export interface ConfigurazioneConversazione {
    * I modelli locali di questo ambiente (ADR 0051): se il modello scelto è uno di quelli, il processo
    * parla con il suo server, che si accende prima del primo messaggio.
    */
-  modelliLocali?: ModelliLocali;
+  modelliLocali?: FonteModelliLocali;
   alEvento(evento: EventoConversazione): void;
   /** Chiamata quando l'harness assegna o cambia l'identificativo; stringa vuota se va dimenticato. */
   alIdSessione(id: string): void;
@@ -126,15 +127,15 @@ const INATTIVITA_CON_LAVORO_IN_SFONDO_MS = 12 * 60 * 60 * 1000;
 const ATTESA_ESTENSIONI_MS = 45_000;
 
 interface PermessoInAttesa {
-  approva(): void;
+  approva(sempre?: boolean): void;
   nega(motivo: string): void;
 }
 
 /** Ciò che il proprietario ha deciso di un'azione che gli è stata chiesta. */
-export type Consenso = { approvato: true } | { approvato: false; motivo: string };
+export type Consenso = { approvato: true; sempre?: true } | { approvato: false; motivo: string };
 
 /** Chiede al proprietario il consenso per un'azione, e aspetta la sua decisione. */
-export type ChiediConsenso = (strumento: string, ingresso: unknown, idAzione: string, segnale: AbortSignal, motivo?: string) => Promise<Consenso>;
+export type ChiediConsenso = (strumento: string, ingresso: unknown, idAzione: string, segnale: AbortSignal, motivo?: string, regola?: string) => Promise<Consenso>;
 
 /**
  * Quanto l'harness aspetta il controllo che chiede al proprietario un'azione nel browser del PC.
@@ -463,10 +464,10 @@ export class Conversazione implements PortaConversazione {
     this.chiudi();
   }
 
-  decidiPermesso(idPermesso: string, decisione: DecisionePermesso): boolean {
+  decidiPermesso(idPermesso: string, decisione: DecisionePermesso, sempre = false): boolean {
     const inAttesa = this.#permessi.get(idPermesso);
     if (inAttesa === undefined) return false;
-    if (decisione === "approvato") inAttesa.approva();
+    if (decisione === "approvato") inAttesa.approva(sempre);
     else inAttesa.nega("Il proprietario ha negato questa azione.");
     return true;
   }
@@ -863,24 +864,31 @@ export class Conversazione implements PortaConversazione {
     if (this.#cfg.consenteDaSe?.(strumento, ingresso, this.#impostazioni.permessi) === true) {
       return { behavior: "allow", updatedInput: ingresso };
     }
-    const consenso = await this.#aspettaIlProprietario(strumento, ingresso, opzioni.toolUseID, opzioni.signal, opzioni.decisionReason);
-    return consenso.approvato ? { behavior: "allow", updatedInput: ingresso } : { behavior: "deny", message: consenso.motivo };
+    // «Approva sempre» salva ciò che l'harness propone, ma solo regole e cartelle, e solo per questo progetto.
+    const daSalvare = regoleDaSalvare(opzioni.suggestions);
+    const consenso = await this.#aspettaIlProprietario(strumento, ingresso, opzioni.toolUseID, opzioni.signal, opzioni.decisionReason, regolaInParole(daSalvare));
+    if (!consenso.approvato) return { behavior: "deny", message: consenso.motivo };
+    return consenso.sempre === true && daSalvare.length > 0
+      ? { behavior: "allow", updatedInput: ingresso, updatedPermissions: daSalvare }
+      : { behavior: "allow", updatedInput: ingresso };
   };
 
   /**
    * Mostra al proprietario la scheda del consenso per un'azione e aspetta che decida. Finisce con
    * un no anche se la richiesta viene annullata o la conversazione si chiude.
    */
-  readonly #aspettaIlProprietario: ChiediConsenso = (strumento, ingresso, idAzione, segnale, motivo) =>
+  readonly #aspettaIlProprietario: ChiediConsenso = (strumento, ingresso, idAzione, segnale, motivo, regola) =>
     new Promise<Consenso>((risolvi) => {
       const idPermesso = idAzione;
       const chiudi = (consenso: Consenso, decisione: DecisionePermesso): void => {
         if (!this.#permessi.delete(idPermesso)) return;
-        this.#cfg.alEvento({ tipo: "permesso-deciso", idPermesso, decisione });
+        const sempre = consenso.approvato && consenso.sempre === true;
+        this.#cfg.alEvento({ tipo: "permesso-deciso", idPermesso, decisione, ...(sempre ? { sempre: true as const } : {}) });
         risolvi(consenso);
       };
       const inAttesa: PermessoInAttesa = {
-        approva: () => chiudi({ approvato: true }, "approvato"),
+        // «Sempre» vale solo se c'è una regola da salvare.
+        approva: (sempre) => chiudi(sempre === true && regola !== undefined ? { approvato: true, sempre: true } : { approvato: true }, "approvato"),
         nega: (perche) => chiudi({ approvato: false, motivo: perche }, "negato"),
       };
       this.#permessi.set(idPermesso, inAttesa);
@@ -891,6 +899,7 @@ export class Conversazione implements PortaConversazione {
         strumento,
         ingresso,
         ...(motivo === undefined ? {} : { motivo }),
+        ...(regola === undefined ? {} : { regola }),
       });
       if (segnale.aborted) inAttesa.nega("Richiesta annullata.");
       else segnale.addEventListener("abort", () => inAttesa.nega("Richiesta annullata."), { once: true });
@@ -1083,6 +1092,8 @@ export function opzioniHarness(
     // solo quelli di Shinka e delle estensioni, come fa il profilo del proprietario con --strict-mcp-config.
     ...(locale === undefined ? {} : { strictMcpConfig: true }),
     ...(cfg.strumentiNostri === undefined ? {} : { mcpServers: cfg.strumentiNostri() }),
+    // Tutto il computer come la cartella del progetto, se il proprietario lo ha scelto.
+    ...(impostazioni.tuttoIlPc === true ? { additionalDirectories: radiciDiQuestaMacchina() } : {}),
     ...(plugin.length === 0 ? {} : { plugins: plugin.map((path) => ({ type: "local" as const, path })) }),
     // Claude Code collega l'estensione del browser solo se glielo si chiede all'avvio, con --chrome.
     // Alcuni suoi strumenti l'harness li lascerebbe passare da sé, e in due modi dei permessi tutti:
@@ -1179,4 +1190,33 @@ export function scambiDiClaude(messaggi: readonly { type: string; message: unkno
     if (testo !== "") scambi.push({ chi: voce.type === "user" ? "proprietario" : "motore", testo });
   }
   return scambi;
+}
+
+/** Le radici dei dischi di questa macchina: "/" fuori da Windows, le lettere dei dischi che ci sono su Windows. */
+export function radiciDiQuestaMacchina(piattaforma: NodeJS.Platform = process.platform, esiste: (percorso: string) => boolean = existsSync): string[] {
+  if (piattaforma !== "win32") return ["/"];
+  return "CDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((lettera) => `${lettera}:\\`).filter((radice) => esiste(radice));
+}
+
+/**
+ * Ciò che «Approva sempre» salva, tra le proposte dell'harness: le regole che consentono e le cartelle
+ * in più, nelle impostazioni locali del progetto. Un cambio del modo dei permessi no: quello lo
+ * sceglie il proprietario dai controlli.
+ */
+export function regoleDaSalvare(proposte: readonly PermissionUpdate[] | undefined): PermissionUpdate[] {
+  return (proposte ?? []).flatMap((proposta): PermissionUpdate[] => {
+    if (proposta.type === "addRules" && proposta.behavior === "allow") return [{ ...proposta, destination: "localSettings" }];
+    if (proposta.type === "addDirectories") return [{ ...proposta, destination: "localSettings" }];
+    return [];
+  });
+}
+
+/** Le regole da salvare in parole, per il pulsante: «Bash(npm test:*)», «la cartella C:\\dati». */
+export function regolaInParole(regole: readonly PermissionUpdate[]): string | undefined {
+  const parti = regole.flatMap((regola) => {
+    if (regola.type === "addRules") return regola.rules.map((una) => (una.ruleContent === undefined ? una.toolName : `${una.toolName}(${una.ruleContent})`));
+    if (regola.type === "addDirectories") return regola.directories.map((cartella) => `la cartella ${cartella}`);
+    return [];
+  });
+  return parti.length === 0 ? undefined : parti.join(", ").slice(0, 500);
 }

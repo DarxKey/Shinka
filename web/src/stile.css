@@ -6710,3 +6710,163 @@ kbd {
 .cose-in-vista li.in-corso {
   font-weight: 500;
 }
+
+/* Nella conferma dell'eliminazione: anche la cartella con i file. */
+.con-la-cartella {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 var(--s-2);
+  font-size: 0.875rem;
+}
+
+.con-la-cartella input {
+  margin-top: 3px;
+}
+
+.con-la-cartella code {
+  overflow-wrap: anywhere;
+}
+
+/* Accesso a tutto il computer, nella scheda della sessione di un progetto. */
+.tutto-il-pc {
+  display: grid;
+  gap: 4px;
+  margin-top: var(--s-3);
+}
+
+.tutto-il-pc label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.tutto-il-pc p {
+  margin: 0;
+  font-size: var(--t-piccolo);
+}
+
+/* Che cosa salva «Approva sempre», sotto i pulsanti del permesso. */
+.regola-permesso {
+  margin: 6px 0 0;
+  font-size: var(--t-piccolo);
+  overflow-wrap: anywhere;
+}
+
+/* Le estensioni di un progetto, nella scheda della sessione. */
+.estensioni-del-progetto {
+  display: grid;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+
+.estensioni-del-progetto h4 {
+  margin: 0;
+  font-size: var(--t-piccolo);
+  font-weight: 600;
+  color: var(--tenue);
+}
+
+.estensioni-del-progetto ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.estensioni-del-progetto label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.estensioni-del-progetto p {
+  margin: 0;
+  font-size: var(--t-piccolo);
+}
+
+/* I processi di Shinka in un ambiente, per progetto. */
+.gruppo-processi {
+  margin-bottom: var(--s-3);
+}
+
+.gruppo-processi h3 {
+  margin: 0 0 var(--s-1);
+  font-size: var(--t-ui);
+}
+
+.gruppo-processi ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.riga-processo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.5em 5.5em auto;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.riga-processo .nome {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.riga-processo .numero {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.gruppo-processi .comando-processo {
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.processi-del-progetto {
+  margin: var(--s-3) 0 0;
+  font-size: var(--t-piccolo);
+}
+
+/* Più terminali per progetto, in schede sopra il terminale. */
+.terminali-del-progetto {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  background: #151517;
+}
+
+.schede-terminali {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 4px 6px 0;
+  background: #0e0e10;
+}
+
+.scheda-terminale {
+  flex: none;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: #a9a8a4;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.scheda-terminale.attiva {
+  background: #151517;
+  color: #ecebe8;
+}
+
+.scheda-terminale.nuova {
+  font-weight: 600;
+}

@@ -2,14 +2,14 @@
  * Le risorse di questa macchina, lette quando il proprietario guarda la pagina dell'ambiente
  * (ADR 0038): processore, memoria, disco dei progetti, i processi che pesano di più e, dove c'è e
  * si lascia leggere, Docker. Il nodo non tiene una storia e non campiona da solo: misura tra una
- * richiesta e la successiva. Legge soltanto: non ferma processi e non tocca container.
+ * richiesta e la successiva. Legge soltanto: a fermare un processo di Shinka è `ProcessiDiShinka`, e i container non si toccano.
  */
 
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile, statfs } from "node:fs/promises";
 import { cpus, freemem, hostname, loadavg, release, totalmem, uptime, version } from "node:os";
-import { contenitoriDa, PROCESSI_MOSTRATI, type CampioneRisorse, type DockerLetto, type ProcessoAttivo, type RisorseDellAmbiente } from "../protocollo/risorse.ts";
+import { contenitoriDa, PROCESSI_MOSTRATI, type CampioneRisorse, type DockerLetto, type ProcessoAttivo, type ProcessoDiShinka, type RisorseDellAmbiente } from "../protocollo/risorse.ts";
 
 /** Esegue un programma e ne dà l'uscita; nelle prove, uno finto. */
 export type EseguiProgramma = (programma: string, argomenti: string[], secondi: number) => Promise<{ codice: number | null; uscita: string; errori: string; assente?: true }>;
@@ -31,6 +31,8 @@ export interface OpzioniRisorse {
   proc?: string;
   /** L'etichetta dei container degli stack di prova di Shinka. */
   etichettaDiShinka?: string;
+  /** I processi accesi da Shinka qui; senza, non si dicono. */
+  processiDiShinka?: { leggi(): Promise<ProcessoDiShinka[]> };
   adesso?: () => number;
 }
 
@@ -111,7 +113,12 @@ export class CampionatoreRisorse {
     const cpu = tempi.totale > prima.totale ? ((tempi.attivo - prima.attivo) / (tempi.totale - prima.totale)) * 100 : 0;
     this.#cpuPrima = { tempi, quando: this.#adesso() };
 
-    const [processi, docker, disco] = await Promise.all([this.#leggiProcessi(), this.#leggiDocker(), this.#disco()]);
+    const [processi, docker, disco, diShinka] = await Promise.all([
+      this.#leggiProcessi(),
+      this.#leggiDocker(),
+      this.#disco(),
+      this.#o.processiDiShinka?.leggi().catch(() => undefined),
+    ]);
     const contenitore = linux ? this.#contenitore() : undefined;
     const campione: CampioneRisorse = {
       quando: new Date(this.#adesso()).toISOString(),
@@ -136,6 +143,7 @@ export class CampionatoreRisorse {
       ...(processi.motivo === undefined ? {} : { motivoProcessi: processi.motivo }),
       ...(linux && existsSync("/.dockerenv") ? { inContenitore: true as const } : {}),
       docker,
+      ...(diShinka === undefined ? {} : { processiDiShinka: diShinka }),
     };
   }
 

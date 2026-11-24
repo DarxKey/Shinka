@@ -4,13 +4,16 @@
  * con la loro uscita) e quanti file sono stati cambiati.
  */
 
+import { useQuadroCorrente } from "./Quadro.tsx";
+import { frammentoDi } from "./vista.ts";
 import { CartelleCollegate } from "./Collegate.tsx";
 import { ChiImplementa } from "./ChiImplementa.tsx";
+import { EstensioniDelProgetto } from "./EstensioniDelProgetto.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Attivita } from "../../src/protocollo/attivita.ts";
 import type { UscitaAttivita } from "../../src/protocollo/eventi.ts";
 import type { ImpostazioniConversazione, StatoConversazione } from "../../src/protocollo/impostazioni.ts";
-import { leggiUscitaAttivita } from "./api.ts";
+import { cambiaImpostazioni, leggiUscitaAttivita } from "./api.ts";
 import { NOMI_IMPEGNI, NOMI_PERMESSI } from "./Controlli.tsx";
 import { inMigliaia, quandoRiparte } from "./descrivi.ts";
 
@@ -73,8 +76,11 @@ export function SchedaSessione({
               </>
             )}
           </dl>
+          {idProgetto !== undefined && impostazioni !== undefined && <TuttoIlPc base={base} attivo={impostazioni.tuttoIlPc === true} />}
           {idProgetto !== undefined && <ChiImplementa idProgetto={idProgetto} modelli={stato?.modelli} />}
+          {idProgetto !== undefined && <EstensioniDelProgetto idProgetto={idProgetto} />}
           {idProgetto !== undefined && <CartelleCollegate idProgetto={idProgetto} />}
+          {idProgetto !== undefined && <CollegamentoAiProcessi idProgetto={idProgetto} />}
         </section>
         {contesto !== undefined && (
           <section>
@@ -233,5 +239,55 @@ function UscitaInFondo({ uscita, inCorso }: { uscita: UscitaAttivita; inCorso: b
       {uscita.troncata ? "…\n" : ""}
       {uscita.testo === "" ? (inCorso ? "(ancora nessuna uscita)" : "(nessuna uscita)") : uscita.testo}
     </pre>
+  );
+}
+
+/**
+ * Tutto il computer come la cartella del progetto: leggere e modificare file ovunque segue il modo
+ * dei permessi come dentro la cartella. I comandi chiedono come sempre.
+ */
+function TuttoIlPc({ base, attivo }: { base: string; attivo: boolean }): ReactNode {
+  const [lavoro, setLavoro] = useState(false);
+  const [errore, setErrore] = useState<string>();
+  return (
+    <div className="tutto-il-pc">
+      <label>
+        <input
+          type="checkbox"
+          checked={attivo}
+          disabled={lavoro}
+          onChange={(evento) => {
+            setLavoro(true);
+            setErrore(undefined);
+            void cambiaImpostazioni(base, { tuttoIlPc: evento.target.checked })
+              .catch((causa: unknown) => setErrore(causa instanceof Error ? causa.message : "Non è cambiato."))
+              .finally(() => setLavoro(false));
+          }}
+        />
+        Accesso a tutto il computer
+      </label>
+      <p className="tenue">
+        {attivo
+          ? "Legge e modifica file anche fuori dalla sua cartella, con le stesse regole dei permessi che valgono dentro."
+          : "Fuori dalla sua cartella chiede il permesso per ogni file. «Approva sempre» lo salva per una regola sola."}
+      </p>
+      {errore !== undefined && (
+        <p className="errore" role="alert">
+          {errore}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Dalla scheda di un progetto ai processi che vi ha acceso Shinka, nella pagina del suo ambiente. */
+function CollegamentoAiProcessi({ idProgetto }: { idProgetto: string }): ReactNode {
+  const quadro = useQuadroCorrente();
+  const idAmbiente = quadro.progetti?.progetti.find((progetto) => progetto.id === idProgetto)?.idAmbiente;
+  if (idAmbiente === undefined) return null;
+  return (
+    <p className="processi-del-progetto">
+      <a href={frammentoDi({ tipo: "ambiente", id: idAmbiente })}>Processi, risorse e termina…</a>
+    </p>
   );
 }

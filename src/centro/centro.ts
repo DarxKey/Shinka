@@ -3,6 +3,8 @@
  * tra il browser e la conversazione della Home e accoglie i nodi degli ambienti.
  */
 
+import type { StatoEstensioniDelProgetto } from "../protocollo/progetti.ts";
+import { tipoInParole } from "../protocollo/estensioni.ts";
 import { AvvioConWindows } from "./avvio-con-windows.ts";
 import type { PrimoAvvio } from "./primo-avvio.ts";
 import { pacchettoDiInstallazione } from "./installazione-nuova.ts";
@@ -230,6 +232,7 @@ const CORPO_IMPOSTAZIONI = {
     impegno: { enum: [...IMPEGNI, null] },
     permessi: { enum: [...MODI_PERMESSI] },
     stile: { type: ["string", "null"], maxLength: 100 },
+    tuttoIlPc: { type: ["boolean", "null"] },
   },
 } as const;
 
@@ -1546,6 +1549,15 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     return opzioni.risorse.leggi(richiesta.params.id);
   });
 
+  // Un processo acceso da Shinka in un ambiente, bloccato: il proprietario lo termina dalla pagina dell'ambiente.
+  app.post<{ Params: { id: string; pid: string } }>("/api/ambienti/:id/processi/:pid/termina", async (richiesta, risposta) => {
+    if (opzioni.risorse === undefined) return risposta.code(404).send({ errore: "In questa installazione di Shinka la pagina degli ambienti non c'è." });
+    const pid = Number(richiesta.params.pid);
+    if (!Number.isInteger(pid) || pid <= 0) return risposta.code(400).send({ errore: "Il processo non è indicato bene." });
+    const esito = await opzioni.risorse.termina(richiesta.params.id, pid);
+    return esito.riuscita ? esito : risposta.code(409).send({ errore: esito.testo });
+  });
+
   // Il proprietario chiede a un nodo rimasto indietro di passare alla versione del centro.
   app.post<{ Params: { id: string } }>("/api/ambienti/:id/aggiornamento", async (richiesta, risposta) => {
     if (opzioni.aggiornamenti === undefined) {
@@ -2018,7 +2030,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       return { fissato: richiesta.body.fissato };
     },
   );
-  app.delete<{ Params: { id: string } }>("/api/progetti/:id", async (richiesta, risposta) => {
+  app.delete<{ Params: { id: string }; Querystring: { cartella?: string } }>("/api/progetti/:id", async (richiesta, risposta) => {
     const progetto = opzioni.lavori.progetto(richiesta.params.id);
     if (progetto === undefined) return risposta.code(404).send({ errore: "Progetto non trovato." });
     if (progetto.diShinka === true) return risposta.code(409).send({ errore: "Il progetto Shinka non si elimina: è quello in cui Shinka sviluppa sé stessa." });
@@ -2026,9 +2038,10 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     if (opzioni.applicazioni !== undefined) await opzioni.applicazioni.ferma(progetto.id).catch(() => undefined);
     opzioni.anteprime?.chiudi(progetto.id);
     opzioni.terminali?.spegni(progetto);
-    const motivo = await opzioni.lavori.elimina(progetto.id);
-    if (motivo !== undefined) return risposta.code(409).send({ errore: motivo });
-    return { eliminato: true };
+    // Con ?cartella=si se ne va anche la cartella con i file, nel suo ambiente.
+    const esito = await opzioni.lavori.elimina(progetto.id, { cartella: richiesta.query.cartella === "si" });
+    if ("motivo" in esito) return risposta.code(409).send({ errore: esito.motivo });
+    return { eliminato: true, ...(esito.cartella === undefined ? {} : { cartella: esito.cartella }) };
   });
 
   app.post<{ Params: { id: string }; Body: SceltaDelProprietario }>(
@@ -2082,20 +2095,21 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     },
   );
 
-  app.post<{ Params: { id: string; idPermesso: string }; Body: { decisione: DecisionePermesso } }>(
+  app.post<{ Params: { id: string; idPermesso: string }; Body: { decisione: DecisionePermesso; sempre?: boolean } }>(
     "/api/progetti/:id/permessi/:idPermesso",
     { schema: {
         body: {
           type: "object",
           required: ["decisione"],
           additionalProperties: false,
-          properties: { decisione: { type: "string", enum: ["approvato", "negato"] } },
+          // Con `sempre` un consenso vale anche per le prossime volte, in questo progetto.
+          properties: { decisione: { type: "string", enum: ["approvato", "negato"] }, sempre: { type: "boolean" } },
         },
       } },
     async (richiesta, risposta) => {
       const { id, idPermesso } = richiesta.params;
       consensoDato(opzioni.approvazioni, id, lavori.canale(id), idPermesso, richiesta.body.decisione);
-      if (!lavori.decidiPermesso(id, idPermesso, richiesta.body.decisione)) {
+      if (!lavori.decidiPermesso(id, idPermesso, richiesta.body.decisione, richiesta.body.sempre === true)) {
         return risposta.code(404).send({ errore: "Questo permesso non è più in attesa." });
       }
       return { deciso: true };
@@ -2109,10 +2123,16 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
 
   // Il terminale del progetto: il browser lo apre, ci scrive e ne riceve l'uscita su un WebSocket.
   // Il terminale vive nell'ambiente del progetto e resta acceso quando questo collegamento si chiude.
-  app.get<{ Params: { id: string } }>("/api/progetti/:id/terminale", { websocket: true }, (socket, richiesta) => {
-    const collegamento = opzioni.terminali?.collega(richiesta.params.id, (messaggio) => {
-      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(messaggio));
-    });
+  // Con ?scheda=N il terminale di un'altra scheda del progetto: ciascuna ha la sua shell.
+  app.get<{ Params: { id: string }; Querystring: { scheda?: string } }>("/api/progetti/:id/terminale", { websocket: true }, (socket, richiesta) => {
+    const scheda = richiesta.query.scheda === undefined ? 1 : Number(richiesta.query.scheda);
+    const collegamento = opzioni.terminali?.collega(
+      richiesta.params.id,
+      (messaggio) => {
+        if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(messaggio));
+      },
+      scheda,
+    );
     if (collegamento === undefined) {
       socket.close(1008, "Terminale non disponibile.");
       return;
@@ -2232,6 +2252,40 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     const esito = await opzioni.collegate.scollega(richiesta.params.id, richiesta.params.idAmbiente);
     return "motivo" in esito ? risposta.code(409).send({ errore: esito.motivo }) : esito;
   });
+
+  // Le estensioni di un progetto, anche a progetto avviato: quelle accese nel suo ambiente, e quali ha.
+  const estensioniDelProgetto = (idProgetto: string): StatoEstensioniDelProgetto | undefined => {
+    const progetto = lavori.progetto(idProgetto);
+    if (progetto === undefined) return undefined;
+    const voci = (opzioni.estensioni?.stato().estensioni ?? [])
+      .filter((una) => una.ambienti.some((dove) => dove.idAmbiente === progetto.idAmbiente && dove.accesa))
+      .map((una) => ({ nome: una.nome, tipo: tipoInParole(una.definizione.tipo), descrizione: una.descrizione }));
+    const scelte = lavori.estensioniScelte(idProgetto);
+    return { voci, ...(scelte === undefined ? {} : { scelte }) };
+  };
+  app.get<{ Params: { id: string } }>("/api/progetti/:id/estensioni", async (richiesta, risposta) => {
+    return estensioniDelProgetto(richiesta.params.id) ?? risposta.code(404).send({ errore: "Progetto non trovato." });
+  });
+  app.put<{ Params: { id: string }; Body: { scelte: string[] | null } }>(
+    "/api/progetti/:id/estensioni",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["scelte"],
+          additionalProperties: false,
+          properties: { scelte: { type: ["array", "null"], maxItems: 100, items: { type: "string", maxLength: 40 } } },
+        },
+      },
+    },
+    async (richiesta, risposta) => {
+      const prima = estensioniDelProgetto(richiesta.params.id);
+      if (prima === undefined) return risposta.code(404).send({ errore: "Progetto non trovato." });
+      const scelte = richiesta.body.scelte === null ? undefined : richiesta.body.scelte.filter((nome) => prima.voci.some((voce) => voce.nome === nome));
+      await lavori.cambiaEstensioni(richiesta.params.id, scelte);
+      return estensioniDelProgetto(richiesta.params.id);
+    },
+  );
 
   // Chi implementa gli incarichi di un progetto: lo sceglie il proprietario, nella scheda della sessione (ADR 0051).
   app.get<{ Params: { id: string } }>("/api/progetti/:id/chi-implementa", async (richiesta, risposta) => {
@@ -2729,6 +2783,12 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
       const estensione = campo("estensione");
       if (idRichiesta === undefined || estensione === undefined) return undefined;
       return { tipo: "chiavi-richieste", idRichiesta, estensione };
+    }
+    case "processo-terminato": {
+      const idRichiesta = campo("idRichiesta");
+      const testo = campo("testo");
+      if (idRichiesta === undefined || testo === undefined || typeof campi.riuscita !== "boolean") return undefined;
+      return { tipo: "processo-terminato", idRichiesta, riuscita: campi.riuscita, testo: testo.slice(0, 2000) };
     }
     case "avvio-con-windows-esito": {
       const idRichiesta = campo("idRichiesta");

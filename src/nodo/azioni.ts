@@ -4,7 +4,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
 import {
   CARTELLA_HOME,
@@ -40,7 +41,9 @@ export async function eseguiAzione(
     return { riuscita: false, testo: "L'argomento indicato non è valido." };
   }
   const cartella = join(resolve(radiceProgetti), CARTELLA_HOME, idArgomento);
-  if (azione.tipo === "controlla-cartella") return { riuscita: false, testo: "Si controllano solo le cartelle collegate." };
+  if (azione.tipo === "controlla-cartella" || azione.tipo === "elimina-cartella") {
+    return { riuscita: false, testo: "Si controllano e si eliminano solo le cartelle dei progetti." };
+  }
   try {
     if (azione.tipo === "elenca-file") {
       // Guardare non crea nulla: un argomento che qui non ha lavorato non ha una cartella.
@@ -103,10 +106,38 @@ export async function eseguiAzioneInCartella(cartella: string, azione: AzioneInA
         const vera = await realpath(cartella);
         return { riuscita: true, testo: `La cartella ${vera} c'è.`, percorso: vera };
       }
+      case "elimina-cartella": {
+        const vera = await realpath(cartella);
+        const motivo = perchéNonSiElimina(vera);
+        if (motivo !== undefined) return { riuscita: false, testo: motivo };
+        // Su Windows un file appena lasciato da un processo può restare occupato un attimo.
+        await rm(vera, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 });
+        return { riuscita: true, testo: `La cartella ${vera} è stata eliminata.`, percorso: vera };
+      }
     }
   } catch (errore) {
     return { riuscita: false, testo: errore instanceof Error ? errore.message : String(errore) };
   }
+}
+
+/**
+ * Perché una cartella non si può eliminare come cartella di un progetto, oppure nulla: non la radice
+ * di un disco, non la cartella dell'utente né una che la contiene, non una con meno di tre livelli,
+ * e non quella in cui gira Shinka, né una che la contiene.
+ */
+export function perchéNonSiElimina(cartella: string, casa: string = homedir(), shinka: string = process.cwd()): string | undefined {
+  const pulita = resolve(cartella);
+  const uguale = (a: string, b: string): boolean => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
+  const contiene = (fuori: string, dentro: string): boolean => {
+    const f = resolve(fuori);
+    const d = resolve(dentro);
+    return uguale(f, d) || (process.platform === "win32" ? d.toLowerCase() : d).startsWith((process.platform === "win32" ? f.toLowerCase() : f).replace(/[\\/]?$/, sep));
+  };
+  if (dirname(pulita) === pulita) return `${pulita} è la radice di un disco: non si elimina.`;
+  if (contiene(pulita, casa)) return `${pulita} è la cartella dell'utente, o la contiene: non si elimina.`;
+  if (contiene(pulita, shinka)) return `In ${pulita} gira Shinka: non si elimina.`;
+  if (pulita.split(/[\\/]+/).filter((parte) => parte !== "").length < 3) return `${pulita} è troppo in alto per essere la cartella di un progetto: non si elimina.`;
+  return undefined;
 }
 
 /** Cambia un pezzo di un file di testo, tenendo il suo modo di andare a capo e il segno iniziale. */

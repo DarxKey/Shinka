@@ -83,6 +83,8 @@ export type RiferitoDalNodo =
   | { tipo: "accessi-esito"; idRichiesta: string; esito: EsitoAccessi }
   /** Le risorse di questo ambiente, lette adesso: per la sua pagina. */
   | { tipo: "risorse-esito"; idRichiesta: string; risorse: RisorseDellAmbiente }
+  /** Com'è andata la richiesta di terminare un processo di Shinka. */
+  | { tipo: "processo-terminato"; idRichiesta: string; riuscita: boolean; testo: string }
   /** Com'è andata la scelta di far partire il nodo a ogni accesso a Windows. */
   | { tipo: "avvio-con-windows-esito"; idRichiesta: string; attivo?: boolean; motivo?: string }
   /** Ciò che esce dal terminale di un progetto di questo ambiente. */
@@ -129,6 +131,8 @@ export type MessaggioNodo =
 
 /** Ciò che il centro chiede a un nodo di fare nel suo ambiente. */
 export type ComandoPerNodo =
+  /** Termina un processo acceso da Shinka in questo ambiente, con ciò che ha avviato. Il nodo rifiuta gli altri. */
+  | { tipo: "termina-processo"; idRichiesta: string; pid: number }
   /** Su Windows: fa partire il nodo, con la sua icona, a ogni accesso, oppure smette. */
   | { tipo: "avvio-con-windows"; idRichiesta: string; attivo: boolean }
   /**
@@ -186,6 +190,8 @@ export type ComandoPerNodo =
       idConversazione: string;
       idPermesso: string;
       decisione: DecisionePermesso;
+      /** Il consenso vale anche per le prossime volte (Approva sempre). */
+      sempre?: true;
     }
   /**
    * Riprende una conversazione da prima di un messaggio del proprietario: con `prova` dice soltanto

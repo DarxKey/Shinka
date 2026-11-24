@@ -13,6 +13,7 @@ import type {
   PortaTerminali,
   RiferitoTerminale,
 } from "../protocollo/terminale.ts";
+import { progettoDelTerminale, SCHEDE_MASSIME, terminaleDellaScheda } from "../protocollo/terminale.ts";
 import { ID_AMBIENTE_DEL_CENTRO, type RegistroAmbienti } from "./ambienti.ts";
 import type { RegistroProgetti } from "./progetti.ts";
 
@@ -60,29 +61,34 @@ export class TerminaliDeiProgetti {
   /** Un browser si collega al terminale di un progetto. Nulla se il progetto non esiste. */
   /** Spegne il terminale di un progetto, per esempio quando il progetto viene eliminato. */
   spegni(progetto: { id: string; idAmbiente: string }): void {
-    const comando: ComandoTerminale = { tipo: "terminale-chiudi", idTerminale: progetto.id };
-    if (progetto.idAmbiente === ID_AMBIENTE_DEL_CENTRO) this.#locale.esegui(comando);
-    else this.#o.ambienti.inviaAlNodo(progetto.idAmbiente, comando);
-    for (const spettatore of this.#spettatori.get(progetto.id) ?? []) spettatore.manda({ tipo: "chiuso", motivo: "Questo progetto è stato eliminato." });
+    for (let scheda = 1; scheda <= SCHEDE_MASSIME; scheda++) {
+      const idTerminale = terminaleDellaScheda(progetto.id, scheda);
+      const comando: ComandoTerminale = { tipo: "terminale-chiudi", idTerminale };
+      if (progetto.idAmbiente === ID_AMBIENTE_DEL_CENTRO) this.#locale.esegui(comando);
+      else this.#o.ambienti.inviaAlNodo(progetto.idAmbiente, comando);
+      for (const spettatore of this.#spettatori.get(idTerminale) ?? []) spettatore.manda({ tipo: "chiuso", motivo: "Questo progetto è stato eliminato." });
+    }
   }
 
-  collega(idProgetto: string, manda: (messaggio: DalTerminaleAlBrowser) => void): CollegamentoTerminale | undefined {
-    if (this.#o.progetti.trova(idProgetto) === undefined) return undefined;
+  /** Un browser si collega al terminale di una scheda di un progetto; la prima se non si dice. */
+  collega(idProgetto: string, manda: (messaggio: DalTerminaleAlBrowser) => void, scheda = 1): CollegamentoTerminale | undefined {
+    if (this.#o.progetti.trova(idProgetto) === undefined || !Number.isInteger(scheda) || scheda < 1 || scheda > SCHEDE_MASSIME) return undefined;
+    const idTerminale = terminaleDellaScheda(idProgetto, scheda);
     const spettatore: Spettatore = { manda, inAttesa: false, pronto: false };
-    const insieme = this.#spettatori.get(idProgetto) ?? new Set<Spettatore>();
+    const insieme = this.#spettatori.get(idTerminale) ?? new Set<Spettatore>();
     insieme.add(spettatore);
-    this.#spettatori.set(idProgetto, insieme);
+    this.#spettatori.set(idTerminale, insieme);
     return {
-      ricevi: (messaggio) => this.#dalBrowser(idProgetto, spettatore, messaggio),
+      ricevi: (messaggio) => this.#dalBrowser(idTerminale, spettatore, messaggio),
       scollega: () => {
         insieme.delete(spettatore);
-        if (insieme.size === 0 && this.#spettatori.get(idProgetto) === insieme) this.#spettatori.delete(idProgetto);
+        if (insieme.size === 0 && this.#spettatori.get(idTerminale) === insieme) this.#spettatori.delete(idTerminale);
       },
     };
   }
 
-  #dalBrowser(idProgetto: string, spettatore: Spettatore, messaggio: DalBrowserAlTerminale): void {
-    const progetto = this.#o.progetti.trova(idProgetto);
+  #dalBrowser(idTerminale: string, spettatore: Spettatore, messaggio: DalBrowserAlTerminale): void {
+    const progetto = this.#o.progetti.trova(progettoDelTerminale(idTerminale));
     if (progetto === undefined) {
       spettatore.manda({ tipo: "chiuso", motivo: "Questo progetto non esiste più." });
       return;
@@ -97,7 +103,7 @@ export class TerminaliDeiProgetti {
         spettatore.inAttesa = true;
         const inviato = invia({
           tipo: "terminale-apri",
-          idTerminale: idProgetto,
+          idTerminale,
           cartella: progetto.cartella,
           colonne: messaggio.colonne,
           righe: messaggio.righe,
@@ -112,22 +118,22 @@ export class TerminaliDeiProgetti {
         return;
       }
       case "scrivi":
-        if (spettatore.pronto) invia({ tipo: "terminale-scrivi", idTerminale: idProgetto, dati: messaggio.dati });
+        if (spettatore.pronto) invia({ tipo: "terminale-scrivi", idTerminale, dati: messaggio.dati });
         return;
       case "misura":
         if (spettatore.pronto) {
-          invia({ tipo: "terminale-misura", idTerminale: idProgetto, colonne: messaggio.colonne, righe: messaggio.righe });
+          invia({ tipo: "terminale-misura", idTerminale, colonne: messaggio.colonne, righe: messaggio.righe });
         }
         return;
       case "chiudi":
-        invia({ tipo: "terminale-chiudi", idTerminale: idProgetto });
+        invia({ tipo: "terminale-chiudi", idTerminale });
         return;
     }
   }
 
   #riferito(idAmbiente: string, messaggio: RiferitoTerminale): void {
     // Un ambiente riferisce solo dei terminali dei propri progetti.
-    if (this.#o.progetti.trova(messaggio.idTerminale)?.idAmbiente !== idAmbiente) return;
+    if (this.#o.progetti.trova(progettoDelTerminale(messaggio.idTerminale))?.idAmbiente !== idAmbiente) return;
     const insieme = this.#spettatori.get(messaggio.idTerminale);
     if (insieme === undefined) return;
     for (const spettatore of insieme) {
@@ -154,8 +160,8 @@ export class TerminaliDeiProgetti {
 
   /** L'ambiente si è scollegato: il terminale resta acceso lì, ma da qui non si vede più. */
   #scollegato(idAmbiente: string): void {
-    for (const [idProgetto, insieme] of this.#spettatori) {
-      if (this.#o.progetti.trova(idProgetto)?.idAmbiente !== idAmbiente) continue;
+    for (const [idTerminale, insieme] of this.#spettatori) {
+      if (this.#o.progetti.trova(progettoDelTerminale(idTerminale))?.idAmbiente !== idAmbiente) continue;
       for (const spettatore of insieme) {
         if (!spettatore.pronto && !spettatore.inAttesa) continue;
         spettatore.pronto = false;

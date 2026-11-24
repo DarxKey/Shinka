@@ -12,7 +12,7 @@ import type { ConfigurazioneConversazione } from "../nodo/conversazione.ts";
 import { apriConversazione, motorePredefinito } from "../nodo/motore.ts";
 import { soloLeScelte, type FonteEstensioni } from "../nodo/estensioni.ts";
 import { preparaProgetto } from "../nodo/preparazione.ts";
-import type { ModelliLocali } from "../nodo/modelli-locali.ts";
+import { soloIModelliScelti, type FonteModelliLocali } from "../nodo/modelli-locali.ts";
 import { DURATA_PREPARAZIONE_MS, type EsitoPreparazione, type PreparazioneDelProgetto } from "../protocollo/avvio-progetto.ts";
 import { configurazioneDiProgetto } from "../nodo/profili.ts";
 import { eIncarico } from "../protocollo/incarichi.ts";
@@ -112,7 +112,7 @@ export interface ServiziLocali {
   /** Dove tenere le modifiche dei turni, una cartella per progetto. Senza, restano in memoria. */
   cartellaModifiche?: string;
   /** I modelli locali accesi nell'ambiente del centro (ADR 0051). */
-  modelliLocali?: ModelliLocali;
+  modelliLocali?: FonteModelliLocali;
 }
 
 /** Esegue nell'ambiente in cui gira il centro. */
@@ -185,7 +185,10 @@ export class EsecutoreLocale implements Esecutore {
         ...(estensioni === undefined ? {} : { estensioni }),
         ...(diShinka?.(idConversazione) === true ? { sviluppoDiShinka: true } : {}),
         ...(eIncarico(idConversazione) ? { incarico: true } : {}),
-        ...(this.#servizi.modelliLocali === undefined ? {} : { modelliLocali: this.#servizi.modelliLocali }),
+        // I modelli locali seguono le estensioni scelte per il progetto, come gli strumenti.
+        ...(this.#servizi.modelliLocali === undefined
+          ? {}
+          : { modelliLocali: scelte === undefined ? this.#servizi.modelliLocali : soloIModelliScelti(this.#servizi.modelliLocali, scelte) }),
         ...(this.#servizi.cartellaModifiche === undefined ? {} : { cartellaModifiche: join(this.#servizi.cartellaModifiche, nomeDiCartella(idConversazione)) }),
       }),
     );
@@ -690,13 +693,14 @@ class ConversazioneRemota implements PortaConversazione {
     // Né istruzioni di Shinka: quelle servono solo alla Home.
   }
 
-  decidiPermesso(idPermesso: string, decisione: DecisionePermesso): boolean {
+  decidiPermesso(idPermesso: string, decisione: DecisionePermesso, sempre?: boolean): boolean {
     if (!this.#permessiInAttesa.has(idPermesso)) return false;
     return this.#ambienti.inviaAlNodo(this.idAmbiente, {
       tipo: "decidi-permesso",
       idConversazione: this.#idConversazione,
       idPermesso,
       decisione,
+      ...(sempre === true ? { sempre: true as const } : {}),
     });
   }
 

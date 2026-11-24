@@ -15,8 +15,9 @@ export type ContenitoriDalGateway = { host: DockerDiUnHost[] } | { motivo: strin
 
 export interface OpzioniRisorse {
   ambienti: RegistroAmbienti;
-  /** Le risorse della macchina del centro. */
+  /** Le risorse della macchina del centro, e i processi che vi accende Shinka. */
   locale: { leggi(): Promise<RisorseDellAmbiente> };
+  processiLocali?: { termina(pid: number): Promise<{ riuscita: boolean; testo: string }> };
   /** I container degli host per gli stack, dal gateway. Senza, non si mostrano. */
   contenitori?: () => Promise<ContenitoriDalGateway>;
   /** Per quanto vale una lettura del gateway: la pagina chiede più spesso di quanto serva rileggere. */
@@ -34,6 +35,7 @@ interface InAttesa {
 export class RisorseDegliAmbienti {
   readonly #o: OpzioniRisorse;
   readonly #inAttesa = new Map<string, InAttesa>();
+  readonly #terminazioni = new Map<string, { idAmbiente: string; risolvi(esito: { riuscita: boolean; testo: string }): void; scadenza: NodeJS.Timeout }>();
   #dalGateway: { quando: number; letti: ContenitoriDalGateway } | undefined;
   #gatewayInCorso: Promise<ContenitoriDalGateway> | undefined;
 
@@ -91,7 +93,36 @@ export class RisorseDegliAmbienti {
     });
   }
 
+  /** Termina un processo acceso da Shinka in un ambiente, con ciò che ha avviato. Non lancia: l'esito dice com'è andata. */
+  termina(idAmbiente: string, pid: number): Promise<{ riuscita: boolean; testo: string }> {
+    if (idAmbiente === ID_AMBIENTE_DEL_CENTRO) {
+      return this.#o.processiLocali?.termina(pid) ?? Promise.resolve({ riuscita: false, testo: "Qui i processi non si terminano." });
+    }
+    return new Promise((risolvi) => {
+      const idRichiesta = randomUUID();
+      const scadenza = setTimeout(() => {
+        this.#terminazioni.delete(idRichiesta);
+        risolvi({ riuscita: false, testo: "L'ambiente non ha risposto: se il suo nodo è di una versione precedente non sa terminare i processi, e va aggiornato." });
+      }, this.#o.attesaMs ?? 15_000);
+      scadenza.unref();
+      this.#terminazioni.set(idRichiesta, { idAmbiente, risolvi, scadenza });
+      if (!this.#o.ambienti.inviaAlNodo(idAmbiente, { tipo: "termina-processo", idRichiesta, pid })) {
+        clearTimeout(scadenza);
+        this.#terminazioni.delete(idRichiesta);
+        risolvi({ riuscita: false, testo: "L'ambiente è spento." });
+      }
+    });
+  }
+
   #riferito(idNodo: string, messaggio: RiferitoDalNodo): void {
+    if (messaggio.tipo === "processo-terminato") {
+      const attesa = this.#terminazioni.get(messaggio.idRichiesta);
+      if (attesa === undefined || attesa.idAmbiente !== idNodo) return;
+      this.#terminazioni.delete(messaggio.idRichiesta);
+      clearTimeout(attesa.scadenza);
+      attesa.risolvi({ riuscita: messaggio.riuscita, testo: messaggio.testo });
+      return;
+    }
     if (messaggio.tipo !== "risorse-esito") return;
     const inAttesa = this.#inAttesa.get(messaggio.idRichiesta);
     // Risponde solo l'ambiente a cui la richiesta era stata fatta.

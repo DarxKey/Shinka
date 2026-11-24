@@ -151,8 +151,13 @@ export type EventoConversazione =
       strumento: string;
       ingresso: unknown;
       motivo?: string;
+      /**
+       * Ciò che «Approva sempre» salverebbe nelle impostazioni locali del progetto, in parole: una
+       * regola (per esempio «Bash(npm test:*)») o una cartella. Manca se l'harness non ne propone.
+       */
+      regola?: string;
     }
-  | { tipo: "permesso-deciso"; idPermesso: string; decisione: DecisionePermesso }
+  | { tipo: "permesso-deciso"; idPermesso: string; decisione: DecisionePermesso; sempre?: true }
   /** Claude chiede al proprietario di rispondere ad alcune domande prima di andare avanti. */
   | { tipo: "domande-poste"; idDomande: string; domande: Domanda[] }
   /** Le domande non aspettano più: `risposte`, una per domanda, c'è se il proprietario ha risposto dalla scheda. */
@@ -453,8 +458,11 @@ export interface PortaConversazione {
    * passare la conversazione a un altro motore. Chi non lo sa fare non ce l'ha.
    */
   storia?(): Promise<ScambioDellaStoria[]>;
-  /** Restituisce false se quel permesso non è più in attesa. */
-  decidiPermesso(idPermesso: string, decisione: DecisionePermesso): boolean;
+  /**
+   * Restituisce false se quel permesso non è più in attesa. Con `sempre` un consenso vale anche per
+   * le prossime volte: la regola che l'harness propone si salva nelle impostazioni locali del progetto.
+   */
+  decidiPermesso(idPermesso: string, decisione: DecisionePermesso, sempre?: boolean): boolean;
   /**
    * Risponde alle domande che Claude ha posto. Restituisce false se non aspettano più.
    * Un messaggio mandato con `invia` mentre aspettano vale anch'esso come risposta.
