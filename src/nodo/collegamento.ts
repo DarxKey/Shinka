@@ -27,7 +27,7 @@ import { leggiChiaviConsegnate, leggiEstensioneDistribuita, type EstensioneDistr
 import { leggiEstensioniScelte, leggiPreparazione, type PreparazioneDelProgetto } from "../protocollo/avvio-progetto.ts";
 import { DOMANDA_A_PARTE_MASSIMA, leggiRispostaAlleDomande } from "../protocollo/eventi.ts";
 import { leggiRichiestaAllaConversazione } from "../protocollo/modifiche.ts";
-import { eMotore, leggiImpostazioni } from "../protocollo/impostazioni.ts";
+import { eMotore, IMPEGNI, leggiImpostazioni } from "../protocollo/impostazioni.ts";
 import { leggiRichiestaAccessi } from "../protocollo/accessi.ts";
 import {
   INTERVALLO_BATTITO_MS,
@@ -499,6 +499,17 @@ export function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | u
       const idRichiesta = testo("idRichiesta");
       if (idRichiesta === undefined || typeof campi.attivo !== "boolean") return undefined;
       return { tipo: "avvio-con-windows", idRichiesta, attivo: campi.attivo };
+    }
+    case "prendi-modello": {
+      const idPresa = testo("idPresa");
+      const modello = testo("modello");
+      if (idPresa === undefined || modello === undefined) return undefined;
+      const impegno = IMPEGNI.find((uno) => uno === campi.impegno);
+      return { tipo: "prendi-modello", idPresa, modello, ...(impegno === undefined ? {} : { impegno }) };
+    }
+    case "lascia-modello": {
+      const idPresa = testo("idPresa");
+      return idPresa === undefined ? undefined : { tipo: "lascia-modello", idPresa };
     }
     case "riavvolgi": {
       const idRichiesta = testo("idRichiesta");

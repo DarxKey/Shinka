@@ -26,6 +26,10 @@ export interface PresaDelModello {
   modello: string;
   /** L'indirizzo del server, per Claude Code. */
   indirizzo: string;
+  /** La porta su cui il server ascolta, su questa macchina. */
+  porta?: number;
+  /** La chiave che il server vuole, se è in rete. */
+  chiave?: string;
   contesto: number;
   uscita: number;
   /** Si risolve quando il server risponde; si rifiuta, con il motivo, se non parte. */
@@ -87,6 +91,8 @@ const CHIUSURA_MS = 15_000;
 interface ServerAcceso {
   definizione: DefinizioneModelloLocale;
   impegno: Impegno;
+  /** Presente se il server è in rete: ascolta dalle altre macchine e vuole questa chiave. */
+  chiave?: string;
   /** Il processo, se lo ha acceso Shinka; nulla se era già acceso. */
   processo?: ChildProcess;
   /** Vero se rispondeva già sulla porta quando lo si è cercato: acceso dal proprietario, fuori da Shinka. */
@@ -173,7 +179,7 @@ function spegniProcesso(processo: ChildProcess, tettoMs: number): Promise<void> 
 
 export class ModelliLocali implements FonteModelliLocali {
   readonly #o: OpzioniModelliLocali;
-  #accese: { nome: string; definizione: DefinizioneModelloLocale }[] = [];
+  #accese: { nome: string; definizione: DefinizioneModelloLocale; chiave?: string }[] = [];
   readonly #server = new Map<string, ServerAcceso>();
   /**
    * Gli spegnimenti in corso, per porta: un server nuovo aspetta che quello di prima sulla stessa
@@ -187,10 +193,12 @@ export class ModelliLocali implements FonteModelliLocali {
 
   /** Le estensioni accese qui sono cambiate: si tengono quelle dei modelli locali. Un server di un'estensione tolta si spegne. */
   imposta(estensioni: readonly EstensioneDistribuita[]): void {
-    this.#accese = estensioni.flatMap((una) => (una.definizione.tipo === "modello-locale" ? [{ nome: una.nome, definizione: una.definizione }] : []));
+    this.#accese = estensioni.flatMap((una) =>
+      una.definizione.tipo === "modello-locale" ? [{ nome: una.nome, definizione: una.definizione, ...(una.inRete === undefined ? {} : { chiave: una.inRete.chiave }) }] : [],
+    );
     for (const [nome, server] of this.#server) {
       const ancora = this.#accese.find((una) => una.nome === nome);
-      if (ancora === undefined || JSON.stringify(ancora.definizione) !== JSON.stringify(server.definizione)) {
+      if (ancora === undefined || JSON.stringify(ancora.definizione) !== JSON.stringify(server.definizione) || ancora.chiave !== server.chiave) {
         if (server.utenti === 0) this.#spegni(nome);
       }
     }
@@ -212,7 +220,7 @@ export class ModelliLocali implements FonteModelliLocali {
     if (nome === undefined || acceso === undefined) {
       return { motivo: `Il modello locale "${nome ?? modello}" non è acceso in questo ambiente: va acceso dall'elenco delle estensioni.` };
     }
-    const { definizione } = acceso;
+    const { definizione, chiave } = acceso;
     const voluto = impegno ?? definizione.impegni[0] ?? "medium";
     if (!definizione.impegni.includes(voluto)) {
       return { motivo: `Il modello locale "${nome}" accetta questi impegni: ${definizione.impegni.join(", ")}.` };
@@ -223,7 +231,7 @@ export class ModelliLocali implements FonteModelliLocali {
       this.#spegni(nome);
       server = undefined;
     }
-    if (server !== undefined && (server.impegno !== voluto || JSON.stringify(server.definizione) !== JSON.stringify(definizione))) {
+    if (server !== undefined && (server.impegno !== voluto || JSON.stringify(server.definizione) !== JSON.stringify(definizione) || server.chiave !== chiave)) {
       if (server.trovato === true && JSON.stringify(server.definizione) === JSON.stringify(definizione)) {
         return {
           motivo: `Il server del modello locale "${nome}" lo hai acceso fuori da Shinka, che non lo può riaccendere con un altro impegno: spegnilo, e Shinka lo accenderà con impegno ${voluto}.`,
@@ -235,7 +243,7 @@ export class ModelliLocali implements FonteModelliLocali {
       this.#spegni(nome);
       server = undefined;
     }
-    if (server === undefined) server = this.#accendi(nome, definizione, voluto);
+    if (server === undefined) server = this.#accendi(nome, definizione, voluto, chiave);
     const preso = server;
     preso.utenti += 1;
     if (preso.spegnimento !== undefined) clearTimeout(preso.spegnimento);
@@ -244,6 +252,8 @@ export class ModelliLocali implements FonteModelliLocali {
     return {
       modello: definizione.modello,
       indirizzo: `http://127.0.0.1:${definizione.porta}`,
+      porta: definizione.porta,
+      ...(preso.chiave === undefined ? {} : { chiave: preso.chiave }),
       contesto: definizione.contesto,
       uscita: definizione.uscita,
       pronto: preso.pronto,
@@ -283,8 +293,14 @@ export class ModelliLocali implements FonteModelliLocali {
     for (const nome of [...this.#server.keys()]) this.#spegni(nome);
   }
 
-  #accendi(nome: string, definizione: DefinizioneModelloLocale, impegno: Impegno): ServerAcceso {
-    const server: ServerAcceso = { definizione, impegno, pronto: Promise.resolve(), utenti: 0, spento: false };
+  /** Vero se quel modello è acceso qui e in rete: allora lo possono prendere anche le conversazioni degli altri ambienti. */
+  inRete(modello: string): boolean {
+    const nome = estensioneDelModello(modello);
+    return this.#accese.some((una) => una.nome === nome && una.chiave !== undefined);
+  }
+
+  #accendi(nome: string, definizione: DefinizioneModelloLocale, impegno: Impegno, chiave?: string): ServerAcceso {
+    const server: ServerAcceso = { definizione, impegno, pronto: Promise.resolve(), utenti: 0, spento: false, ...(chiave === undefined ? {} : { chiave }) };
     const prima = this.#chiusure.get(definizione.porta);
     server.pronto = (async () => {
       // Il server di prima va lasciato uscire: finché risponde, quello nuovo lo scambierebbe per uno
@@ -314,7 +330,8 @@ export class ModelliLocali implements FonteModelliLocali {
       this.#misura(server);
       return;
     }
-    const argomenti = definizione.argomenti.map((uno) => uno.replaceAll("{impegno}", server.impegno));
+    const proprio = definizione.argomenti.map((uno) => uno.replaceAll("{impegno}", server.impegno));
+    const argomenti = server.chiave === undefined ? proprio : argomentiInRete(proprio, server.chiave);
     let processo: ChildProcess;
     try {
       processo = (this.#o.avvia ?? avviaVero)(definizione.comando, argomenti, definizione.variabili);
@@ -416,4 +433,22 @@ export function voceDelModello(nome: string, definizione: DefinizioneModelloLoca
     impegni: definizione.impegni,
     motore: "claude",
   };
+}
+
+/**
+ * Gli argomenti di un server in rete (ADR 0053): ascolta da tutte le interfacce e vuole la chiave.
+ * L'indirizzo e la chiave scritti nella definizione lasciano il posto a questi.
+ */
+export function argomentiInRete(argomenti: readonly string[], chiave: string): string[] {
+  const restano: string[] = [];
+  for (let posto = 0; posto < argomenti.length; posto += 1) {
+    const uno = argomenti[posto] ?? "";
+    if (uno === "--host" || uno === "--api-key") {
+      posto += 1;
+      continue;
+    }
+    if (uno.startsWith("--host=") || uno.startsWith("--api-key=")) continue;
+    restano.push(uno);
+  }
+  return [...restano, "--host", "0.0.0.0", "--api-key", chiave];
 }

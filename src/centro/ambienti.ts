@@ -34,6 +34,8 @@ type Presentazione = Extract<MessaggioNodo, { tipo: "presentazione" }>;
 export interface CanaleNodo {
   invia(messaggio: MessaggioCentro): void;
   chiudi(): void;
+  /** L'indirizzo da cui il nodo si è collegato, visto dal centro: senza il prefisso IPv4 dentro IPv6. */
+  indirizzo?: string;
   /** Vero se il collegamento arriva al centro cifrato (ADR 0040). */
   cifrato?: boolean;
 }
@@ -396,6 +398,7 @@ export class RegistroAmbienti {
           ...(aggiornamento === undefined ? {} : { aggiornamento: { ...aggiornamento, versione: inBreve(aggiornamento.versione) } }),
           ...(nodo.indirizzoDelCentro === undefined ? {} : { indirizzoDelCentro: nodo.indirizzoDelCentro }),
           ...(collegato?.avvioConWindows === undefined ? {} : { avvioConWindows: collegato.avvioConWindows }),
+          ...(collegato?.canale.indirizzo === undefined ? {} : { indirizzoDelNodo: collegato.canale.indirizzo }),
         };
       })
       .sort((a, b) => a.nome.localeCompare(b.nome, "it"));

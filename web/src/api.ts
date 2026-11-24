@@ -312,6 +312,11 @@ export async function decidiEstensione(id: string, esito: "confermata" | "annull
 }
 
 /** Accende o spegne in un ambiente un'estensione dell'elenco. Accenderla la prova di nuovo, lì. */
+/** Mette in rete un modello locale acceso in un ambiente, all'indirizzo indicato, o con nulla lo toglie dalla rete. */
+export async function mettiInRete(id: string, idAmbiente: string, indirizzo: string | null): Promise<void> {
+  await chiama("POST", `/api/estensioni/${encodeURIComponent(id)}/ambienti/${encodeURIComponent(idAmbiente)}/rete`, { indirizzo });
+}
+
 export async function accendiEstensione(
   id: string,
   idAmbiente: string,

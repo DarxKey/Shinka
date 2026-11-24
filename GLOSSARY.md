@@ -345,7 +345,7 @@ Il modello che il proprietario sceglie per svolgere gli incarichi di un progetto
 _Avoid_: executor, esecutore, worker
 
 **Modello locale**:
-Un modello che gira su una macchina del proprietario, con un server che parla come l'API di Anthropic (per esempio Qwen con llama-server): è un'estensione di Shinka, il nodo lo accende quando una conversazione lo sceglie e lo spegne dopo dieci minuti fermo.
+Un modello che gira su una macchina del proprietario, con un server che parla come l'API di Anthropic (per esempio Qwen con llama-server): è un'estensione di Shinka, il nodo lo accende quando una conversazione lo sceglie e lo spegne dopo dieci minuti fermo. Messo in rete dal proprietario, lo usano anche la Home e i progetti degli altri ambienti, con una chiave che Shinka tiene per sé.
 _Avoid_: LLM locale, modello offline
 
 **Cartella collegata** (di un progetto):

@@ -2,7 +2,7 @@
 
 ## Specifica funzionale e architetturale
 
-**Versione:** 2.22 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
+**Versione:** 2.23 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
 
 Sostituisce la specifica "Atlas Agent 1.0", conservata in [archivio/atlas-agent-v1.md](archivio/atlas-agent-v1.md). I termini usati qui sono definiti in [GLOSSARY.md](GLOSSARY.md). Le decisioni di fondo sono motivate in [docs/adr/](docs/adr/). Lo stato dei lavori è in [STATO.md](STATO.md).
 
@@ -47,6 +47,8 @@ La versione 2.20 permette a un progetto di lavorare in più ambienti: vive nel s
 La versione 2.21 toglie la domanda a parte e aggiunge le chat parallele: nella Home e in un progetto il proprietario apre altre conversazioni in schede accanto alla principale, che lavorano anche mentre questa lavora. Nella Home ciascuna è un argomento aperto: gli argomenti aperti possono essere più d'uno. Cambiano le sezioni 4.2, 4.4 e 6; si aggiungono le prove A86 e A87. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0052](docs/adr/0052-chat-parallele.md).
 
 La versione 2.22 dice che cosa fa un lavoro programmato che trova esaurito il limite del piano: non salta, aspetta che si azzeri e riparte da solo, una volta. Cambia la sezione 4.13; si aggiunge la prova A88. La scelta è del proprietario, del 24 novembre 2026.
+
+La versione 2.23 lascia usare un modello locale anche fuori dal suo ambiente: il proprietario lo mette in rete, e la Home e i progetti degli altri ambienti lo raggiungono con una chiave che Shinka tiene per sé. Cambia la sezione 4.11; si aggiunge la prova A89. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0053](docs/adr/0053-modelli-locali-in-rete.md).
 
 ## 1. Cos'è Shinka
 
@@ -232,6 +234,7 @@ Un'estensione è codice di terzi che dà strumenti in più alle conversazioni: u
 - Un'estensione entra nell'elenco, o si accende in un ambiente, solo dopo che il proprietario ha confermato una scheda che dice che cosa è, da dove viene, il comando o l'indirizzo esatto e l'ambiente. Di un plugin la scheda dice anche che cosa contiene, e avverte di ciò che parte da solo o che Shinka non sa leggere. Finché non conferma non viene installato né avviato nulla.
 - Un'estensione si accende solo se parte: dopo la conferma l'ambiente la avvia una volta, da sola, e dice quali strumenti offre o perché non è partita.
 - Accesa in un ambiente, la usano i progetti di quell'ambiente. La Home usa quelle accese nell'ambiente del centro.
+- Fa eccezione un modello locale che il proprietario mette in rete: lo usano anche la Home e i progetti degli altri ambienti. Il suo server ascolta dalla rete con una chiave che Shinka genera e tiene per sé, e che non entra nelle conversazioni né nell'interfaccia; lo mette in rete e lo toglie solo il proprietario, ambiente per ambiente.
 - Ogni azione di un'estensione chiede il consenso come le altre, secondo il modo dei permessi della conversazione.
 - Le versioni restano ferme: un plugin al commit mostrato nella scheda, un server alla versione scritta nel comando. Aggiornarle è una proposta nuova.
 - Ciò che il proprietario ha già installato per conto suo in un ambiente continua a valere nei progetti di quell'ambiente. Shinka lo mostra, e non lo copia, non lo spegne e non lo toglie.
@@ -461,6 +464,7 @@ Ogni incremento deve essere usabile e dimostrabile prima di passare al successiv
 | A86 | Mentre la Home lavora, il proprietario apre una chat parallela e chiede altro | Risponde subito, con gli strumenti, senza fermare la principale; chiusa la scheda, l'argomento è tra gli archiviati con il suo titolo |
 | A87 | In un progetto al lavoro il proprietario apre una chat parallela, le fa leggere un file, poi la chiude | La chat legge nella stessa cartella mentre la principale continua; chiusa, la sua storia non c'è più e la principale non ne ha risentito |
 | A88 | Un lavoro programmato parte con il limite del piano esaurito, oppure lo esaurisce a metà | Non parte, o si ferma senza errore; nell'elenco dice quando riparte; all'azzeramento riparte una volta sola |
+| A89 | Il proprietario mette in rete il modello locale del PC e lo sceglie per la Home | La Home risponde con quel modello; il server sul PC si accende e poi si spegne da solo; senza la chiave il server non risponde; tolto dalla rete, la Home non lo offre più |
 
 ## 10. Regole per chi implementa
 

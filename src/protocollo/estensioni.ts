@@ -83,6 +83,11 @@ export interface EstensioneInAmbiente {
   strumenti: string[];
   /** Quando è stata provata lì l'ultima volta. */
   provata: string;
+  /**
+   * Per un modello locale: il proprietario lo vuole raggiungibile dalle altre macchine, con una
+   * chiave che Shinka tiene per sé, all'indirizzo di questo ambiente visto dal centro.
+   */
+  inRete?: { indirizzo: string };
 }
 
 export interface Estensione {
@@ -109,6 +114,8 @@ export interface EstensioneDistribuita {
   nome: string;
   definizione: DefinizioneEstensione;
   chiavi: string[];
+  /** Per un modello locale in rete: il server ascolta anche dalle altre macchine, e vuole questa chiave. */
+  inRete?: { chiave: string };
 }
 
 /** Com'è andata la prova di un'estensione in un ambiente: è partita, e con quali strumenti, oppure no. */
@@ -401,7 +408,10 @@ export function leggiEstensioneDistribuita(valore: unknown): EstensioneDistribui
   if (typeof campi.nome !== "string" || difettoDelNome(campi.nome) !== undefined) return undefined;
   if (!Array.isArray(campi.chiavi) || campi.chiavi.length > CHIAVI_MASSIME) return undefined;
   if (!campi.chiavi.every((chiave) => typeof chiave === "string" && nomeDiChiaveValido(chiave))) return undefined;
-  return { id: campi.id, nome: campi.nome, definizione, chiavi: campi.chiavi as string[] };
+  // La chiave di un modello locale in rete: solo caratteri sicuri da mettere in un argomento del server.
+  const rete = oggetto(campi.inRete);
+  const chiave = definizione.tipo === "modello-locale" && typeof rete?.chiave === "string" && /^[A-Za-z0-9_-]{16,128}$/.test(rete.chiave) ? rete.chiave : undefined;
+  return { id: campi.id, nome: campi.nome, definizione, chiavi: campi.chiavi as string[], ...(chiave === undefined ? {} : { inRete: { chiave } }) };
 }
 
 function leggiContenuto(valore: unknown): ContenutoPlugin | undefined {

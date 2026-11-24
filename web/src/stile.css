@@ -6900,3 +6900,43 @@ kbd {
 .scheda-terminale.nuova {
   font-weight: 600;
 }
+
+/* Un modello locale in rete (ADR 0053): la scelta, l'indirizzo e la regola del firewall. */
+.modello-in-rete {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  margin-top: 8px;
+  font-size: 0.875rem;
+}
+
+.modello-in-rete p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.scelta-in-rete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.indirizzo-in-rete {
+  display: grid;
+  gap: 2px;
+}
+
+.indirizzo-in-rete input {
+  max-width: 260px;
+}
+
+.comando-firewall {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+  background: var(--codice);
+}

@@ -22,7 +22,7 @@ import { adottaCartella, CartellaNonCreata, creaCartellaProgetto } from "./carte
 import type { ConfigurazioneConversazione } from "./conversazione.ts";
 import { apriConversazione } from "./motore.ts";
 import { eIncarico } from "../protocollo/incarichi.ts";
-import { soloIModelliScelti } from "./modelli-locali.ts";
+import { soloIModelliScelti, type PresaDelModello } from "./modelli-locali.ts";
 import { configurazioneDiProgetto } from "./profili.ts";
 import { nomeDiCartella } from "../protocollo/modifiche.ts";
 import { EstensioniInAmbiente, soloLeScelte } from "./estensioni.ts";
@@ -85,6 +85,8 @@ export class LavoroDelNodo {
   readonly #estensioni: EstensioniInAmbiente | undefined;
   /** Le chiavi chieste al centro che aspettano risposta. */
   readonly #chiavi = new Map<string, { risolvi(chiavi: ChiaviConsegnate): void; scadenza: NodeJS.Timeout }>();
+  /** I modelli locali in rete presi dalle conversazioni di altri ambienti, finché il centro non li lascia (ADR 0053). */
+  readonly #preseDaFuori = new Map<string, PresaDelModello>();
 
   constructor(contesto: ContestoLavoro) {
     this.#contesto = contesto;
@@ -152,6 +154,33 @@ export class LavoroDelNodo {
         void processi.termina(pid).then((esito) => this.#contesto.riferisci({ tipo: "processo-terminato", idRichiesta, ...esito }));
         return;
       }
+      case "prendi-modello": {
+        const { idPresa, modello, impegno } = comando;
+        const modelli = this.#estensioni?.modelliLocali;
+        // Solo un modello che il proprietario ha messo in rete si accende per un altro ambiente.
+        if (modelli === undefined || !modelli.inRete(modello)) {
+          this.#contesto.riferisci({ tipo: "modello-preso", idPresa, motivo: "Questo modello non è in rete in questo ambiente." });
+          return;
+        }
+        const presa = modelli.prendi(modello, impegno);
+        if ("motivo" in presa) {
+          this.#contesto.riferisci({ tipo: "modello-preso", idPresa, motivo: presa.motivo });
+          return;
+        }
+        this.#preseDaFuori.get(idPresa)?.lascia();
+        this.#preseDaFuori.set(idPresa, presa);
+        presa.pronto.then(
+          () => this.#contesto.riferisci({ tipo: "modello-preso", idPresa, ...(presa.porta === undefined ? {} : { porta: presa.porta }) }),
+          (errore: unknown) => {
+            this.#lasciaDaFuori(idPresa);
+            this.#contesto.riferisci({ tipo: "modello-preso", idPresa, motivo: errore instanceof Error ? errore.message : String(errore) });
+          },
+        );
+        return;
+      }
+      case "lascia-modello":
+        this.#lasciaDaFuori(comando.idPresa);
+        return;
       case "avvio-con-windows": {
         const { idRichiesta, attivo } = comando;
         const avvio = this.#contesto.avvioConWindows;
@@ -338,6 +367,11 @@ export class LavoroDelNodo {
     }
   }
 
+  #lasciaDaFuori(idPresa: string): void {
+    this.#preseDaFuori.get(idPresa)?.lascia();
+    this.#preseDaFuori.delete(idPresa);
+  }
+
   /** Il nodo si ferma: con lui si fermano le conversazioni e si spengono i terminali. */
   spegni(): void {
     this.chiudiTutto();
@@ -352,6 +386,8 @@ export class LavoroDelNodo {
    * I terminali no: restano accesi, e il proprietario li ritrova quando il centro torna.
    */
   chiudiTutto(): void {
+    // Senza centro chi aveva preso un modello in rete non lo usa più: il server si spegne dopo il solito tempo.
+    for (const idPresa of [...this.#preseDaFuori.keys()]) this.#lasciaDaFuori(idPresa);
     this.#anteprima.chiudiTutto();
     this.#file.annullaTutti();
     for (const conversazione of this.#conversazioni.values()) conversazione.chiudi();

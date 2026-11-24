@@ -8,7 +8,7 @@ import {
   type StatoEstensioni,
 } from "../../src/protocollo/estensioni.ts";
 import type { Ambiente, StatoAmbienti } from "../../src/protocollo/nodi.ts";
-import { accendiEstensione, decidiEstensione, guardaEstensioniDellAmbiente, rimuoviEstensione } from "./api.ts";
+import { accendiEstensione, decidiEstensione, guardaEstensioniDellAmbiente, mettiInRete, rimuoviEstensione } from "./api.ts";
 import { useSolaLettura } from "./ContestoChat.ts";
 import { momentoInBreve } from "./descrivi.ts";
 import type { Elemento } from "./stato.ts";
@@ -344,12 +344,77 @@ function InAmbiente({ estensione, ambiente }: { estensione: Estensione; ambiente
         </details>
       )}
       {!accesa && !ambiente.attivo && <div className="tenue">L'ambiente è spento: si accende lì quando torna attivo.</div>}
+      {accesa && !ambiente.delCentro && estensione.definizione.tipo === "modello-locale" && (
+        <ModelloInRete estensione={estensione} ambiente={ambiente} indirizzo={dove?.inRete?.indirizzo} porta={estensione.definizione.porta} />
+      )}
       {nota !== undefined && (
         <p className="errore" role="alert">
           {nota}
         </p>
       )}
     </li>
+  );
+}
+
+/**
+ * Un modello locale in rete (ADR 0053): lo usano anche la Home e i progetti delle altre macchine,
+ * raggiungendolo all'indirizzo di questo ambiente con una chiave che Shinka tiene per sé.
+ */
+function ModelloInRete({ estensione, ambiente, indirizzo, porta }: { estensione: Estensione; ambiente: Ambiente; indirizzo: string | undefined; porta: number }): ReactNode {
+  const [scritto, setScritto] = useState(indirizzo ?? ambiente.indirizzoDelNodo ?? "");
+  const [inCorso, setInCorso] = useState(false);
+  const [errore, setErrore] = useState<string>();
+  const inRete = indirizzo !== undefined;
+  // Su Windows il firewall va aperto una volta; se si conosce l'indirizzo del centro, solo per lui.
+  const centro = /^https?:\/\/(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?/.exec(ambiente.indirizzoDelCentro ?? "")?.[1];
+  const regola =
+    `New-NetFirewallRule -DisplayName "Shinka ${estensione.nome}" -Direction Inbound -Protocol TCP -LocalPort ${porta} -Action Allow` +
+    (centro === undefined ? "" : ` -RemoteAddress ${centro}`);
+
+  async function imposta(valore: string | null): Promise<void> {
+    setInCorso(true);
+    setErrore(undefined);
+    try {
+      await mettiInRete(estensione.id, ambiente.id, valore);
+    } catch (causa) {
+      setErrore(inParole(causa, "Non è riuscito."));
+    } finally {
+      setInCorso(false);
+    }
+  }
+
+  return (
+    <div className="modello-in-rete">
+      <label className="scelta-in-rete">
+        <input
+          type="checkbox"
+          checked={inRete}
+          disabled={inCorso || (!inRete && scritto.trim() === "")}
+          onChange={(evento) => void imposta(evento.target.checked ? scritto.trim() : null)}
+        />
+        In rete: lo usano anche la Home e i progetti delle altre macchine
+      </label>
+      <label className="indirizzo-in-rete">
+        <span className="tenue">Indirizzo di «{ambiente.nome}» visto dal centro</span>
+        <input value={scritto} disabled={inRete || inCorso} placeholder="192.168.1.20" onChange={(evento) => setScritto(evento.target.value)} />
+      </label>
+      {inRete && (
+        <p className="tenue">
+          Il server ascolta sulla porta {porta} anche dalla rete di casa e vuole una chiave, che Shinka tiene per sé: chi non la conosce non lo usa.
+          {/windows/i.test(ambiente.sistema) && (
+            <>
+              {" "}Su Windows il firewall lo lascia passare dopo una regola, da creare una volta in un PowerShell da amministratore:
+              <code className="comando-firewall">{regola}</code>
+            </>
+          )}
+        </p>
+      )}
+      {errore !== undefined && (
+        <p className="errore" role="alert">
+          {errore}
+        </p>
+      )}
+    </div>
   );
 }
 

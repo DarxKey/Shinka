@@ -929,6 +929,29 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     },
   );
 
+  // Un modello locale in rete (ADR 0053): con un indirizzo lo usano anche le conversazioni degli altri
+  // ambienti, raggiungendolo lì; senza, torna solo per la sua macchina.
+  app.post<{ Params: { id: string; idAmbiente: string }; Body: { indirizzo: string | null } }>(
+    "/api/estensioni/:id/ambienti/:idAmbiente/rete",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["indirizzo"],
+          additionalProperties: false,
+          properties: { indirizzo: { anyOf: [{ type: "string", minLength: 1, maxLength: 255 }, { type: "null" }] } },
+        },
+      },
+    },
+    async (richiesta, risposta) => {
+      if (opzioni.estensioni === undefined) return risposta.code(404).send({ errore: "In questa installazione le estensioni non ci sono." });
+      const { id, idAmbiente } = richiesta.params;
+      const motivo = await opzioni.estensioni.impostaInRete(id, idAmbiente, richiesta.body.indirizzo ?? undefined);
+      if (motivo !== undefined) return risposta.code(409).send({ errore: motivo });
+      return { inRete: richiesta.body.indirizzo !== null };
+    },
+  );
+
   app.post<{ Params: { id: string } }>("/api/estensioni/:id/rimozione", async (richiesta, risposta) => {
     if ((await opzioni.estensioni?.rimuovi(richiesta.params.id)) !== true) {
       return risposta.code(404).send({ errore: "Questa estensione non c'è più." });
@@ -2548,6 +2571,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       chiudi: () => socket.close(),
       // Cifrato è il collegamento arrivato al centro in TLS: con il certificato dei nodi, o con quello dell'HTTPS.
       cifrato: (richiestaDelNodo.raw.socket as { encrypted?: boolean }).encrypted === true,
+      ...(richiestaDelNodo.raw.socket.remoteAddress === undefined ? {} : { indirizzo: richiestaDelNodo.raw.socket.remoteAddress.replace(/^::ffff:/, "") }),
     };
     const scadenza = setTimeout(() => {
       if (idNodo === undefined) socket.close();
@@ -2843,6 +2867,18 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
       const testo = campo("testo");
       if (idRichiesta === undefined || testo === undefined || typeof campi.riuscita !== "boolean") return undefined;
       return { tipo: "processo-terminato", idRichiesta, riuscita: campi.riuscita, testo: testo.slice(0, 2000) };
+    }
+    case "modello-preso": {
+      const idPresa = campo("idPresa");
+      if (idPresa === undefined) return undefined;
+      const motivo = campo("motivo");
+      const porta = campi.porta;
+      return {
+        tipo: "modello-preso",
+        idPresa,
+        ...(typeof porta === "number" && Number.isInteger(porta) && porta > 0 && porta < 65536 ? { porta } : {}),
+        ...(motivo === undefined ? {} : { motivo: motivo.slice(0, 2000) }),
+      };
     }
     case "avvio-con-windows-esito": {
       const idRichiesta = campo("idRichiesta");

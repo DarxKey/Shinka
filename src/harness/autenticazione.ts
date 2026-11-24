@@ -63,6 +63,8 @@ export interface ServerDelModelloLocale {
   modello: string;
   contesto: number;
   uscita: number;
+  /** La chiave che il server vuole, se è in rete (ADR 0053). */
+  chiave?: string;
 }
 
 /**
@@ -76,7 +78,8 @@ export function ambientePerModelloLocale(server: ServerDelModelloLocale, ambient
   return {
     ...risultato,
     ANTHROPIC_BASE_URL: server.indirizzo,
-    ANTHROPIC_AUTH_TOKEN: "modello-locale",
+    // Un server in rete vuole la sua chiave; uno solo su questa macchina non controlla il gettone.
+    ANTHROPIC_AUTH_TOKEN: server.chiave ?? "modello-locale",
     ANTHROPIC_MODEL: server.modello,
     ANTHROPIC_DEFAULT_OPUS_MODEL: server.modello,
     ANTHROPIC_DEFAULT_SONNET_MODEL: server.modello,

@@ -86,6 +86,7 @@ import { EstensioniNegliAmbienti } from "./estensioni-negli-ambienti.ts";
 import { apriGateway, GatewayAssente } from "./gateway.ts";
 import { Home } from "./home.ts";
 import type { Canale } from "./canale.ts";
+import { ModelliInRete, unisciModelli } from "./modelli-in-rete.ts";
 import { eIncarico, progettoDellaConversazione } from "../protocollo/incarichi.ts";
 import { CustodiaImmagini } from "./immagini.ts";
 import {
@@ -343,13 +344,17 @@ const estensioniNegliAmbienti = new EstensioniNegliAmbienti({
     }),
 });
 
+// I modelli locali in rete degli altri ambienti (ADR 0053): li usano anche la Home e i progetti di qui.
+const modelliInRete = new ModelliInRete({ modelli: () => estensioni?.modelliInRete() ?? [], ambienti });
+const modelliDelCentro = unisciModelli(estensioniDelCentro.modelliLocali, modelliInRete);
+
 const locale = new EsecutoreLocale(radiceProgetti, undefined, {
   strumento: strumentoDiProgetto,
   cartellaSkill: skill.cartella,
   // Le chat parallele del progetto Shinka sono del progetto Shinka; gli incarichi no.
   diShinka: (idConversazione) => !eIncarico(idConversazione) && progetti.trova(progettoDellaConversazione(idConversazione))?.diShinka === true,
   estensioni: estensioniDelCentro,
-  modelliLocali: estensioniDelCentro.modelliLocali,
+  modelliLocali: modelliDelCentro,
   cartellaModifiche: join(dati, "modifiche"),
 });
 const remoti = new EsecutoriRemoti(ambienti, undefined, undefined, strumentoDiProgetto);
@@ -513,6 +518,8 @@ home = await Home.apri({
       strumentiNostri: () => ({ [GRUPPO_STRUMENTI_HOME]: creaStrumentiHome(strumentiDellaChat(apertura.numero)) }),
       cartellaSkill: skill.cartella,
       estensioni: estensioniDelCentro,
+      // La Home può lavorare con un modello locale di qui o in rete in un altro ambiente.
+      modelliLocali: modelliDelCentro,
       ...(apertura.idSessione === undefined ? {} : { idSessione: apertura.idSessione }),
       alEvento: apertura.alEvento,
       alIdSessione: apertura.alIdSessione,

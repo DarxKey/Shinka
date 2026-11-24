@@ -11,7 +11,7 @@
  * estensioni di Shinka, ma non si tocca: non viene copiato qui, né spento, né tolto.
  */
 
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -106,6 +106,17 @@ export type EsitoAccensione =
 interface Salvato {
   estensioni: Estensione[];
   dellAmbiente: Record<string, EstensioniDellAmbiente>;
+  /** Le chiavi dei modelli locali in rete, per "id dell'estensione:id dell'ambiente": non escono nello stato. */
+  chiaviDiRete?: Record<string, string>;
+}
+
+/** Un modello locale raggiungibile in rete, come lo usa il centro (ADR 0053). */
+export interface ModelloInRete {
+  nome: string;
+  idAmbiente: string;
+  indirizzo: string;
+  chiave: string;
+  definizione: Extract<DefinizioneEstensione, { tipo: "modello-locale" }>;
 }
 
 /** Parole che in un nome fanno pensare a un segreto: quello va tra le chiavi, e il valore nel vault. */
@@ -119,6 +130,7 @@ export class Estensioni {
   readonly #o: OpzioniEstensioni;
   #estensioni: Estensione[];
   readonly #dellAmbiente: Record<string, EstensioniDellAmbiente>;
+  readonly #chiaviDiRete: Record<string, string>;
   readonly #proposte = new Map<string, PropostaInAttesa>();
   readonly #ascoltatori = new Set<() => void>();
   readonly #pagine = new Set<(stato: StatoEstensioni) => void>();
@@ -129,13 +141,14 @@ export class Estensioni {
     this.#o = opzioni;
     this.#estensioni = salvato.estensioni;
     this.#dellAmbiente = salvato.dellAmbiente;
+    this.#chiaviDiRete = salvato.chiaviDiRete ?? {};
   }
 
   static async apri(opzioni: OpzioniEstensioni): Promise<Estensioni> {
     let salvato: Salvato = { estensioni: [], dellAmbiente: {} };
     if (existsSync(opzioni.file)) {
       const letto = JSON.parse(await readFile(opzioni.file, "utf8")) as Partial<Salvato>;
-      salvato = { estensioni: letto.estensioni ?? [], dellAmbiente: letto.dellAmbiente ?? {} };
+      salvato = { estensioni: letto.estensioni ?? [], dellAmbiente: letto.dellAmbiente ?? {}, ...(letto.chiaviDiRete === undefined ? {} : { chiaviDiRete: letto.chiaviDiRete }) };
     }
     return new Estensioni(opzioni, salvato);
   }
@@ -187,7 +200,63 @@ export class Estensioni {
   accese(idAmbiente: string): EstensioneDistribuita[] {
     return this.#estensioni
       .filter((una) => una.ambienti.some((dove) => dove.idAmbiente === idAmbiente && dove.accesa))
-      .map(distribuita);
+      .map((una) => {
+        const chiave = this.#chiaveDiRete(una, idAmbiente);
+        return { ...distribuita(una), ...(chiave === undefined ? {} : { inRete: { chiave } }) };
+      });
+  }
+
+  /** La chiave di un modello locale in rete in un ambiente, se lì è acceso e in rete. */
+  #chiaveDiRete(estensione: Estensione, idAmbiente: string): string | undefined {
+    if (estensione.definizione.tipo !== "modello-locale") return undefined;
+    const dove = estensione.ambienti.find((uno) => uno.idAmbiente === idAmbiente);
+    if (dove?.inRete === undefined) return undefined;
+    return this.#chiaviDiRete[`${estensione.id}:${idAmbiente}`];
+  }
+
+  /** I modelli locali accesi e in rete, in ogni ambiente: il centro li offre anche alle conversazioni degli altri. */
+  modelliInRete(): ModelloInRete[] {
+    return this.#estensioni.flatMap((una) => {
+      const { definizione } = una;
+      if (definizione.tipo !== "modello-locale") return [];
+      return una.ambienti.flatMap((dove) => {
+        const chiave = this.#chiaveDiRete(una, dove.idAmbiente);
+        if (!dove.accesa || dove.inRete === undefined || chiave === undefined) return [];
+        return [{ nome: una.nome, idAmbiente: dove.idAmbiente, indirizzo: dove.inRete.indirizzo, chiave, definizione }];
+      });
+    });
+  }
+
+  /**
+   * Il proprietario mette in rete un modello locale acceso in un ambiente, all'indirizzo che il
+   * centro usa per raggiungerlo, oppure lo toglie dalla rete. La chiave nasce la prima volta e
+   * cambia ogni volta che lo si rimette in rete. Il motivo, se non si può.
+   */
+  async impostaInRete(id: string, idAmbiente: string, indirizzo: string | undefined): Promise<string | undefined> {
+    const estensione = this.#estensioni.find((una) => una.id === id);
+    if (estensione === undefined) return "Estensione non trovata.";
+    if (estensione.definizione.tipo !== "modello-locale") return "Solo un modello locale si mette in rete.";
+    const dove = estensione.ambienti.find((uno) => uno.idAmbiente === idAmbiente);
+    if (dove === undefined || !dove.accesa) return "Il modello non è acceso in questo ambiente.";
+    const pulito = indirizzo?.trim();
+    if (pulito !== undefined && !/^[A-Za-z0-9.-]{1,253}$|^\[[0-9A-Fa-f:.]+\]$/.test(pulito)) return "L'indirizzo deve essere un nome o un indirizzo IP, senza porta.";
+    const chiave = `${id}:${idAmbiente}`;
+    if (pulito === undefined) delete this.#chiaviDiRete[chiave];
+    else if (dove.inRete === undefined || this.#chiaviDiRete[chiave] === undefined) this.#chiaviDiRete[chiave] = randomBytes(24).toString("base64url");
+    this.#estensioni = this.#estensioni.map((una) =>
+      una.id !== id
+        ? una
+        : {
+            ...una,
+            ambienti: una.ambienti.map((uno) => {
+              if (uno.idAmbiente !== idAmbiente) return uno;
+              const { inRete: _prima, ...resto } = uno;
+              return pulito === undefined ? resto : { ...resto, inRete: { indirizzo: pulito } };
+            }),
+          },
+    );
+    await this.#cambiato();
+    return undefined;
   }
 
   /**
@@ -530,7 +599,7 @@ export class Estensioni {
     const scrittura = this.#scritture.then(async () => {
       await mkdir(dirname(this.#o.file), { recursive: true });
       const provvisorio = `${this.#o.file}.tmp`;
-      const salvato: Salvato = { estensioni: this.#estensioni, dellAmbiente: this.#dellAmbiente };
+      const salvato: Salvato = { estensioni: this.#estensioni, dellAmbiente: this.#dellAmbiente, chiaviDiRete: this.#chiaviDiRete };
       await writeFile(provvisorio, JSON.stringify(salvato, null, 2), { mode: 0o600 });
       await rename(provvisorio, this.#o.file);
     });
