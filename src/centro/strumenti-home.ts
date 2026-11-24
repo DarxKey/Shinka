@@ -4,6 +4,8 @@
  * cambiare argomento e ritrovare ciò che è stato fatto in quelli archiviati.
  */
 
+import { riferimentoEstensioniInterfaccia } from "./riferimento-estensioni.ts";
+import { AMBITI, CLIENT_DELLE_ESTENSIONI, PARTI, POSTI } from "../protocollo/interfaccia.ts";
 import { leggiRichiestaInterfaccia } from "../protocollo/interfaccia.ts";
 import type { EstensioniInterfaccia } from "./interfaccia.ts";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
@@ -363,6 +365,7 @@ export function azioniDellaHome(opzioni: OpzioniStrumentiHome) {
       return risposta(
         `Proposta mostrata al proprietario: l'estensione dell'interfaccia "${letta.nome}"` +
           ` (${[letta.tema === undefined ? "" : "un tema", letta.pagine.length === 0 ? "" : `${letta.pagine.length === 1 ? "una pagina" : `${letta.pagine.length} pagine`}`, letta.pulsanti.length === 0 ? "" : `${letta.pulsanti.length === 1 ? "un pulsante" : `${letta.pulsanti.length} pulsanti`}`].filter((parte) => parte !== "").join(", ")}).` +
+          (letta.api.length === 0 ? "" : ` La scheda gli mostra le API che le pagine useranno: ${letta.api.join(", ")}.`) +
           " Dalla scheda può guardare le pagine in anteprima. Non è entrato nulla: entra solo se lui conferma. Rispondi con una frase sola e aspetta la sua decisione.",
       );
     },
@@ -377,7 +380,12 @@ export function azioniDellaHome(opzioni: OpzioniStrumentiHome) {
             (una) =>
               `- ${una.nome} (${una.accesa ? "accesa" : "spenta"}): ${una.descrizione}` +
               (una.tema === undefined ? "" : `\n  Tema: ${una.tema.split("\n").length} righe.`) +
-              una.pagine.map((pagina) => `\n  Pagina «${pagina.titolo}» (id ${pagina.id}, ${pagina.dove === "menu" ? "nel menu delle pagine" : "nel pannello dei progetti"}).`).join("") +
+              una.pagine
+                .map((pagina) => `\n  Pagina «${pagina.titolo}» (id ${pagina.id}; posti: ${pagina.posti.map((voce) => `${voce.posto}${voce.ambito === "ovunque" ? "" : `/${voce.ambito}`}${voce.client === "tutti" ? "" : `/${voce.client}`}`).join(", ") || "nessuno"}).`)
+                .join("") +
+              (una.api.length === 0 ? "" : `\n  API: ${una.api.join(", ")}.`) +
+              una.comandi.map((comando) => `\n  Comando «${comando.etichetta}»${comando.tasti === undefined ? "" : ` (${comando.tasti})`}: ${JSON.stringify(comando.azione)}`).join("") +
+              una.parti.map((parte) => `\n  Parte ${parte.parte}: ${parte.pagina === undefined ? "nascosta" : `sostituita dalla pagina ${parte.pagina}`}.`).join("") +
               una.pulsanti.map((pulsante) => `\n  Pulsante «${pulsante.etichetta}» (${pulsante.dove}): ${pulsante.testo}`).join(""),
           )
           .join("\n"),
@@ -1099,21 +1107,53 @@ function definizioniHome(opzioni: OpzioniStrumentiHome) {
         : [
             tool(
               "proponi_estensione_interfaccia",
-              "Propone al proprietario un'estensione dell'interfaccia di Shinka, scritta da te per intero: un tema (CSS che si aggiunge a quello di Shinka), delle pagine (documenti HTML con il loro JavaScript, nel menu delle pagine o come schede del pannello dei progetti) e dei pulsanti sopra il campo di scrittura che mandano un messaggio già scritto. Non cambia nulla da solo: mostra una scheda, con l'anteprima delle pagine, ed entra solo se il proprietario conferma. Una proposta con il nome di un'estensione che c'è già la sostituisce: riscrivila intera. Dopo averlo usato, rispondi con una frase sola.",
+              "Propone al proprietario un'estensione dell'interfaccia di Shinka, scritta da te per intero (ADR 0057): un tema (CSS in più), delle pagine HTML con il loro JavaScript messe in uno o più posti dell'interfaccia (menu, pannello dei progetti, barre destra e sinistra, testata, barra di stato, sopra o sotto il campo di scrittura, pannello flottante, pagine Ambiente e Sicurezza), le API di Shinka che le pagine usano (che la scheda mostra), comandi per la palette con scorciatoie, parti dell'interfaccia da nascondere o sostituire, e pulsanti sopra il campo di scrittura. Le pagine usano il ponte `window.shinka` (stato, API, flussi, messaggi, etichette, segnali): prima di scriverne una leggi il riferimento con riferimento_estensioni_interfaccia. Non cambia nulla da solo: mostra una scheda, ed entra solo se il proprietario conferma. Una proposta con il nome di un'estensione che c'è già la sostituisce: riscrivila intera. Dopo averlo usato, rispondi con una frase sola.",
               {
                 nome: z.string().min(1).max(40).describe("Il nome: minuscole, cifre e trattini."),
                 descrizione: z.string().min(1).max(600).describe("Che cosa cambia o aggiunge, in una o due frasi per il proprietario."),
-                tema: z.string().max(60_000).optional().describe("CSS che si aggiunge a quello di Shinka. Niente @import né url() verso altri siti: l'interfaccia li blocca."),
+                tema: z.string().max(60_000).optional().describe("CSS che si aggiunge a quello di Shinka. Niente @import né url() verso altri siti: l'interfaccia li blocca. Le parti principali hanno data-parte."),
                 pagine: z
                   .array(
                     z.object({
                       id: z.string().min(1).max(32).describe("Breve: minuscole, cifre e trattini."),
                       titolo: z.string().min(1).max(60),
-                      dove: z.enum(["menu", "pannello"]).optional().describe("Nel menu delle pagine (predefinito) o come scheda del pannello dei progetti."),
-                      html: z.string().min(1).max(300_000).describe("Il documento intero, con CSS e JavaScript dentro: niente risorse da altri siti né richieste in rete."),
+                      posti: z
+                        .array(
+                          z.object({
+                            posto: z.enum(POSTI).describe("Dove compare."),
+                            ambito: z.enum(AMBITI).optional().describe("Nei posti della chat: solo nella Home, solo nei progetti, o ovunque (predefinito)."),
+                            client: z.enum(CLIENT_DELLE_ESTENSIONI).optional().describe("Nel sito, in Shinka Desktop, o in tutti e due (predefinito)."),
+                          }),
+                        )
+                        .max(POSTI.length)
+                        .optional()
+                        .describe("I posti della pagina. Senza posti e senza dove, va nel menu. Una lista vuota: solo da un comando o al posto di una parte."),
+                      dove: z.enum(["menu", "pannello"]).optional().describe("La forma di prima: menu o pannello. Meglio i posti."),
+                      html: z.string().min(1).max(300_000).describe("Il documento intero, con CSS e JavaScript dentro: niente risorse da altri siti né richieste in rete; i dati di Shinka con window.shinka."),
                     }),
                   )
-                  .max(6)
+                  .max(12)
+                  .optional(),
+                api: z
+                  .array(z.string().max(200))
+                  .max(40)
+                  .optional()
+                  .describe('Le API di Shinka che le pagine chiamano con window.shinka: voci come "GET /api/ambienti/*/risorse" (* un pezzo, ** il resto), oppure "tutte". Solo quelle che servono: il proprietario le vede nella scheda.'),
+                comandi: z
+                  .array(
+                    z.object({
+                      etichetta: z.string().min(1).max(60),
+                      tasti: z.string().max(30).optional().describe('Una scorciatoia come "Ctrl+Shift+R" (Ctrl o Alt, Shift a piacere, poi lettera, cifra o F1-F12).'),
+                      azione: z
+                        .object({ tipo: z.enum(["pagina", "messaggio", "segnale"]), pagina: z.string().optional(), testo: z.string().max(4000).optional(), nome: z.string().max(40).optional() })
+                        .describe('{ tipo: "pagina", pagina: <id> } apre una sua pagina; { tipo: "messaggio", testo } lo manda alla conversazione aperta; { tipo: "segnale", nome } lo passa alle sue pagine accese (shinka.alSegnale).'),
+                    }),
+                  )
+                  .max(12)
+                  .optional(),
+                parti: z
+                  .array(z.object({ parte: z.enum(PARTI), pagina: z.string().optional().describe("La sua pagina che prende il posto della parte; senza, la parte si nasconde.") }))
+                  .max(PARTI.length)
                   .optional(),
                 pulsanti: z
                   .array(
@@ -1129,8 +1169,14 @@ function definizioniHome(opzioni: OpzioniStrumentiHome) {
               async (argomenti) => azioni.proponiInterfaccia(argomenti),
             ),
             tool(
+              "riferimento_estensioni_interfaccia",
+              "Il riferimento per scrivere un'estensione dell'interfaccia (ADR 0057): i posti, gli ambiti, il ponte window.shinka con stato, API, flussi, messaggi, etichette e segnali, le parti sostituibili, i comandi, le API utili e le rotte chiuse, con un esempio completo. Leggilo prima di scrivere o cambiare un'estensione con pagine.",
+              {},
+              async () => risposta(riferimentoEstensioniInterfaccia()),
+            ),
+            tool(
               "elenca_estensioni_interfaccia",
-              "Elenca le estensioni dell'interfaccia di Shinka, accese e spente, con il tema, le pagine e i pulsanti di ciascuna. Usalo prima di proporne una, per cambiare quella che c'è invece di farne un doppione.",
+              "Elenca le estensioni dell'interfaccia di Shinka, accese e spente, con il tema, le pagine e i loro posti, le API, i comandi, le parti e i pulsanti di ciascuna. Usalo prima di proporne una, per cambiare quella che c'è invece di farne un doppione.",
               {},
               async () => azioni.elencaInterfaccia(),
             ),

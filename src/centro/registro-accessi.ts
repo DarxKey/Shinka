@@ -14,7 +14,7 @@ import type { ChiEntra } from "./accesso.ts";
 export { DA_GUARDARE, TIPI_ACCESSO, type TipoAccesso, type VoceAccesso } from "../protocollo/sicurezza.ts";
 
 /** Ciò che si ripete a raffica: se ne scrive una riga, con quante volte è successo. */
-const RIPETUTI: readonly TipoAccesso[] = ["senza-sessione", "dispositivo-rifiutato", "evento-accolto", "origine-rifiutata", "pagina-inesistente", "evento-rifiutato", "invito-rifiutato", "nodo-presentato", "nodo-in-chiaro", "entrata-frenata"];
+const RIPETUTI: readonly TipoAccesso[] = ["senza-sessione", "dispositivo-rifiutato", "evento-accolto", "origine-rifiutata", "pagina-inesistente", "evento-rifiutato", "invito-rifiutato", "nodo-presentato", "nodo-in-chiaro", "entrata-frenata", "richiesta-estensione", "richiesta-estensione-rifiutata"];
 /** Per quanto le ripetizioni di una stessa cosa, dallo stesso indirizzo, stanno in una riga sola. */
 const FINESTRA_MS = 10 * 60 * 1000;
 const VOCI_IN_MEMORIA = 2000;

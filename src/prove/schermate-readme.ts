@@ -51,7 +51,7 @@ if (estensioni !== undefined) {
   }
 }
 const tema = banco.interfaccia.proponi(
-  { nome: "neon", descrizione: "A neon accent and a page with the projects at a glance.", tema: ":root { --accento: #c026d3; }", pagine: [{ id: "glance", titolo: "At a glance", dove: "menu", html: "<p>…</p>" }], pulsanti: [{ etichetta: "Summarize", testo: "Summarize this conversation.", dove: "ovunque" }] },
+  { nome: "neon", descrizione: "A neon accent and a page with the projects at a glance.", tema: ":root { --accento: #c026d3; }", pagine: [{ id: "glance", titolo: "At a glance", posti: [{ posto: "menu", ambito: "ovunque", client: "tutti" }], html: "<p>…</p>" }], pulsanti: [{ etichetta: "Summarize", testo: "Summarize this conversation.", dove: "ovunque" }], api: [], comandi: [], parti: [] },
   banco.canale,
 );
 await banco.interfaccia.conferma(tema);

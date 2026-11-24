@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile, statfs } from "node:fs/promises";
 import { cpus, freemem, hostname, loadavg, release, totalmem, uptime, version } from "node:os";
-import { contenitoriDa, PROCESSI_MOSTRATI, type CampioneRisorse, type DockerLetto, type ProcessoAttivo, type ProcessoDiShinka, type RisorseDellAmbiente } from "../protocollo/risorse.ts";
+import { contenitoriDa, PROCESSI_MOSTRATI, gpuDa, type CampioneRisorse, type DockerLetto, type ProcessoAttivo, type ProcessoDiShinka, type RisorseDellAmbiente, type Gpu } from "../protocollo/risorse.ts";
 
 /** Esegue un programma e ne dà l'uscita; nelle prove, uno finto. */
 export type EseguiProgramma = (programma: string, argomenti: string[], secondi: number) => Promise<{ codice: number | null; uscita: string; errori: string; assente?: true }>;
@@ -78,6 +78,8 @@ function numeroDa(file: string): number | undefined {
 export class CampionatoreRisorse {
   readonly #o: OpzioniRisorse;
   readonly #esegui: EseguiProgramma;
+  /** Vero quando nvidia-smi non c'è: su questa macchina la scheda video non si legge. */
+  #senzaGpu = false;
   readonly #piattaforma: NodeJS.Platform;
   readonly #proc: string;
   #cpuPrima: { tempi: TempiCpu; quando: number } | undefined;
@@ -113,11 +115,12 @@ export class CampionatoreRisorse {
     const cpu = tempi.totale > prima.totale ? ((tempi.attivo - prima.attivo) / (tempi.totale - prima.totale)) * 100 : 0;
     this.#cpuPrima = { tempi, quando: this.#adesso() };
 
-    const [processi, docker, disco, diShinka] = await Promise.all([
+    const [processi, docker, disco, diShinka, gpu] = await Promise.all([
       this.#leggiProcessi(),
       this.#leggiDocker(),
       this.#disco(),
       this.#o.processiDiShinka?.leggi().catch(() => undefined),
+      this.#leggiGpu(),
     ]);
     const contenitore = linux ? this.#contenitore() : undefined;
     const campione: CampioneRisorse = {
@@ -127,6 +130,7 @@ export class CampionatoreRisorse {
       ...(this.#piattaforma === "win32" ? {} : { carico: Math.round((loadavg()[0] ?? 0) * 100) / 100 }),
       ...(disco === undefined ? {} : { disco }),
       ...(contenitore === undefined ? {} : { contenitore }),
+      ...(gpu.length === 0 ? {} : { gpu }),
     };
     const modello = cpus()[0]?.model.replace(/\s+/g, " ").trim();
     return {
@@ -145,6 +149,21 @@ export class CampionatoreRisorse {
       docker,
       ...(diShinka === undefined ? {} : { processiDiShinka: diShinka }),
     };
+  }
+
+  /** Le schede video NVIDIA, con nvidia-smi. Dove non c'è, non si riprova a ogni campione. */
+  async #leggiGpu(): Promise<Gpu[]> {
+    if (this.#senzaGpu) return [];
+    try {
+      const letto = await this.#esegui("nvidia-smi", ["--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"], 5);
+      if (letto.assente === true) {
+        this.#senzaGpu = true;
+        return [];
+      }
+      return letto.codice === 0 ? gpuDa(letto.uscita) : [];
+    } catch {
+      return [];
+    }
   }
 
   #memoria(): { usata: number; totale: number } {

@@ -2,7 +2,7 @@
 
 ## Specifica funzionale e architetturale
 
-**Versione:** 2.25 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
+**Versione:** 2.26 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
 
 Sostituisce la specifica "Atlas Agent 1.0", conservata in [archivio/atlas-agent-v1.md](archivio/atlas-agent-v1.md). I termini usati qui sono definiti in [GLOSSARY.md](GLOSSARY.md). Le decisioni di fondo sono motivate in [docs/adr/](docs/adr/). Lo stato dei lavori è in [STATO.md](STATO.md).
 
@@ -53,6 +53,8 @@ La versione 2.23 lascia usare un modello locale anche fuori dal suo ambiente: il
 La versione 2.24 aggiunge le estensioni dell'interfaccia: temi, pagine e pulsanti che Claude scrive e il proprietario conferma, al posto di nuove funzioni nel codice di Shinka. Le pagine girano in un recinto e parlano con Shinka solo per leggerne lo stato e mandare messaggi. Cambiano le sezioni 4.11 e 6; si aggiunge la prova A90. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0054](docs/adr/0054-estensioni-dell-interfaccia.md).
 
 La versione 2.25 lascia lavorare sui progetti di un PC anche quando il centro non si raggiunge: Shinka Desktop, su quel PC, li riprende dal suo nodo, e al ritorno il nodo consegna al centro ciò che è stato fatto. Cambiano le sezioni 4.3, 4.4 e 4.5; si aggiunge la prova A91. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0056](docs/adr/0056-il-lavoro-offline-sui-progetti-del-pc.md).
+
+La versione 2.26 rende l'interfaccia riscrivibile dalle estensioni: le loro pagine stanno in molti posti dell'interfaccia, possono nascondere o sostituire alcune parti, avere comandi e scorciatoie, e chiamano le API di Shinka con la sessione del proprietario, solo quelle che l'estensione dichiara e che la scheda mostra. Restano chiuse l'accesso a Shinka e le decisioni che spettano al proprietario. Cambiano le sezioni 4.11 e 6; si aggiunge la prova A92. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0057](docs/adr/0057-interfaccia-riscrivibile-dalle-estensioni.md).
 
 ## 1. Cos'è Shinka
 
@@ -245,7 +247,7 @@ Un'estensione è codice di terzi che dà strumenti in più alle conversazioni: u
 - Le versioni restano ferme: un plugin al commit mostrato nella scheda, un server alla versione scritta nel comando. Aggiornarle è una proposta nuova.
 - Ciò che il proprietario ha già installato per conto suo in un ambiente continua a valere nei progetti di quell'ambiente. Shinka lo mostra, e non lo copia, non lo spegne e non lo toglie.
 - Un'estensione gira nell'ambiente con gli accessi dei progetti e non passa dal gateway: recinto, divieti fissi e registro non vedono ciò che fa.
-- **Estensioni dell'interfaccia.** Un tema, delle pagine e dei pulsanti che cambiano l'aspetto di Shinka o le aggiungono funzioni, scritti da Claude per intero. Entrano solo dopo che il proprietario ha confermato una scheda che dice che cosa aggiungono, con l'anteprima delle pagine e il testo dei pulsanti; li spegne e li toglie dalla pagina Estensioni. Una pagina gira in un recinto, senza la sessione del proprietario, le API di Shinka o la rete: legge lo stato (progetti, ambienti, la Home) e manda messaggi alle conversazioni, che arrivano con il suo nome e seguono i permessi di sempre. Un tema non carica nulla da altri siti, e l'interfaccia si apre anche senza temi né pulsanti.
+- **Estensioni dell'interfaccia.** Un tema, delle pagine, dei comandi e dei pulsanti che cambiano l'aspetto di Shinka o le aggiungono funzioni, scritti da Claude per intero. Le pagine stanno nei posti che l'estensione sceglie (menu, pannello dei progetti, barre, testata, barra di stato, intorno al campo di scrittura, pannello flottante, pagine Ambiente e Sicurezza), e possono nascondere o sostituire alcune parti dell'interfaccia. Entrano solo dopo che il proprietario ha confermato una scheda che dice che cosa aggiungono e dove, quali API useranno, con l'anteprima delle pagine; le spegne e le toglie dalla pagina Estensioni, e l'interfaccia si apre anche senza. Una pagina gira in un riquadro suo, senza rete né cookie: legge lo stato, manda messaggi alle conversazioni, che arrivano con il suo nome e seguono i permessi di sempre, e chiama le API di Shinka attraverso l'interfaccia, con la sessione del proprietario, solo quelle che l'estensione ha dichiarato; ogni sua richiesta entra nel registro con il suo nome. Anche dichiarando tutte le API, restano chiuse alle estensioni le rotte dell'accesso a Shinka (password, sessioni, dispositivi, copie dei dati) e le decisioni che spettano al proprietario: i permessi, le approvazioni, le proposte, le installazioni. L'anteprima di un progetto non arriva a questo ponte. Un tema non carica nulla da altri siti.
 
 ### 4.12 Motore e installazioni
 
@@ -338,7 +340,7 @@ Confini di fiducia:
 - **Copia di sicurezza**, nelle Impostazioni: preparare e scaricare una copia dei dati, con una password scelta al momento; caricarne una, aprirla con la sua password e vedere che cosa contiene; da lì portare qui la memoria e le skill scelte, oppure ripristinare tutto, confermando con la password di Shinka. Dopo un ripristino, com'è andata e il pulsante per togliere i dati di prima. Nella pagina del vault, la copia del vault da scaricare e da caricare.
 - **Un ambiente**: i grafici di processore e memoria, il disco dei progetti, i processi e i container; si apre dall'elenco degli ambienti.
 - **Ambienti**: l'elenco degli ambienti con il loro stato, la versione del loro nodo e se il suo collegamento è cifrato; le richieste di collegamento da approvare; per un nodo indietro che sa aggiornarsi, il pulsante Aggiorna, con una conferma.
-- **Estensioni**: una pagina con l'elenco di Shinka, dove ogni estensione si accende, si spegne e si toglie ambiente per ambiente, e con ciò che ogni ambiente ha già di suo. Nella chat, la scheda di un'estensione da installare, con Conferma e Annulla. Le estensioni dell'interfaccia hanno la loro sezione, e la loro scheda con le pagine in anteprima.
+- **Estensioni**: una pagina con l'elenco di Shinka, dove ogni estensione si accende, si spegne e si toglie ambiente per ambiente, e con ciò che ogni ambiente ha già di suo. Nella chat, la scheda di un'estensione da installare, con Conferma e Annulla. Le estensioni dell'interfaccia hanno la loro sezione, e la loro scheda con le pagine in anteprima, i posti e le API che useranno.
 - **Cambio progetto**: dalla barra laterale, da una ricerca rapida, oppure chiedendolo alla Home.
 - **Pannello laterale**: terminale e anteprima, apribili accanto alla chat.
 - **Telefono**: la stessa interfaccia deve essere usabile su uno schermo piccolo.
@@ -474,6 +476,7 @@ Ogni incremento deve essere usabile e dimostrabile prima di passare al successiv
 | A89 | Il proprietario mette in rete il modello locale del PC e lo sceglie per la Home | La Home risponde con quel modello; il server sul PC si accende e poi si spegne da solo; senza la chiave il server non risponde; tolto dalla rete, la Home non lo offre più |
 | A90 | La Home propone un tema con una pagina e un pulsante, e il proprietario la conferma | Il tema cambia l'aspetto; la pagina compare nel menu, legge lo stato e manda un messaggio con il suo nome, ma non raggiunge le API né la rete; il pulsante manda il suo testo; con «?senza-estensioni» non ci sono |
 | A91 | Con il centro irraggiungibile, il proprietario da Shinka Desktop scrive a un progetto del suo PC e ne crea uno nuovo; poi il centro torna | Offline i due progetti lavorano e chiedono i permessi lì; tornato il centro, le loro storie e il progetto nuovo ci sono, una volta sola, e i progetti riprendono dal centro dalla stessa sessione |
+| A92 | La Home propone un'estensione con una pagina nella barra destra, nella testata e nel pannello flottante, che legge le risorse di un ambiente; il proprietario la conferma | La scheda mostra posti e API; la pagina compare nei tre posti e legge le risorse; un'API non dichiarata le è negata, come l'anteprima di un progetto non arriva al ponte; le sue richieste sono nel registro con il suo nome; spenta, sparisce subito; con «?senza-estensioni» non c'è |
 
 ## 10. Regole per chi implementa
 

@@ -222,6 +222,14 @@ _Avoid_: fork, biforcazione, branch
 Un'altra conversazione aperta in una scheda accanto alla principale, nella Home o in un progetto, che lavora anche mentre la principale lavora. Nella Home è un argomento aperto, archiviato quando la scheda si chiude; in un progetto lavora nella sua cartella, e chiusa si cancella.
 _Avoid_: side chat, btw, domanda a parte, thread
 
+**Posto di un'estensione**:
+Un punto dell'interfaccia in cui una pagina di un'estensione dell'interfaccia può stare: il menu delle pagine, il pannello dei progetti, la barra destra o sinistra, la testata, la barra di stato, sopra o sotto il campo di scrittura, il pannello flottante, le pagine Ambiente e Sicurezza.
+_Avoid_: slot, widget, zona
+
+**Ponte delle pagine**:
+Ciò con cui una pagina di un'estensione dell'interfaccia parla con Shinka dal suo riquadro: lo stato, i messaggi alle conversazioni, e le API di Shinka che l'interfaccia chiama per lei, solo quelle dichiarate.
+_Avoid_: SDK, bridge, proxy
+
 **Lavoro offline**:
 Il lavoro su un progetto di un ambiente fatto da quella macchina, con Shinka Desktop, mentre il centro non si raggiunge: lo porta avanti il nodo dell'ambiente, che ne tiene la storia e la consegna al centro quando torna.
 _Avoid_: modalità aereo, sincronizzazione, fork

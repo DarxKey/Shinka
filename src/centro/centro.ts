@@ -4,7 +4,8 @@
  */
 
 import { leggiConsegnaOffline } from "../protocollo/offline.ts";
-import { POLITICA_PAGINA_ESTENSIONE } from "../protocollo/interfaccia.ts";
+import { POLITICA_PAGINA_ESTENSIONE, rottaEsclusa } from "../protocollo/interfaccia.ts";
+import { conLaLibreria } from "../protocollo/ponte-delle-pagine.ts";
 import type { EstensioniInterfaccia } from "./interfaccia.ts";
 import type { StatoEstensioniDelProgetto } from "../protocollo/progetti.ts";
 import { tipoInParole } from "../protocollo/estensioni.ts";
@@ -423,6 +424,17 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     }
     // Di ogni sessione si ricorda l'ultima volta che è stata usata, e da dove.
     if (riservata && gettone === undefined) accesso.segna(richiesta.cookies[COOKIE_SESSIONE], chiDi(richiesta));
+    // Una richiesta che l'interfaccia fa per un'estensione (ADR 0057): entra nel registro con il suo
+    // nome, e le rotte che a un'estensione restano chiuse si rifiutano anche qui.
+    const estensione = nomeDellEstensione(richiesta.headers["x-shinka-estensione"]);
+    if (riservata && estensione !== undefined) {
+      const percorso = richiesta.url.split("?")[0] ?? richiesta.url;
+      if (rottaEsclusa(richiesta.method, percorso)) {
+        registroAccessi.annota("richiesta-estensione-rifiutata", chiDi(richiesta), { percorso, dettaglio: `«${estensione}» ${richiesta.method} ${percorso}` });
+        return risposta.code(403).send({ errore: "Questa rotta a un'estensione dell'interfaccia resta chiusa." });
+      }
+      registroAccessi.annota("richiesta-estensione", chiDi(richiesta), { percorso, dettaglio: `«${estensione}» ${richiesta.method} ${percorso.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ":id")}` });
+    }
     // Un WebSocket si apre anche da un'altra origine, e il cookie viaggia verso ogni porta di questo
     // host: quello del proprietario si accetta solo dalla nostra interfaccia, non dall'anteprima.
     // Un gettone invece non viaggia da solo, e un browser non lo può aggiungere a un WebSocket: chi
@@ -978,7 +990,8 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       .header("Content-Security-Policy", POLITICA_PAGINA_ESTENSIONE)
       .header("Cache-Control", "no-store")
       .header("X-Content-Type-Options", "nosniff")
-      .send(html);
+      // In cima la libreria del ponte (ADR 0057): la pagina la trova in window.shinka.
+      .send(conLaLibreria(html));
   };
   app.get<{ Params: { id: string; idPagina: string } }>("/api/interfaccia/:id/pagine/:idPagina", async (richiesta, risposta) =>
     mandaPagina(risposta, opzioni.interfaccia?.pagina(richiesta.params.id, richiesta.params.idPagina)),
@@ -2757,6 +2770,19 @@ function apriFlusso(
       richiesta.raw.on("close", azione);
     },
   };
+}
+
+/** Il nome dell'estensione per cui l'interfaccia fa una richiesta, come lo scrive nell'intestazione. */
+function nomeDellEstensione(valore: string | string[] | undefined): string | undefined {
+  const scritto = Array.isArray(valore) ? valore[0] : valore;
+  if (scritto === undefined || scritto === "") return undefined;
+  let nome: string;
+  try {
+    nome = decodeURIComponent(scritto);
+  } catch {
+    nome = scritto;
+  }
+  return nome.replace(/[^\p{L}\p{N} ._-]/gu, "").slice(0, 60) || "senza nome";
 }
 
 /** Legge un messaggio arrivato da un nodo; nulla se non è uno di quelli previsti. */

@@ -51,6 +51,7 @@ test("Docker: assente, non raggiungibile, oppure con i suoi container; si rilegg
   const chiesti: string[] = [];
   let modo: "negato" | "attivo" = "negato";
   const esegui: EseguiProgramma = async (programma, argomenti) => {
+    if (programma === "nvidia-smi") return { codice: null, uscita: "", errori: "", assente: true };
     chiesti.push(`${programma} ${argomenti[0]}`);
     if (modo === "negato") return { codice: 1, uscita: "", errori: "permission denied while trying to connect to the Docker daemon socket\naltro" };
     return argomenti[0] === "ps"
@@ -94,4 +95,26 @@ test("su Windows i processi li dice PowerShell, e il carico è la differenza dei
   const dopo = await campionatore.leggi();
   assert.deepEqual(dopo.processi[0], { pid: 900, nome: "chrome", cpu: 50, memoria: 500_000_000 });
   assert.equal(dopo.quantiProcessi, 2);
+});
+
+test("la scheda video NVIDIA si legge con nvidia-smi; dove non c'è, non si riprova", async () => {
+  const chiesti: string[] = [];
+  let presente = true;
+  const esegui: EseguiProgramma = async (programma) => {
+    if (programma === "docker") return { codice: null, uscita: "", errori: "", assente: true };
+    chiesti.push(programma);
+    if (!presente) return { codice: null, uscita: "", errori: "", assente: true };
+    return { codice: 0, uscita: "NVIDIA GeForce RTX 3090, 37, 18000, 24576, 61\n", errori: "" };
+  };
+  const campionatore = new CampionatoreRisorse({ radiceProgetti: tmpdir(), piattaforma: "linux", proc: procFinto({ 10: 1 }), esegui });
+  const letto = await campionatore.leggi();
+  assert.deepEqual(letto.campione.gpu, [{ nome: "NVIDIA GeForce RTX 3090", uso: 37, memoria: { usata: 18000 * 1024 * 1024, totale: 24576 * 1024 * 1024 }, temperatura: 61 }]);
+  assert.deepEqual(leggiRisorse(JSON.parse(JSON.stringify(letto)))?.campione.gpu, letto.campione.gpu);
+
+  const senza = new CampionatoreRisorse({ radiceProgetti: tmpdir(), piattaforma: "linux", proc: procFinto({ 10: 1 }), esegui });
+  presente = false;
+  chiesti.length = 0;
+  assert.equal((await senza.leggi()).campione.gpu, undefined);
+  await senza.leggi();
+  assert.deepEqual(chiesti, ["nvidia-smi"]);
 });

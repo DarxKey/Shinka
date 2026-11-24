@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { EstensioneInterfaccia, RichiestaInterfaccia, StatoInterfaccia } from "../protocollo/interfaccia.ts";
+import { conICampiNuovi, type EstensioneInterfaccia, type RichiestaInterfaccia, type StatoInterfaccia } from "../protocollo/interfaccia.ts";
 import type { Canale } from "./canale.ts";
 
 /** Un'estensione com'è salvata: con l'HTML di ogni pagina. */
@@ -46,7 +46,8 @@ export class EstensioniInterfaccia {
     let estensioni: Custodita[] = [];
     if (existsSync(opzioni.file)) {
       const letto = JSON.parse(await readFile(opzioni.file, "utf8")) as { estensioni?: Custodita[] };
-      estensioni = Array.isArray(letto.estensioni) ? letto.estensioni : [];
+      // Quelle scritte prima dell'ADR 0057 hanno i posti nel vecchio "dove", e nessuna API.
+      estensioni = Array.isArray(letto.estensioni) ? letto.estensioni.map((una) => conICampiNuovi(una)) : [];
     }
     return new EstensioniInterfaccia(opzioni, estensioni);
   }
@@ -74,12 +75,12 @@ export class EstensioniInterfaccia {
     return this.#proposte.get(idProposta)?.richiesta.pagine.find((pagina) => pagina.id === idPagina)?.html;
   }
 
-  /** La Home propone un'estensione: compare la scheda nella sua conversazione, e nient'altro. */
   /** Dopo un riavvio del centro: tornano le proposte che aspettavano il proprietario. */
   async ripristina(): Promise<void> {
-    for (const { id, dati, canale } of (await this.#o.ricordate?.ripristina<RichiestaInterfaccia>("interfaccia")) ?? []) this.#proposte.set(id, { richiesta: dati, canale });
+    for (const { id, dati, canale } of (await this.#o.ricordate?.ripristina<RichiestaInterfaccia>("interfaccia")) ?? []) this.#proposte.set(id, { richiesta: conICampiNuovi(dati), canale });
   }
 
+  /** La Home propone un'estensione: compare la scheda nella sua conversazione, e nient'altro. */
   proponi(richiesta: RichiestaInterfaccia, canale: Canale): string {
     const idProposta = randomUUID();
     this.#proposte.set(idProposta, { richiesta, canale });
@@ -91,8 +92,11 @@ export class EstensioniInterfaccia {
       descrizione: richiesta.descrizione,
       ...(this.#estensioni.some((una) => una.nome === richiesta.nome) ? { sostituisce: true as const } : {}),
       ...(richiesta.tema === undefined ? {} : { righeTema: richiesta.tema.split("\n").length }),
-      pagine: richiesta.pagine.map(({ id, titolo, dove }) => ({ id, titolo, dove })),
+      pagine: richiesta.pagine.map(({ id, titolo, posti }) => ({ id, titolo, posti })),
       pulsanti: richiesta.pulsanti,
+      api: richiesta.api,
+      comandi: richiesta.comandi,
+      parti: richiesta.parti,
     });
     return idProposta;
   }
@@ -112,8 +116,11 @@ export class EstensioniInterfaccia {
       accesa: true,
       aggiunta: (this.#o.adesso?.() ?? new Date()).toISOString(),
       ...(richiesta.tema === undefined ? {} : { tema: richiesta.tema }),
-      pagine: richiesta.pagine.map(({ id, titolo, dove }) => ({ id, titolo, dove })),
+      pagine: richiesta.pagine.map(({ id, titolo, posti }) => ({ id, titolo, posti })),
       pulsanti: richiesta.pulsanti,
+      api: richiesta.api,
+      comandi: richiesta.comandi,
+      parti: richiesta.parti,
       html: Object.fromEntries(richiesta.pagine.map((pagina) => [pagina.id, pagina.html])),
     };
     this.#estensioni = [...this.#estensioni.filter((una) => una !== prima), nuova];

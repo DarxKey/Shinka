@@ -4,6 +4,8 @@ status: accepted
 
 # Le estensioni dell'interfaccia
 
+> La parte sul recinto delle pagine (niente API di Shinka) è superata dall'[ADR 0057](0057-interfaccia-riscrivibile-dalle-estensioni.md): ora le pagine chiamano le API che l'estensione dichiara, attraverso il ponte. Il resto vale ancora.
+
 Il 24 novembre 2026 il proprietario ha chiesto un tipo nuovo di estensione, che cambia l'aspetto dell'interfaccia o le aggiunge funzioni, invece di metterle nel codice di Shinka. Ha scelto che cosa può fare (pagine e pannelli, temi, pulsanti nella chat), da dove viene (la scrive Claude e lui la conferma) e che cosa vede di Shinka (legge lo stato e manda messaggi alle conversazioni).
 
 ## Decisioni

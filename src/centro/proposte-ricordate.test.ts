@@ -14,7 +14,7 @@ test("dopo un riavvio le proposte in attesa ci sono ancora: si confermano e si a
   const prima = await allestisci(t);
   const daConfermare = prima.proposte.proponi({ nome: "Videogioco", brief: "Un platformer.", idAmbiente: "centro" });
   const daAnnullare = prima.proposte.proponi({ nome: "Sito", brief: "Un sito.", idAmbiente: "centro" });
-  const tema = prima.interfaccia.proponi({ nome: "neon", descrizione: "Un accento viola.", tema: ":root { --accento: #c026d3; }", pagine: [], pulsanti: [] }, prima.casa.canale);
+  const tema = prima.interfaccia.proponi({ nome: "neon", descrizione: "Un accento viola.", tema: ":root { --accento: #c026d3; }", pagine: [], pulsanti: [], api: [], comandi: [], parti: [] }, prima.casa.canale);
   const file = join(prima.cartella, "proposte-in-attesa.json");
   assert.equal((JSON.parse(readFileSync(file, "utf8")) as unknown[]).length, 3);
 
