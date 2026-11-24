@@ -6,6 +6,7 @@
  * scheda: lì è lui a scrivere nome e brief, e la Home ne viene avvisata.
  */
 
+import type { ProposteRicordate } from "./proposte-ricordate.ts";
 import { randomUUID } from "node:crypto";
 import type { OrigineFile } from "../protocollo/azioni.ts";
 import type { FileDaPortare } from "../protocollo/eventi.ts";
@@ -65,6 +66,8 @@ export interface OpzioniProposte {
   ambienti: RegistroAmbienti;
   /** Che cosa un progetto nuovo può avere in ciascun ambiente; senza, i progetti hanno tutte le estensioni accese. */
   estensioniPerProgetto?(): EstensioniDegliAmbienti;
+  /** Dove le proposte in attesa restano scritte, perché un riavvio del centro non le perda. */
+  ricordate?: ProposteRicordate;
 }
 
 export class Proposte {
@@ -136,10 +139,16 @@ export class Proposte {
     return progetto;
   }
 
+  /** Dopo un riavvio del centro: tornano le proposte che aspettavano il proprietario. */
+  async ripristina(): Promise<void> {
+    for (const { id, dati, canale } of (await this.#o.ricordate?.ripristina<Proposta>("progetto")) ?? []) this.#inAttesa.set(id, { ...dati, canale });
+  }
+
   /** La Home propone un progetto: compare la scheda, nella chat indicata o nella principale, e nient'altro. */
   proponi(proposta: Proposta, canale: Canale = this.#o.canaleHome()): string {
     const idProposta = randomUUID();
     this.#inAttesa.set(idProposta, { ...proposta, canale });
+    this.#o.ricordate?.ricorda("progetto", idProposta, proposta, canale);
     canale.pubblica({
       tipo: "proposta-progetto",
       idProposta,
@@ -190,6 +199,7 @@ export class Proposte {
     );
     const filePortati = progetto.filePortati ?? 0;
     this.#inAttesa.delete(idProposta);
+    this.#o.ricordate?.dimentica(idProposta);
     proposta.canale.pubblica({
       tipo: "proposta-decisa",
       idProposta,
@@ -258,6 +268,7 @@ export class Proposte {
     const proposta = this.#inAttesa.get(idProposta);
     if (proposta === undefined) return false;
     this.#inAttesa.delete(idProposta);
+    this.#o.ricordate?.dimentica(idProposta);
     proposta.canale.pubblica({ tipo: "proposta-decisa", idProposta, esito: "annullata" });
     this.#o.annotaHome(
       `[Shinka] Il proprietario ha annullato la proposta del progetto "${proposta.nome}": non è stato creato nulla.`,

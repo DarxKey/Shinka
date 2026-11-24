@@ -53,6 +53,7 @@ import { GatewayAssente, type PortaGateway } from "../centro/gateway.ts";
 import { LavoriDeiProgetti } from "../centro/lavori.ts";
 import { distribuisciSkill } from "../centro/distribuzione-skill.ts";
 import { colLavoroOffline } from "../centro/lavoro-offline.ts";
+import { ProposteRicordate, postiDegliArchivi } from "../centro/proposte-ricordate.ts";
 import { LavoroOffline } from "../nodo/offline.ts";
 import { Memoria } from "../centro/memoria.ts";
 import { RegistroSkill } from "../centro/skill.ts";
@@ -338,6 +339,8 @@ export interface Banco {
 export interface OpzioniBanco {
   /** Un'installazione nuova: la password non c'è, e il centro aspetta il codice di primo avvio. */
   primoAvvio?: true;
+  /** I dati di un altro banco: questo è lo stesso centro dopo un riavvio. */
+  cartella?: string;
   /** L'orologio e la quiete dei lavori programmati, per le prove che li fanno partire. */
   programmati?: Pick<OpzioniProgrammati, "adesso" | "quieteMs">;
   /** La cartella da cui nasce il pacchetto per un'installazione nuova. */
@@ -411,7 +414,8 @@ export const RISORSE_DI_PROVA: RisorseDellAmbiente = {
 };
 
 export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Promise<Banco> {
-  const cartella = await mkdtemp(join(tmpdir(), "shinka-centro-"));
+  const cartella = opzioni.cartella ?? (await mkdtemp(join(tmpdir(), "shinka-centro-")));
+  const ricordate = ProposteRicordate.apri(join(cartella, "proposte-in-attesa.json"));
   const accesso = await Accesso.apri(cartella);
   if (opzioni.primoAvvio !== true) await accesso.impostaPassword(PASSWORD);
   const { primoAvvio, codice: codicePrimoAvvio } = PrimoAvvio.apri(cartella, accesso);
@@ -674,6 +678,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
       riavvia: () => void riavvii.push(Date.now()),
       nodi: () => aggiornamenti.daAggiornare(),
       propaga: (idNodi) => aggiornamenti.propaga(idNodi),
+      ricordate,
       prepara: opzioni.sviluppo.prepara,
       attesaRiavvioMs: 10,
       ...(opzioni.sviluppo.attesaEsitoMs === undefined ? {} : { attesaEsitoMs: opzioni.sviluppo.attesaEsitoMs }),
@@ -726,6 +731,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     lavori,
     ambienti,
     ...(conEstensioni === undefined ? {} : { estensioniPerProgetto: () => estensioni?.perProgetto() ?? {} }),
+    ricordate,
   });
   if (conEstensioni !== undefined && estensioniNegliAmbienti !== undefined) {
     const negliAmbienti = estensioniNegliAmbienti;
@@ -735,6 +741,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
       inAmbiente: (idAmbiente) => negliAmbienti.per(idAmbiente),
       canaleHome: () => casa.canale,
       annotaHome: (testo) => casa.annota(testo),
+      ricordate,
       ...(conEstensioni.esamina === undefined ? {} : { esamina: conEstensioni.esamina }),
       ...(conEstensioni.accettaRepository === undefined ? {} : { accettaRepository: conEstensioni.accettaRepository }),
     });
@@ -757,7 +764,13 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
   const perINodi = opzioni.senzaCertificatoDeiNodi === true ? undefined : preparaIdentitaPerINodi(join(cartella, "collegamento-nodi"));
   // Le copie di sicurezza: la chiave si ricava in fretta, e un riavvio chiesto resta solo annotato.
   const copie = new CopieDiSicurezza({ dati: cartella, memoria, skill, versione: "versione-di-prova", costo: 2 ** 10, riavvia: () => void riavvii.push(Date.now()) });
-  const interfaccia = await EstensioniInterfaccia.apri({ file: join(cartella, "interfaccia.json"), annota: (testo) => casa.annota(testo) });
+  const interfaccia = await EstensioniInterfaccia.apri({ file: join(cartella, "interfaccia.json"), annota: (testo) => casa.annota(testo), ricordate });
+  // Come al centro vero: le proposte che aspettavano prima del riavvio tornano.
+  ricordate.collega(postiDegliArchivi(() => casa, lavori));
+  await proposte.ripristina();
+  await sviluppo?.ripristina();
+  await estensioni?.ripristina();
+  await interfaccia.ripristina();
   const centro = await creaCentro({
     interfaccia,
     accesso,

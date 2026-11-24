@@ -387,6 +387,12 @@ export class Home implements PortaConversazione {
     };
   }
 
+  /** L'argomento di cui questo è l'archivio, se è uno di quelli aperti in memoria. */
+  argomentoDelCanale(canale: Canale): string | undefined {
+    for (const [idArgomento, aperto] of this.#comune.canali) if (aperto === canale) return idArgomento;
+    return undefined;
+  }
+
   /** L'archivio di un argomento qualunque, aperto o archiviato. Nulla se non esiste. */
   async canaleDi(idArgomento: string): Promise<Canale | undefined> {
     const esistente = this.#comune.canali.get(idArgomento);

@@ -11,6 +11,7 @@
  * estensioni di Shinka, ma non si tocca: non viene copiato qui, né spento, né tolto.
  */
 
+import type { ProposteRicordate } from "./proposte-ricordate.ts";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -78,6 +79,8 @@ export interface OpzioniEstensioni {
   /** Quali repository si accettano: di suo solo quelli raggiunti in https. */
   accettaRepository?(indirizzo: string): boolean;
   adesso?(): Date;
+  /** Dove le proposte in attesa restano scritte, perché un riavvio del centro non le perda. */
+  ricordate?: ProposteRicordate;
 }
 
 interface PropostaInAttesa {
@@ -319,6 +322,13 @@ export class Estensioni {
    * La Home propone un'estensione: se la richiesta sta in piedi compare la scheda, e nient'altro.
    * Di un plugin viene letto prima il contenuto, perché la scheda lo dica; non viene eseguito nulla.
    */
+  /** Dopo un riavvio del centro: tornano le proposte che aspettavano il proprietario. */
+  async ripristina(): Promise<void> {
+    for (const { id, dati, canale } of (await this.#o.ricordate?.ripristina<Omit<PropostaInAttesa, "canale" | "inProva">>("estensione")) ?? []) {
+      this.#proposte.set(id, { ...dati, canale, inProva: false });
+    }
+  }
+
   async proponi(richiesta: RichiestaEstensione, canaleDellaChat?: Canale): Promise<{ idProposta: string } | { motivo: string }> {
     const nome = richiesta.nome.trim();
     const difetto = difettoDelNome(nome);
@@ -381,6 +391,7 @@ export class Estensioni {
     const idProposta = randomUUID();
     const canale = canaleDellaChat ?? this.#o.canaleHome();
     this.#proposte.set(idProposta, { nome, descrizione, definizione, chiavi, ...(contenuto === undefined ? {} : { contenuto }), idAmbiente: ambiente.id, canale, inProva: false });
+    this.#o.ricordate?.ricorda("estensione", idProposta, { nome, descrizione, definizione, chiavi, ...(contenuto === undefined ? {} : { contenuto }), idAmbiente: ambiente.id }, canale);
     canale.pubblica({
       tipo: "estensione-proposta",
       idProposta,
@@ -496,6 +507,8 @@ export class Estensioni {
     if (!esito.riuscita) {
       if (esito.riprovabile === true) return { stato: "da-riprovare", motivo: esito.motivo };
       this.#proposte.delete(idProposta);
+      this.#o.ricordate?.dimentica(idProposta);
+    this.#o.ricordate?.dimentica(idProposta);
       proposta.canale.pubblica({ tipo: "estensione-decisa", idProposta, esito: "non-partita", motivo: esito.motivo });
       this.#o.annotaHome(
         `[Shinka] Il proprietario ha confermato l'estensione "${proposta.nome}", ma nell'ambiente "${ambiente}" non è partita, e quindi non è stata accesa. ` +
@@ -505,6 +518,7 @@ export class Estensioni {
       return { stato: "non-partita", motivo: esito.motivo };
     }
     this.#proposte.delete(idProposta);
+    this.#o.ricordate?.dimentica(idProposta);
     await this.#accendi(estensione, proposta.idAmbiente, esito);
     proposta.canale.pubblica({ tipo: "estensione-decisa", idProposta, esito: "accesa", strumenti: esito.strumenti });
     this.#o.annotaHome(
@@ -525,6 +539,7 @@ export class Estensioni {
     const proposta = this.#proposte.get(idProposta);
     if (proposta === undefined || proposta.inProva) return false;
     this.#proposte.delete(idProposta);
+    this.#o.ricordate?.dimentica(idProposta);
     proposta.canale.pubblica({ tipo: "estensione-decisa", idProposta, esito: "annullata" });
     this.#o.annotaHome(`[Shinka] Il proprietario ha annullato la proposta dell'estensione "${proposta.nome}": non è stato installato né avviato nulla.`, proposta.canale);
     return true;

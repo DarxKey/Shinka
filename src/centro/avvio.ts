@@ -39,6 +39,7 @@
  *                          solo allora una versione approvata viene messa in funzione
  */
 
+import { ProposteRicordate, postiDegliArchivi } from "./proposte-ricordate.ts";
 import { colLavoroOffline } from "./lavoro-offline.ts";
 import { ProcessiDiShinka } from "../nodo/processi-di-shinka.ts";
 import { PrimoAvvio } from "./primo-avvio.ts";
@@ -421,6 +422,8 @@ const annotaLaHome = (testo: string, canale?: Canale): void => {
   const chat = canale === undefined ? undefined : [home, ...home.condizioniDelleChat().map(({ numero }) => home?.chat(numero))].find((una) => una?.canale === canale);
   (chat ?? home).annota(testo);
 };
+// Le proposte che aspettano il proprietario restano scritte: un riavvio non le perde.
+const ricordate = ProposteRicordate.apri(join(dati, "proposte-in-attesa.json"));
 // La versione in funzione si propone anche al gateway: il sì, però, lo chiede lui al proprietario.
 const gatewayAllaVersione = new GatewayAllaVersione({ gateway, installata, riferisci: (testo) => sviluppo?.annota(testo) });
 // Il progetto Shinka: la sua cartella è una copia di lavoro del repository di Shinka.
@@ -437,6 +440,7 @@ if (repository !== undefined) {
     riavvia: () => void spegni(CODICE_RIAVVIO),
     nodi: () => aggiornamenti.daAggiornare(),
     propaga: (idNodi) => aggiornamenti.propaga(idNodi),
+    ricordate,
     ...(gateway instanceof GatewayAssente ? {} : { gateway: gatewayAllaVersione }),
   });
 }
@@ -448,6 +452,7 @@ const proposte = new Proposte({
   ambienti,
   // Le estensioni si aprono subito dopo: la scheda le chiede quando la Home propone un progetto.
   estensioniPerProgetto: () => estensioni?.perProgetto() ?? {},
+  ricordate,
 });
 estensioni = await Estensioni.apri({
   file: join(dati, "estensioni.json"),
@@ -455,9 +460,10 @@ estensioni = await Estensioni.apri({
   inAmbiente: (idAmbiente) => estensioniNegliAmbienti.per(idAmbiente),
   canaleHome: () => laHome().canale,
   annotaHome: annotaLaHome,
+  ricordate,
 });
 // Le estensioni dell'interfaccia (ADR 0054): le propone la Home, le conferma il proprietario.
-const interfaccia = await EstensioniInterfaccia.apri({ file: join(dati, "interfaccia.json"), annota: annotaLaHome });
+const interfaccia = await EstensioniInterfaccia.apri({ file: join(dati, "interfaccia.json"), annota: annotaLaHome, ricordate });
 const agisciInAmbiente = (idAmbiente: string, idArgomento: string, azione: Parameters<typeof locale.agisci>[1]) =>
   (idAmbiente === ID_AMBIENTE_DEL_CENTRO ? locale : remoti.per(idAmbiente)).agisci(idArgomento, azione);
 const elaborati = new Elaborati({
@@ -530,6 +536,13 @@ home = await Home.apri({
       alIdSessione: apertura.alIdSessione,
     }),
 });
+
+// Le proposte che aspettavano il proprietario prima del riavvio tornano, con i loro pulsanti.
+ricordate.collega(postiDegliArchivi(laHome, lavori));
+await proposte.ripristina();
+await sviluppo?.ripristina();
+await estensioni.ripristina();
+await interfaccia.ripristina();
 
 // Le skill arrivano a ogni nodo quando si collega e a ogni cambiamento; le conversazioni
 // già aperte in questo ambiente le rileggono.

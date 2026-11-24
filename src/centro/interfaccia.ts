@@ -3,6 +3,7 @@
  * le proposte che aspettano il proprietario, e chi va avvisato quando qualcosa cambia.
  */
 
+import type { ProposteRicordate } from "./proposte-ricordate.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -25,6 +26,8 @@ export interface OpzioniInterfaccia {
   /** Una nota alla conversazione della Home in cui la proposta è nata, senza farla rispondere. */
   annota?(testo: string, canale: Canale): void;
   adesso?(): Date;
+  /** Dove le proposte in attesa restano scritte, perché un riavvio del centro non le perda. */
+  ricordate?: ProposteRicordate;
 }
 
 export class EstensioniInterfaccia {
@@ -72,9 +75,15 @@ export class EstensioniInterfaccia {
   }
 
   /** La Home propone un'estensione: compare la scheda nella sua conversazione, e nient'altro. */
+  /** Dopo un riavvio del centro: tornano le proposte che aspettavano il proprietario. */
+  async ripristina(): Promise<void> {
+    for (const { id, dati, canale } of (await this.#o.ricordate?.ripristina<RichiestaInterfaccia>("interfaccia")) ?? []) this.#proposte.set(id, { richiesta: dati, canale });
+  }
+
   proponi(richiesta: RichiestaInterfaccia, canale: Canale): string {
     const idProposta = randomUUID();
     this.#proposte.set(idProposta, { richiesta, canale });
+    this.#o.ricordate?.ricorda("interfaccia", idProposta, richiesta, canale);
     canale.pubblica({
       tipo: "interfaccia-proposta",
       idProposta,
@@ -93,6 +102,7 @@ export class EstensioniInterfaccia {
     const proposta = this.#proposte.get(idProposta);
     if (proposta === undefined) return false;
     this.#proposte.delete(idProposta);
+    this.#o.ricordate?.dimentica(idProposta);
     const { richiesta } = proposta;
     const prima = this.#estensioni.find((una) => una.nome === richiesta.nome);
     const nuova: Custodita = {
@@ -121,6 +131,7 @@ export class EstensioniInterfaccia {
     const proposta = this.#proposte.get(idProposta);
     if (proposta === undefined) return false;
     this.#proposte.delete(idProposta);
+    this.#o.ricordate?.dimentica(idProposta);
     proposta.canale.pubblica({ tipo: "interfaccia-decisa", idProposta, esito: "annullata" });
     this.#o.annota?.(`[Shinka] Il proprietario ha annullato l'estensione dell'interfaccia "${proposta.richiesta.nome}": non è entrato nulla.`, proposta.canale);
     return true;

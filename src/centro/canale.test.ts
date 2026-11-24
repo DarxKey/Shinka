@@ -106,18 +106,16 @@ test("al riavvio ciò che era in sospeso viene chiuso", async (t) => {
   assert.ok(aggiunti[2]?.tipo === "turno-concluso" && !aggiunti[2].riuscito);
 });
 
-test("una proposta rimasta senza risposta al riavvio risulta annullata", async (t) => {
+test("una proposta rimasta senza risposta al riavvio resta in attesa", async (t) => {
   const file = await fileProvvisorio(t);
   const primo = await Canale.apri(file);
   primo.pubblica({ tipo: "proposta-progetto", idProposta: "p1", nome: "Videogioco", idAmbiente: "centro", brief: "Un gioco." });
   primo.pubblica({ tipo: "proposta-progetto", idProposta: "p2", nome: "Sito", idAmbiente: "centro", brief: "Un sito." });
   primo.pubblica({ tipo: "proposta-decisa", idProposta: "p2", esito: "confermata", idProgetto: "x", nome: "Sito" });
 
-  // Le proposte in attesa vivono nella memoria del centro: dopo il riavvio non si possono più confermare.
+  // Le proposte in attesa il centro le ricorda (ProposteRicordate): riaprendo l'archivio restano com'erano.
   const secondo = await Canale.apri(file);
-  assert.deepEqual(secondo.archiviati.slice(3).map((e) => e.evento), [
-    { tipo: "proposta-decisa", idProposta: "p1", esito: "annullata" },
-  ]);
+  assert.equal(secondo.archiviati.length, 3);
 });
 
 test("l'ordine di spostarsi su un progetto si distribuisce ma non si archivia", async (t) => {
@@ -210,7 +208,7 @@ test("un'approvazione in attesa conta come una richiesta al proprietario, e al r
   assert.deepEqual(secondo.sospesi, { turni: 0, permessi: 0 });
 });
 
-test("una proposta di sviluppo e un'installazione in attesa al riavvio risultano annullata e scaduta", async (t) => {
+test("al riavvio un'installazione in attesa risulta scaduta, una proposta di sviluppo resta in attesa", async (t) => {
   const file = await fileProvvisorio(t);
   const primo = await Canale.apri(file);
   primo.pubblica({ tipo: "sviluppo-proposto", idProposta: "s1", titolo: "Tema scuro", richiesta: "Serve un tema scuro." });
@@ -229,18 +227,15 @@ test("una proposta di sviluppo e un'installazione in attesa al riavvio risultano
   assert.deepEqual(primo.sospesi, { turni: 0, permessi: 1 });
 
   const secondo = await Canale.apri(file);
-  assert.deepEqual(secondo.archiviati.slice(2).map((e) => e.evento), [
-    { tipo: "sviluppo-deciso", idProposta: "s1", esito: "annullata" },
-    { tipo: "installazione-decisa", idInstallazione: "i1", esito: "scaduta" },
-  ]);
+  assert.deepEqual(secondo.archiviati.slice(2).map((e) => e.evento), [{ tipo: "installazione-decisa", idInstallazione: "i1", esito: "scaduta" }]);
   assert.deepEqual(secondo.sospesi, { turni: 0, permessi: 0 });
 
   // Ciò che è già deciso resta com'è.
   const terzo = await Canale.apri(file);
-  assert.equal(terzo.archiviati.length, 4);
+  assert.equal(terzo.archiviati.length, 3);
 });
 
-test("la proposta di un'estensione rimasta senza risposta al riavvio risulta annullata", async (t) => {
+test("la proposta di un'estensione rimasta senza risposta al riavvio resta in attesa", async (t) => {
   const file = await fileProvvisorio(t);
   const primo = await Canale.apri(file);
   const proposta = (idProposta: string, nome: string) =>
@@ -261,9 +256,7 @@ test("la proposta di un'estensione rimasta senza risposta al riavvio risulta ann
   // Una scheda in attesa non tiene occupata la conversazione.
   assert.deepEqual(primo.sospesi, { turni: 0, permessi: 0 });
 
-  // Al riavvio il centro non ricorda più la proposta: la scheda non resta lì con i pulsanti.
+  // Al riavvio la proposta resta: il centro la ricorda, e la scheda tiene i suoi pulsanti.
   const secondo = await Canale.apri(file);
-  assert.deepEqual(secondo.archiviati.slice(3).map((e) => e.evento), [{ tipo: "estensione-decisa", idProposta: "e2", esito: "annullata" }]);
-  const terzo = await Canale.apri(file);
-  assert.equal(terzo.archiviati.length, 4);
+  assert.equal(secondo.archiviati.length, 3);
 });

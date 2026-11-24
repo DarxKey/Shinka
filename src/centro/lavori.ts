@@ -342,6 +342,12 @@ export class LavoriDeiProgetti {
     return this.#canali.get(idConversazione);
   }
 
+  /** La conversazione di progetto di cui questo è l'archivio, se lo è. */
+  conversazioneDelCanale(canale: Canale): string | undefined {
+    for (const [idConversazione, aperto] of this.#canali) if (aperto === canale) return idConversazione;
+    return undefined;
+  }
+
   /** Le conversazioni del progetto: la principale e le chat parallele aperte (ADR 0052). */
   #conversazioniDi(idProgetto: string): string[] {
     return [idProgetto, ...this.#o.progetti.chatParallele(idProgetto).map((numero) => conversazioneDellaChat(idProgetto, numero))];

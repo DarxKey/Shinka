@@ -250,18 +250,10 @@ export class Canale {
     for (const idApprovazione of [...this.#approvazioniAperte]) {
       this.pubblica({ tipo: "approvazione-decisa", idApprovazione, esito: "scaduta" });
     }
-    for (const idProposta of [...this.#proposteAperte]) {
-      this.pubblica({ tipo: "proposta-decisa", idProposta, esito: "annullata" });
-    }
-    for (const idProposta of [...this.#sviluppiAperti]) {
-      this.pubblica({ tipo: "sviluppo-deciso", idProposta, esito: "annullata" });
-    }
     for (const idInstallazione of [...this.#installazioniAperte]) {
       this.pubblica({ tipo: "installazione-decisa", idInstallazione, esito: "scaduta" });
     }
-    for (const idProposta of [...this.#estensioniAperte]) {
-      this.pubblica({ tipo: "estensione-decisa", idProposta, esito: "annullata" });
-    }
+    // Le proposte no: aspettano il proprietario anche dopo un riavvio (le ricorda `ProposteRicordate`).
     while (this.#turniAperti > 0) {
       this.pubblica({ tipo: "turno-concluso", riuscito: false, durataMs: 0, errore: motivo });
     }

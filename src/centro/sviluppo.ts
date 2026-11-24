@@ -9,6 +9,7 @@
  * centro si spegne e il guardiano la mette in funzione; se non parte, torna quella di prima.
  */
 
+import type { ProposteRicordate } from "./proposte-ricordate.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
@@ -52,6 +53,8 @@ export interface OpzioniSviluppo {
   annotaHome(testo: string, canale?: Canale): void;
   /** Spegne il centro perché il guardiano lo riaccenda con la versione nuova. */
   riavvia(): void;
+  /** Dove le proposte in attesa restano scritte, perché un riavvio del centro non le perda. */
+  ricordate?: ProposteRicordate;
   /** I nodi collegati che sanno aggiornarsi: dopo l'installazione passano anche loro alla versione nuova. */
   nodi?(): { id: string; nome: string }[];
   /** Dopo un'installazione riuscita: fa passare alla versione nuova i nodi che erano collegati all'approvazione. */
@@ -159,9 +162,17 @@ export class SviluppoDiShinka {
   }
 
   /** La Home propone di sviluppare un pezzo nuovo: compare la scheda, e nient'altro. */
+  /** Dopo un riavvio del centro: tornano le proposte che aspettavano il proprietario. */
+  async ripristina(): Promise<void> {
+    for (const { id, dati, canale } of (await this.#o.ricordate?.ripristina<{ titolo: string; richiesta: string }>("sviluppo")) ?? []) {
+      this.#proposte.set(id, { titolo: dati.titolo, richiesta: dati.richiesta, canale });
+    }
+  }
+
   proponi(proposta: { titolo: string; richiesta: string }, canale: Canale = this.#o.canaleHome()): string {
     const idProposta = randomUUID();
     this.#proposte.set(idProposta, { ...proposta, canale });
+    this.#o.ricordate?.ricorda("sviluppo", idProposta, proposta, canale);
     // La scheda dice con che cosa lavorerebbe il progetto Shinka, e tra quali modelli si può scegliere.
     const modelli = modelliDa(this.#o.lavori.canale(this.#progetto.id)) ?? modelliDa(canale);
     canale.pubblica({
@@ -193,6 +204,7 @@ export class SviluppoDiShinka {
       diverse ? scelta : undefined,
     );
     this.#proposte.delete(idProposta);
+    this.#o.ricordate?.dimentica(idProposta);
     proposta.canale.pubblica({
       tipo: "sviluppo-deciso",
       idProposta,
@@ -214,6 +226,7 @@ export class SviluppoDiShinka {
     const proposta = this.#proposte.get(idProposta);
     if (proposta === undefined) return false;
     this.#proposte.delete(idProposta);
+    this.#o.ricordate?.dimentica(idProposta);
     proposta.canale.pubblica({ tipo: "sviluppo-deciso", idProposta, esito: "annullata" });
     this.#o.annotaHome(`[Shinka] Il proprietario ha annullato la proposta di sviluppo "${proposta.titolo}": non è partito nulla.`, proposta.canale);
     return true;
