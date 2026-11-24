@@ -2,58 +2,98 @@
 
 *Multi node agent harness.*
 
-Shinka è un'applicazione web personale con un'unica chat, la **Home**, a cui il proprietario chiede
-qualunque cosa. La Home risponde, svolge da sé i lavori che si chiudono in una seduta e propone un
-**progetto** per quelli lunghi. Ogni progetto vive in un **ambiente** (il server, un PC, un altro
-computer) e ha la sua conversazione, il suo terminale e l'anteprima della sua applicazione. Il motore
-delle conversazioni è Claude Code oppure Codex, con l'abbonamento del proprietario.
+Shinka is a personal, self-hosted web app built around a single chat, the **Home**, where you ask for
+anything. The Home answers, does on its own the jobs that fit in one sitting, and proposes a **project**
+for the long ones. Each project lives in an **environment** (your server, a Windows PC, another Linux box)
+with its own folder, Git repository, conversation, terminal and app preview. The conversations run on
+Claude Code or Codex, with your own subscription.
 
-È un progetto personale, pensato per un solo proprietario su un server di casa, e si sviluppa da dentro
-sé stesso: i pezzi nuovi li scrive un progetto di Shinka, e entrano in funzione solo con il sì del
-proprietario.
+It is meant for one owner on a home server, and it develops itself: new pieces are written by a Shinka
+project, and they go live only after every test passes and the owner approves them.
 
-## Dove leggere
+> The interface, the code and the documents are in Italian. This page is the only one in English.
 
-- [shinka.md](shinka.md): la specifica. Che cos'è, le regole del dominio, l'architettura, le prove di accettazione.
-- [GLOSSARY.md](GLOSSARY.md): le parole del progetto. Il codice e i documenti usano quelle.
-- [docs/adr/](docs/adr/): le decisioni che pesano, una per file, con il motivo.
-- [installazione/LEGGIMI.md](installazione/LEGGIMI.md): come si installa il pacchetto che un'installazione di Shinka prepara per un'altra.
+![The Home: a conversation with actions, a to-do list and a permission waiting for the owner](docs/schermate/home-light.png)
 
-Lo stato dello sviluppo (`STATO.md`, a cui la specifica rimanda) resta fuori da questa copia: racconta
-anche l'installazione del proprietario.
+## What it does
 
-## Com'è fatto
+- **One chat for everything.** Ask the Home a question, a script, a document, an action on one of your
+  machines. Each topic is archived with a title and a summary when you move on, and can be searched and
+  reopened. Parallel chats open in tabs and work while the main one is busy. The Home is reachable from
+  Telegram too, and runs **scheduled jobs** ("every morning, check the backups"), also triggered by events
+  from other systems.
+- **Projects for the long jobs.** A project has its folder and repository in one environment, and next to
+  its chat the file changes of every turn (with undo), a file browser, up to four terminals and a live
+  preview of its web app. It can hand the implementation to another model and review the result.
+- **Environments.** Any Linux or Windows machine joins with a one-line command and an approval. Its page
+  shows CPU, memory, disk, processes (with the ones Shinka started, per project, and a way to stop them)
+  and Docker containers. On Windows the node has a tray icon and can start with Windows.
+- **Extensions.** MCP servers (local or remote), Claude Code plugins from a Git repository, and **local
+  models**: an Anthropic-compatible server such as llama-server with Qwen on a GPU, started on demand and
+  stopped when idle, usable by projects and, over the network with a key, by the Home. **Interface
+  extensions** add themes, pages and buttons written by the Home, with pages sandboxed from the rest.
+  Nothing is installed until the owner confirms a card that shows exactly what runs.
+- **Your secrets stay yours.** Passwords and keys live in a vault inside a separate gateway container:
+  conversations use them by name and never see their value. Paying, changing passwords and deleting
+  accounts are forbidden, always. Every action follows the permission mode the owner picks, chat by chat.
+- **It develops itself.** Ask the Home for something Shinka lacks: once confirmed, the Shinka project
+  writes it with its tests, a clean copy is built and tested, and the new version goes live only with the
+  owner's approval, rolling back by itself if it does not start.
+- **Shinka Desktop**, a Windows client with local terminals, an offline copy of the conversations and
+  automatic updates from the server, lives in its own repository.
 
-| Parte | Cartella | Che cosa fa |
+| A project with its file panel | The extensions page |
+|---|---|
+| ![A project conversation with the file panel open](docs/schermate/project.png) | ![The extensions page with two MCP servers](docs/schermate/extensions.png) |
+
+| Dark theme | On the phone | The first-run tour |
 |---|---|---|
-| Centro | `src/centro` | Il server: l'interfaccia, la Home, i progetti, gli argomenti, la memoria, le skill. |
-| Nodo | `src/nodo` | Gira in ogni ambiente e ci fa lavorare il motore: conversazioni, terminale, anteprima. |
-| Gateway | `src/gateway` | In un container suo: custodisce il vault delle credenziali, fa rispettare i divieti fissi, tiene il bot di Telegram. |
-| Guardiano | `src/guardiano` | Tiene accesi centro, nodi e gateway, e torna alla versione di prima se una nuova non parte. |
-| Interfaccia | `web/src` | React, costruita con Vite. |
-| Protocollo | `src/protocollo` | I messaggi tra centro, nodi e interfaccia. |
+| ![The Home in the dark theme](docs/schermate/home-dark.png) | ![The Home on a phone](docs/schermate/phone.png) | ![The guided tour shown after the first start](docs/schermate/tour.png) |
 
-Il codice è TypeScript che Node esegue senza compilarlo. Nomi e commenti sono in italiano, con le
-parole del glossario, e ogni pezzo ha il suo test accanto.
+The screenshots are taken with made-up data by `src/prove/schermate-readme.ts`.
 
-## Lavorarci
+## How it is built
 
-Serve Node 22.18 o più recente.
+| Part | Folder | What it does |
+|---|---|---|
+| Center (*centro*) | `src/centro` | The server: the interface, the Home, projects, topics, memory, skills, scheduled jobs. |
+| Node (*nodo*) | `src/nodo` | Runs in every environment and drives the engine there: conversations, terminals, previews, local models. |
+| Gateway | `src/gateway` | In its own container: keeps the vault, enforces the fixed prohibitions, runs the Telegram bot and the test stacks. |
+| Guardian (*guardiano*) | `src/guardiano` | Keeps center, nodes and gateway running, and rolls back a version that does not start. |
+| Interface | `web/src` | React, built with Vite; usable on a phone. |
+| Protocol | `src/protocollo` | The messages between center, nodes and interface. |
+
+The code is TypeScript that Node runs without compiling it. Names and comments are in Italian, using the
+words of the glossary, and every piece has its test next to it.
+
+## Where to read more
+
+- [shinka.md](shinka.md): the specification. What it is, the domain rules, the architecture, the acceptance tests.
+- [GLOSSARY.md](GLOSSARY.md): the project's vocabulary. Code and documents use these words.
+- [docs/adr/](docs/adr/): the decisions that matter, one per file, with their reasons.
+- [installazione/LEGGIMI.md](installazione/LEGGIMI.md): how to install the package one Shinka installation prepares for another.
+
+The development log (`STATO.md`, referenced by the specification) is not in this copy: it also describes
+the owner's own installation.
+
+## Working on it
+
+Node 22.18 or newer.
 
 ```bash
 npm ci
 npm run typecheck
 npm test
-npm run costruisci   # l'interfaccia
-npm run avvia        # il centro, sulla porta 7850
+npm run costruisci   # the interface
+npm run avvia        # the center, on port 7850
 ```
 
-## Questa copia
+## This copy
 
-Questo repository è la copia pubblica di Shinka: la tiene aggiornata il progetto stesso, un commit per
-ogni pezzo. La storia comincia dalla prima pubblicazione; quella di prima resta sul server da cui Shinka
-si installa ([ADR 0044](docs/adr/0044-la-copia-pubblica-su-github.md)).
+This repository is the public copy of Shinka, kept up to date by the project itself, one commit per piece.
+Its history starts from the first publication; the earlier one stays on the server Shinka is installed from
+([ADR 0044](docs/adr/0044-la-copia-pubblica-su-github.md)).
 
-## Licenza
+## License
 
 [MIT](LICENSE).

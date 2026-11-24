@@ -57,7 +57,20 @@ test("primo avvio: codice, password, poi il benvenuto nelle Impostazioni", { ski
   await fotografa("benvenuto");
 
   // «Ho finito» porta alla Home, e il benvenuto non torna.
-  await pagina.getByRole("link", { name: "Ho finito: vai alla Home" }).click();
+  // Finita la preparazione, la presentazione guidata: si scorre fino in fondo e si arriva alla Home.
+  await pagina.getByRole("link", { name: "Ho finito: com'è fatta Shinka" }).click();
+  await pagina.getByRole("heading", { name: "Benvenuto in Shinka" }).waitFor();
+  assert.equal(new URL(pagina.url()).hash, "#/presentazione");
+  for (const titolo of ["La Home", "I progetti", "Gli ambienti", "Le estensioni", "Le tue chiavi restano tue", "Shinka si sviluppa da sé"]) {
+    await pagina.getByRole("button", { name: "Avanti" }).click();
+    await pagina.getByRole("heading", { name: titolo }).waitFor();
+  }
+  await pagina.getByRole("button", { name: "Vai alla Home" }).click();
+  await pagina.locator("form.scrittura textarea").waitFor();
+  // Si riapre quando si vuole (dal menu delle pagine, che la prova della barra laterale guarda).
+  await pagina.goto(`${indirizzo}/#/presentazione`);
+  await pagina.getByRole("heading", { name: "Benvenuto in Shinka" }).waitFor();
+  await pagina.getByRole("button", { name: "Salta" }).click();
   await pagina.locator("form.scrittura textarea").waitFor();
   await pagina.goto(`${indirizzo}/#/impostazioni`);
   await pagina.getByRole("heading", { name: "Motore delle conversazioni nuove" }).waitFor();
