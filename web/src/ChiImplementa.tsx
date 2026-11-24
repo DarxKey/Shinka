@@ -129,3 +129,72 @@ export function ChiImplementa({ idProgetto, modelli }: { idProgetto: string; mod
     </div>
   );
 }
+
+/**
+ * Chi implementa, scelto nella scheda di un progetto che nasce: una casella per affidare
+ * l'implementazione a un altro modello, e allora il modello e il suo effort, tra quelli
+ * dell'ambiente scelto. Senza la casella il progetto lavora con un modello solo.
+ */
+export function SceltaChiImplementa({
+  modelli,
+  scelta,
+  disattivo,
+  alCambio,
+}: {
+  modelli: readonly ModelloDisponibile[] | undefined;
+  scelta: Scelta | undefined;
+  disattivo: boolean;
+  alCambio: (scelta: Scelta | undefined) => void;
+}): ReactNode {
+  const elenco = modelli ?? MODELLI_NOTI;
+  const gruppo = gruppiDiModelli(elenco).find((voce) => voce.motore === undefined || voce.motore === scelta?.motore);
+  const impegni = gruppo?.modelli.find((voce) => voce.valore === scelta?.modello)?.impegni ?? IMPEGNI;
+  return (
+    <div className="chi-implementa scelta-chi-implementa">
+      <label className="spunta">
+        <input type="checkbox" checked={scelta !== undefined} disabled={disattivo} onChange={(evento) => alCambio(evento.target.checked ? {} : undefined)} />
+        Affida l'implementazione a un altro modello
+      </label>
+      {scelta === undefined ? (
+        <div className="tenue">Il progetto lavora con un modello solo. Lo puoi scegliere anche dopo, dalla scheda della sessione.</div>
+      ) : (
+        <>
+          <div className="scelte">
+            <MenuDelModello
+              etichetta="Modello di chi implementa"
+              modelli={elenco}
+              motore={scelta.motore}
+              modello={scelta.modello}
+              disattivo={disattivo}
+              allaScelta={({ motore, modello }) => {
+                const { impegno } = scelta;
+                alCambio({
+                  ...(motore === undefined ? (scelta.motore === undefined ? {} : { motore: scelta.motore }) : { motore }),
+                  ...(modello === null ? {} : { modello }),
+                  ...(impegno === undefined ? {} : { impegno }),
+                });
+              }}
+            />
+            <select
+              aria-label="Effort di chi implementa"
+              value={scelta.impegno ?? ""}
+              disabled={disattivo}
+              onChange={(evento) => {
+                const { impegno: _, ...resto } = scelta;
+                alCambio(evento.target.value === "" ? resto : { ...resto, impegno: evento.target.value as Impegno });
+              }}
+            >
+              <option value="">Effort predefinito</option>
+              {impegni.map((voce) => (
+                <option key={voce} value={voce}>
+                  Effort: {NOMI_IMPEGNI[voce]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="tenue">Il modello del progetto pianifica e controlla, e affida a questo l'implementazione con i suoi test.</div>
+        </>
+      )}
+    </div>
+  );
+}

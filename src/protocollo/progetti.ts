@@ -1,3 +1,4 @@
+import type { ChiImplementa } from "./incarichi.ts";
 import type { EstensioniDegliAmbienti, SkillDiPartenza } from "./avvio-progetto.ts";
 import type { Impegno, ImpostazioniConversazione, ModelloDisponibile, ModoPermessi, Motore } from "./impostazioni.ts";
 import type { IndiceArchivio } from "./eventi.ts";
@@ -134,6 +135,8 @@ export interface ConfermaProposta {
   estensioni?: string[];
   /** La skill con cui comincia il primo messaggio; null per cominciare dal solo brief. Se manca vale quella consigliata. */
   skillDiPartenza?: SkillDiPartenza | null;
+  /** Chi implementa gli incarichi del progetto (ADR 0051). Se manca, nessuno: il progetto lavora con un modello solo. */
+  chiImplementa?: ChiImplementa;
 }
 
 /**

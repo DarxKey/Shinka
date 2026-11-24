@@ -91,3 +91,44 @@ test("se il nodo non risponde valgono gli ultimi modelli che aveva detto", { tim
   risponde = false;
   assert.deepEqual((await modelli()).modelli?.map((modello) => modello.valore), ["sonnet"]);
 });
+
+test("chi implementa si sceglie nella scheda: si salva con il progetto e il primo messaggio lo dice", { timeout: 30_000 }, async (t) => {
+  const banco = await allestisci(t, { modelliDelCentro: DEL_CENTRO });
+  const cookies = { [COOKIE_SESSIONE]: await banco.entra() };
+  const scelta = { motore: "claude" as const, modello: "locale:qwen", impegno: "medium" as const };
+
+  // Creato a mano.
+  const creato = await banco.centro.inject({
+    method: "POST",
+    url: "/api/nuovo-progetto",
+    cookies,
+    payload: { nome: "Videogioco", idAmbiente: "centro", brief: "Un platformer.", chiImplementa: scelta },
+  });
+  const { idProgetto } = creato.json() as { idProgetto: string };
+  assert.deepEqual(banco.lavori.chiImplementa(idProgetto), scelta);
+  const statoApi = await banco.centro.inject({ method: "GET", url: `/api/progetti/${idProgetto}/chi-implementa`, cookies });
+  assert.deepEqual(statoApi.json(), { chiImplementa: scelta });
+  await finche(() => banco.conversazioniLocali.some((una) => una.inviati.some((testo) => testo.startsWith("Un platformer."))), "il primo messaggio parte");
+  const primo = banco.conversazioniLocali.flatMap((una) => una.inviati).find((testo) => testo.startsWith("Un platformer.")) ?? "";
+  assert.match(primo, /\[Shinka\] In questo progetto il proprietario ha scelto chi implementa: .*affida_incarico/);
+
+  // Da una proposta della Home.
+  const idProposta = banco.proposte.proponi({ nome: "Ricettario", brief: "Un'app per le ricette.", idAmbiente: "centro" });
+  const confermata = await banco.centro.inject({
+    method: "POST",
+    url: `/api/proposte/${idProposta}`,
+    cookies,
+    payload: { esito: "confermata", chiImplementa: { motore: "codex" } },
+  });
+  const idRicettario = (confermata.json() as { idProgetto: string }).idProgetto;
+  assert.deepEqual(banco.lavori.chiImplementa(idRicettario), { motore: "codex" });
+
+  // Senza una scelta il progetto lavora con un modello solo, e il primo messaggio non ne parla.
+  const solo = await banco.centro.inject({ method: "POST", url: "/api/nuovo-progetto", cookies, payload: { nome: "Appunti", idAmbiente: "centro", brief: "Gli appunti." } });
+  const idSolo = (solo.json() as { idProgetto: string }).idProgetto;
+  assert.equal(banco.lavori.chiImplementa(idSolo), undefined);
+  await finche(() => banco.conversazioniLocali.some((una) => una.inviati.includes("Gli appunti.")), "il primo messaggio parte senza nota");
+  // Uno sbagliato non passa.
+  const sbagliato = await banco.centro.inject({ method: "POST", url: "/api/nuovo-progetto", cookies, payload: { nome: "X", idAmbiente: "centro", brief: "X.", chiImplementa: { motore: "gpt" } } });
+  assert.equal(sbagliato.statusCode, 400);
+});

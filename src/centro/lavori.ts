@@ -63,6 +63,8 @@ export interface AvvioDelProgetto {
   skillDiPartenza?: SkillDiPartenza;
   /** Ciò che va fatto nella cartella prima del primo messaggio, per le estensioni scelte. */
   preparazioni?: PreparazioneDelProgetto[];
+  /** Chi implementa gli incarichi (ADR 0051), scelto nella scheda: senza, il progetto lavora con un modello solo. */
+  chiImplementa?: ChiImplementa;
 }
 
 /** Una cartella esistente controllata nel suo ambiente, prima di farne un progetto. */
@@ -177,9 +179,15 @@ export class LavoriDeiProgetti {
     const estensioni = avvio.estensioni === undefined ? {} : { estensioni: avvio.estensioni };
     // Le scelte valgono dal primo messaggio: si salvano prima che la conversazione parta.
     const ricordaLeScelte = async (idProgetto: string): Promise<void> => {
+      if (avvio.chiImplementa !== undefined) await this.#o.progetti.ricordaChiImplementa(idProgetto, avvio.chiImplementa);
       if (impostazioni === undefined || Object.keys(impostazioni).length === 0) return;
       await this.#o.progetti.ricordaImpostazioni(idProgetto, applicaModifica(IMPOSTAZIONI_DI_PROGETTO, impostazioni));
     };
+    // Chi comincia il lavoro sa dal primo messaggio a chi affidare l'implementazione.
+    const conChiImplementa =
+      avvio.chiImplementa === undefined
+        ? ""
+        : `\n\n[Shinka] In questo progetto il proprietario ha scelto chi implementa: ${descriviChiImplementa(avvio.chiImplementa)}. Pianifica e controlla tu, e affida l'implementazione con i suoi test con affida_incarico.`;
     const nomePulito = nome.trim();
     if (nomePulito === "" || nomePulito.length > 60) {
       throw new ProgettoNonCreato("Il nome del progetto deve avere da 1 a 60 caratteri.");
@@ -202,7 +210,7 @@ export class LavoriDeiProgetti {
         (adottata.git
           ? ""
           : " La cartella non è un repository Git, e Shinka non l'ha inizializzato: se serve, proponilo al proprietario e fallo solo con il suo sì.");
-      this.#comincia(progetto, brief.trim() + avviso, avvio);
+      this.#comincia(progetto, brief.trim() + avviso + conChiImplementa, avvio);
       return { ...progetto, adottata: { git: adottata.git } };
     }
 
@@ -225,7 +233,7 @@ export class LavoriDeiProgetti {
         : `\n\n[Shinka] Questo progetto nasce da un lavoro cominciato nella Home: nella cartella ${
             filePortati === 1 ? "c'è già un file prodotto lì" : `ci sono già ${filePortati} file prodotti lì`
           }. Guardali prima di cominciare, e parti da quelli.`;
-    this.#comincia(progetto, brief.trim() + giaPresenti, avvio);
+    this.#comincia(progetto, brief.trim() + giaPresenti + conChiImplementa, avvio);
     return origine === undefined ? progetto : { ...progetto, filePortati };
   }
 

@@ -6897,6 +6897,11 @@ kbd {
   cursor: pointer;
 }
 
+/* Chi implementa, nella scheda di un progetto che nasce. */
+.voce-chi-implementa {
+  margin-top: var(--s-3);
+}
+
 /* La scheda Processi del pannello di un progetto. */
 .pannello-processi {
   padding: var(--s-3);

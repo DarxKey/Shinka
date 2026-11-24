@@ -2,8 +2,8 @@
  * Prova a vista del modello nella scheda di un progetto nuovo: l'interfaccia costruita, in un browser
  * vero, davanti a un centro con conversazioni finte e un nodo. Nell'ambiente del centro il menu ha i
  * modelli dei due motori e quello in rete di un altro ambiente, con il suo nome; cambiando ambiente
- * le voci diventano quelle del nodo e la scelta che lì non vale torna al predefinito; il sottomodello
- * scelto si salva e vale dal primo messaggio. Si salta dove manca il browser o l'interfaccia costruita.
+ * le voci diventano quelle del nodo e la scelta che lì non vale torna al predefinito, anche quella di
+ * chi implementa; il sottomodello e chi implementa si salvano, e valgono dal primo messaggio. Si salta dove manca il browser o l'interfaccia costruita.
  */
 
 import assert from "node:assert/strict";
@@ -66,6 +66,10 @@ test("nella scheda del progetto nuovo il modello segue l'ambiente, e quello scel
   await finoA(async () => (await voci()).includes("qwen3 (in rete, PC Windows)"), "il menu ha il modello in rete");
   assert.deepEqual(await voci(), ["Motore predefinito", "Claude predefinito", "Opus", "qwen3 (in rete, PC Windows)", "Codex predefinito", "GPT-6"]);
   await menu.selectOption("codex:gpt-6");
+  // Chi implementa: si affida l'implementazione a un altro modello, qui Codex.
+  await pagina.getByLabel("Affida l'implementazione a un altro modello").check();
+  const implementa = pagina.getByLabel("Modello di chi implementa");
+  await implementa.selectOption("codex:gpt-6");
 
   // Nel nodo Codex non ha un accesso: le voci sono le sue, e la scelta torna al predefinito.
   await pagina.getByLabel("Ambiente").selectOption(ID_NODO);
@@ -73,6 +77,13 @@ test("nella scheda del progetto nuovo il modello segue l'ambiente, e quello scel
   assert.deepEqual(await voci(), ["Modello predefinito", "Sonnet"]);
   assert.equal(await menu.inputValue(), "");
   await menu.selectOption("sonnet");
+  // Anche chi implementa si riallinea: lì Codex non c'è, e si sceglie fra i modelli del nodo.
+  assert.equal(await implementa.inputValue(), "");
+  await implementa.selectOption("sonnet");
+  await pagina.getByLabel("Effort di chi implementa").selectOption("high");
+  // Con SHINKA_PROVA_IMMAGINI resta una foto della scheda, da guardare.
+  const cartellaImmagini = process.env.SHINKA_PROVA_IMMAGINI;
+  if (cartellaImmagini !== undefined) await pagina.screenshot({ path: join(cartellaImmagini, "nuovo-progetto-chi-implementa.png"), fullPage: true });
 
   await pagina.getByLabel("Nome").fill("Videogioco");
   await pagina.getByLabel("Brief: tutto ciò che il progetto saprà all'inizio").fill("Un platformer.");
@@ -83,7 +94,9 @@ test("nella scheda del progetto nuovo il modello segue l'ambiente, e quello scel
   const impostazioni = banco.lavori.impostazioni(progetto.id);
   assert.equal(impostazioni.modello, "sonnet");
   assert.equal(impostazioni.motore, undefined);
+  assert.deepEqual(banco.lavori.chiImplementa(progetto.id), { modello: "sonnet", impegno: "high" });
   // Il primo messaggio parte con il modello scelto.
-  await finche(() => nodo.conversazioni[0]?.inviati.includes("Un platformer.") === true, "il brief arriva al nodo");
+  await finche(() => nodo.conversazioni[0]?.inviati[0]?.startsWith("Un platformer.") === true, "il brief arriva al nodo");
+  assert.match(nodo.conversazioni[0]?.inviati[0] ?? "", /ha scelto chi implementa: .*affida_incarico/);
   assert.equal(nodo.conversazioni[0]?.configurazione?.impostazioni.modello, "sonnet");
 });

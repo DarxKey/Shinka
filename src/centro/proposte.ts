@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { OrigineFile } from "../protocollo/azioni.ts";
 import type { FileDaPortare } from "../protocollo/eventi.ts";
 import type { ConfermaProposta, NuovoProgettoAMano, SchedaNuovoProgetto } from "../protocollo/progetti.ts";
+import { leggiChiImplementa } from "../protocollo/incarichi.ts";
 import type { RegistroAmbienti } from "./ambienti.ts";
 import type { Canale } from "./canale.ts";
 import { ProgettoNonCreato, type AvvioDelProgetto, type LavoriDeiProgetti, type ProgettoNato } from "./lavori.ts";
@@ -116,7 +117,10 @@ export class Proposte {
    */
   async creaAMano(nuovo: NuovoProgettoAMano): Promise<ProgettoNato> {
     const cartellaEsistente = (nuovo.cartellaEsistente ?? "").trim();
-    const avvio = this.#avvio(nuovo.idAmbiente, cartellaEsistente, nuovo);
+    const avvio = {
+      ...this.#avvio(nuovo.idAmbiente, cartellaEsistente, nuovo),
+      ...(nuovo.chiImplementa === undefined ? {} : { chiImplementa: leggiChiImplementa(nuovo.chiImplementa) }),
+    };
     const progetto = await this.#o.lavori.crea(
       nuovo.nome,
       nuovo.idAmbiente,
@@ -182,7 +186,10 @@ export class Proposte {
     const haFileLi = proposta.daPortare?.file.some((voce) => voce.idAmbiente === idAmbiente) === true;
     const origine =
       cartellaEsistente === "" && modifiche.portaFile !== false && haFileLi ? proposta.daPortare?.origine : undefined;
-    const avvio = this.#avvio(idAmbiente, cartellaEsistente, modifiche);
+    const avvio = {
+      ...this.#avvio(idAmbiente, cartellaEsistente, modifiche),
+      ...(modifiche.chiImplementa === undefined ? {} : { chiImplementa: leggiChiImplementa(modifiche.chiImplementa) }),
+    };
     const progetto = await this.#o.lavori.crea(
       modifiche.nome ?? proposta.nome,
       idAmbiente,

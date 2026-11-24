@@ -4,6 +4,8 @@ import { annullaProposta, confermaProposta, leggiModelliDellAmbiente } from "./a
 import type { Impegno, ImpostazioniConversazione, ModelloDisponibile, ModoPermessi, Motore } from "../../src/protocollo/impostazioni.ts";
 import { sceltaRiallineata } from "./motori.ts";
 import { SceltaImpostazioni } from "./SceltaImpostazioni.tsx";
+import { SceltaChiImplementa } from "./ChiImplementa.tsx";
+import type { ChiImplementa } from "../../src/protocollo/incarichi.ts";
 import { SceltaEstensioni, SceltaSkillDiPartenza, type SceltaSkill } from "./AvvioProgetto.tsx";
 import { haLeSkillDiPartenza, sceltePredefinite, skillPredefinita } from "../../src/protocollo/avvio-progetto.ts";
 import { cartellaPrevista, sottotitoloAmbiente } from "./descrivi.ts";
@@ -93,6 +95,8 @@ export function PropostaInAttesa({ proposta, aMano }: { proposta: Omit<Proposta,
   const [modello, setModello] = useState(predefinite.modello ?? "");
   const [impegno, setImpegno] = useState<Impegno | "">(predefinite.impegno ?? "");
   const [permessi, setPermessi] = useState<ModoPermessi>(predefinite.permessi);
+  // Chi implementa gli incarichi (ADR 0051): nessuno finché il proprietario non lo sceglie.
+  const [chiImplementa, setChiImplementa] = useState<ChiImplementa>();
   const [nome, setNome] = useState(proposta.nome);
   const [idAmbiente, setIdAmbiente] = useState(proposta.idAmbiente);
   // Le estensioni scelte, per ambiente: cambiando ambiente si ritrova ciò che si era scelto lì.
@@ -128,6 +132,16 @@ export function PropostaInAttesa({ proposta, aMano }: { proposta: Omit<Proposta,
     const riallineata = sceltaRiallineata(modelliQui, motore, modello);
     if (riallineata.motore !== motore) setMotore(riallineata.motore);
     if (riallineata.modello !== modello) setModello(riallineata.modello);
+    if (chiImplementa !== undefined) {
+      const sua = sceltaRiallineata(modelliQui, chiImplementa.motore, chiImplementa.modello ?? "");
+      if (sua.motore !== chiImplementa.motore || sua.modello !== (chiImplementa.modello ?? "")) {
+        setChiImplementa({
+          ...(sua.motore === undefined ? {} : { motore: sua.motore }),
+          ...(sua.modello === "" ? {} : { modello: sua.modello }),
+          ...(chiImplementa.impegno === undefined ? {} : { impegno: chiImplementa.impegno }),
+        });
+      }
+    }
     // Solo quando cambiano i modelli: le scelte fatte nel menu sono già tra quelli.
   }, [modelliQui]);
   const nomePulito = nome.trim();
@@ -169,6 +183,7 @@ export function PropostaInAttesa({ proposta, aMano }: { proposta: Omit<Proposta,
         ...(impegno !== (predefinite.impegno ?? "") ? { impegno: impegno === "" ? null : impegno } : {}),
         ...(permessi !== predefinite.permessi ? { permessi } : {}),
         ...(proposta.estensioni === undefined ? {} : { estensioni: sceltePerQui, skillDiPartenza: skill ?? null }),
+        ...(chiImplementa === undefined ? {} : { chiImplementa }),
       };
       const idProgetto =
         aMano === undefined
@@ -334,6 +349,10 @@ export function PropostaInAttesa({ proposta, aMano }: { proposta: Omit<Proposta,
             aiPermessi={setPermessi}
           />
           <div className="tenue">Restano quelle del progetto: le cambi quando vuoi, sotto il campo della sua chat.</div>
+          <div className="voce-chi-implementa">
+            <div className="titolino">Chi implementa</div>
+            <SceltaChiImplementa modelli={modelliQui ?? proposta.modelli} scelta={chiImplementa} disattivo={occupata} alCambio={setChiImplementa} />
+          </div>
           {permessi === "senza-permessi" && (
             <div className="avvertenza">Senza permessi il progetto esegue qualunque comando senza chiederti nulla, anche fuori dalla sua cartella.</div>
           )}

@@ -340,6 +340,17 @@ export interface OpzioniCentro {
   cookieSicuro: boolean;
 }
 
+/** Chi implementa gli incarichi di un progetto (ADR 0051), come arriva dall'interfaccia. */
+const SCHEMA_CHI_IMPLEMENTA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    motore: { type: "string", enum: [...MOTORI] },
+    modello: { type: "string", maxLength: 200 },
+    impegno: { type: "string", enum: [...IMPEGNI] },
+  },
+};
+
 export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstance> {
   const { accesso, home, argomenti, ambienti, lavori, proposte, statoHome, immagini, memoria, skill } = opzioni;
   // Allo spegnimento le connessioni ancora aperte, come i flussi di eventi, vengono chiuse:
@@ -1848,12 +1859,13 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
             permessi: { enum: [...MODI_PERMESSI] },
             estensioni: { type: "array", maxItems: 50, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 64 } },
             skillDiPartenza: { enum: [...SKILL_DI_PARTENZA, null] },
+            chiImplementa: SCHEMA_CHI_IMPLEMENTA,
           },
         },
       },
     },
     async (richiesta, risposta) => {
-      const { esito, nome, idAmbiente, portaFile, cartellaEsistente, motore, modello, impegno, permessi, estensioni, skillDiPartenza } = richiesta.body;
+      const { esito, nome, idAmbiente, portaFile, cartellaEsistente, motore, modello, impegno, permessi, estensioni, skillDiPartenza, chiImplementa } = richiesta.body;
       if (esito === "annullata") {
         if (!proposte.annulla(richiesta.params.id)) {
           return risposta.code(404).send({ errore: "Questa proposta non è più in attesa." });
@@ -1872,6 +1884,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
           ...(permessi === undefined ? {} : { permessi }),
           ...(estensioni === undefined ? {} : { estensioni }),
           ...(skillDiPartenza === undefined ? {} : { skillDiPartenza }),
+          ...(chiImplementa === undefined ? {} : { chiImplementa }),
         });
         if (progetto === undefined) {
           return risposta.code(404).send({ errore: "Questa proposta non è più in attesa." });
@@ -1919,6 +1932,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
             permessi: { enum: [...MODI_PERMESSI] },
             estensioni: { type: "array", maxItems: 50, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 64 } },
             skillDiPartenza: { enum: [...SKILL_DI_PARTENZA, null] },
+            chiImplementa: SCHEMA_CHI_IMPLEMENTA,
           },
         },
       },
@@ -2494,15 +2508,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
           required: ["chiImplementa"],
           additionalProperties: false,
           properties: {
-            chiImplementa: {
-              type: ["object", "null"],
-              additionalProperties: false,
-              properties: {
-                motore: { type: "string", enum: [...MOTORI] },
-                modello: { type: "string", maxLength: 200 },
-                impegno: { type: "string", enum: [...IMPEGNI] },
-              },
-            },
+            chiImplementa: { ...SCHEMA_CHI_IMPLEMENTA, type: ["object", "null"] },
           },
         },
       },
