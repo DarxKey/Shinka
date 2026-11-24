@@ -19,7 +19,9 @@ import {
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ambientePerHarness, fonteConfigurata, verificaFonte } from "../harness/autenticazione.ts";
+import { ambientePerHarness, ambientePerModelloLocale, fonteConfigurata, verificaFonte, type ServerDelModelloLocale } from "../harness/autenticazione.ts";
+import { estensioneDelModello } from "../protocollo/estensioni.ts";
+import type { ModelliLocali, PresaDelModello } from "./modelli-locali.ts";
 import type {
   DecisionePermesso,
   EventoConversazione,
@@ -102,6 +104,11 @@ export interface ConfigurazioneConversazione {
   cartellaModifiche?: string;
   /** Dopo quanto tempo senza turni il processo viene chiuso. */
   inattivitaMs?: number;
+  /**
+   * I modelli locali di questo ambiente (ADR 0051): se il modello scelto è uno di quelli, il processo
+   * parla con il suo server, che si accende prima del primo messaggio.
+   */
+  modelliLocali?: ModelliLocali;
   alEvento(evento: EventoConversazione): void;
   /** Chiamata quando l'harness assegna o cambia l'identificativo; stringa vuota se va dimenticato. */
   alIdSessione(id: string): void;
@@ -334,6 +341,7 @@ export class Conversazione implements PortaConversazione {
    * stare lavorando.
    */
   async chiediAParte(domanda: string): Promise<RispostaAParte> {
+    if (estensioneDelModello(this.#impostazioni.modello) !== undefined) return { motivo: "Con un modello locale la domanda a parte non c'è." };
     const fonte = fonteConfigurata();
     const base = opzioniHarness(this.#cfg, fonte, this.#idSessione, this.#impostazioni, async () => ({
       behavior: "deny",
@@ -516,12 +524,21 @@ export class Conversazione implements PortaConversazione {
     this.#cfg.alEvento({ tipo: "stato", stato: { inSfondo: 0 } });
   }
 
+  /** Il modello locale scelto, preso per il processo che sta per partire; nulla se il modello scelto non è locale. */
+  #prendiModelloLocale(): PresaDelModello | { motivo: string } | undefined {
+    const modello = this.#impostazioni.modello;
+    if (estensioneDelModello(modello) === undefined || modello === undefined) return undefined;
+    if (this.#cfg.modelliLocali === undefined) return { motivo: "in questo ambiente non ci sono modelli locali." };
+    return this.#cfg.modelliLocali.prendi(modello, this.#impostazioni.impegno);
+  }
+
   #assicuraAvviata(): Coda<SDKUserMessage> {
     if (this.#coda !== undefined) return this.#coda;
 
     const fonte = fonteConfigurata();
     const coda = new Coda<SDKUserMessage>();
     const estensioni = this.#cfg.estensioni;
+    const locale = this.#prendiModelloLocale();
     const opzioni = {
       ...opzioniHarness(
         this.#cfg,
@@ -533,19 +550,29 @@ export class Conversazione implements PortaConversazione {
         this.#aspettaIlProprietario,
         this.#domande.poni,
         { pronto: () => this.#modifiche.pronto(), prima: (percorso) => this.#modifiche.prima(percorso) },
+        locale === undefined || "motivo" in locale ? undefined : locale,
       ),
       // Dopo un riavvolgimento la storia riprende da quel punto, una volta sola.
       ...(this.#riprendiAl === undefined || this.#idSessione === undefined ? {} : { resumeSessionAt: this.#riprendiAl }),
     };
     this.#riprendiAl = undefined;
-    // Con le estensioni, il primo messaggio aspetta che i loro server siano stati dati al processo.
+    // Con le estensioni, il primo messaggio aspetta che i loro server siano stati dati al processo;
+    // con un modello locale, che il suo server risponda.
     let via: () => void = () => {};
     const pronte = new Promise<void>((fatto) => (via = fatto));
-    const sessione = this.#avvia({ prompt: estensioni === undefined ? coda : dopo(pronte, coda), options: opzioni });
+    const prontoLocale = locale === undefined ? undefined : "motivo" in locale ? Promise.reject(new Error(locale.motivo)) : locale.pronto;
+    const attese = [...(estensioni === undefined ? [] : [pronte]), ...(prontoLocale === undefined ? [] : [prontoLocale.catch(() => {})])];
+    const sessione = this.#avvia({ prompt: attese.length === 0 ? coda : dopo(Promise.all(attese).then(() => {}), coda), options: opzioni });
     this.#coda = coda;
     this.#query = sessione;
     if (estensioni !== undefined) void this.#accendiEstensioni(sessione, estensioni).finally(via);
-    void this.#consuma(sessione, coda, fonte);
+    // Il modello locale non parte: lo si dice, e il processo si chiude con i turni che aspettavano.
+    prontoLocale?.catch((errore: unknown) => {
+      if (this.#query !== sessione) return;
+      this.#cfg.alEvento({ tipo: "errore", messaggio: `Il modello locale non è pronto: ${testoErrore(errore)}` });
+      sessione.close();
+    });
+    void this.#consuma(sessione, coda, fonte, locale === undefined || "motivo" in locale ? undefined : locale);
     // L'harness dice di essere partito solo con il primo messaggio, ma risponde già: modelli,
     // comandi, contesto e limiti del piano si chiedono subito, così il proprietario li vede
     // appena apre la conversazione, prima di scrivere.
@@ -557,6 +584,8 @@ export class Conversazione implements PortaConversazione {
     sessione: Query,
     coda: Coda<SDKUserMessage>,
     fonte: ReturnType<typeof fonteConfigurata>,
+    /** Il modello locale con cui parla il processo, se è uno di quelli: alla fine si lascia. */
+    locale?: PresaDelModello,
   ): Promise<void> {
     const stato = nuovoStato();
     let avviata = false;
@@ -564,7 +593,8 @@ export class Conversazione implements PortaConversazione {
       for await (const messaggio of sessione) {
         if (messaggio.type === "system" && messaggio.subtype === "init") {
           avviata = true;
-          verificaFonte(fonte, messaggio.apiKeySource);
+          // Con un modello locale il piano non c'entra: l'indirizzo del server lo ha messo Shinka.
+          if (locale === undefined) verificaFonte(fonte, messaggio.apiKeySource);
           if (messaggio.session_id !== this.#idSessione) {
             this.#idSessione = messaggio.session_id;
             this.#cfg.alIdSessione(messaggio.session_id);
@@ -617,6 +647,10 @@ export class Conversazione implements PortaConversazione {
         }
         if (messaggio.type === "result" && !risultatoDiUnaNota(messaggio)) {
           void this.#riferisciStato(sessione, false);
+          if (locale !== undefined) {
+            const vramPiccoMb = locale.vramPiccoMb();
+            this.#cfg.alEvento({ tipo: "stato", stato: { modelloLocale: { modello: locale.modello, ...(vramPiccoMb === undefined ? {} : { vramPiccoMb }) } } });
+          }
           this.#turnoFinito();
         }
       }
@@ -636,6 +670,7 @@ export class Conversazione implements PortaConversazione {
       });
       sessione.close();
     } finally {
+      locale?.lascia();
       const sostituita = this.#coda !== undefined && this.#coda !== coda;
       if (this.#coda === coda) {
         this.#coda = undefined;
@@ -991,6 +1026,8 @@ export function opzioniHarness(
   chiediRisposte?: ChiediRisposte,
   /** Ciò che il registro delle modifiche fa prima di ogni strumento. */
   primaDellaModifica?: PrimaDegliStrumenti,
+  /** Il server del modello locale con cui parlare al posto di Anthropic (ADR 0051). */
+  locale?: ServerDelModelloLocale,
 ): Options {
   const plugin = [...(cfg.cartellaSkill === undefined ? [] : [cfg.cartellaSkill]), ...pluginDelleEstensioni];
   const modo = MODI_DELL_HARNESS[impostazioni.permessi];
@@ -999,7 +1036,7 @@ export function opzioniHarness(
   return {
     cwd: cfg.cartella,
     // Con questa l'harness dice quando lavora e quando ha finito ("running", "idle"): è la fine vera di un turno.
-    env: { ...ambientePerHarness(fonte), CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" },
+    env: { ...(locale === undefined ? ambientePerHarness(fonte) : ambientePerModelloLocale(locale)), CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" },
     systemPrompt:
       cfg.istruzioni === "claude-code"
         ? {
@@ -1024,9 +1061,13 @@ export function opzioniHarness(
     enableFileCheckpointing: true,
     // Il ragionamento arriva riassunto: il proprietario lo legge, se vuole, nella vista della trascrizione che lo mostra.
     thinking: { type: "adaptive", display: "summarized" },
-    ...(impostazioni.modello === undefined ? {} : { model: impostazioni.modello }),
-    ...(impostazioni.impegno === undefined ? {} : { effort: impostazioni.impegno }),
-    ...(cfg.strumentiVietati === undefined ? {} : { disallowedTools: cfg.strumentiVietati }),
+    // Con un modello locale l'impegno lo fissa il server quando parte, e il modello è il suo.
+    ...(locale !== undefined ? { model: locale.modello } : impostazioni.modello === undefined ? {} : { model: impostazioni.modello }),
+    ...(impostazioni.impegno === undefined || locale !== undefined ? {} : { effort: impostazioni.impegno }),
+    // La ricerca e la lettura del web passano dai server di Anthropic: con un modello locale non funzionano.
+    ...(cfg.strumentiVietati === undefined && locale === undefined
+      ? {}
+      : { disallowedTools: [...(cfg.strumentiVietati ?? []), ...(locale === undefined ? [] : ["WebSearch", "WebFetch"])] }),
     // Il modo è sempre dichiarato, ed è quello scelto dal proprietario: lasciato a Claude Code
     // potrebbe diventare da solo quello in cui è un classificatore ad approvare le azioni.
     permissionMode: modo,
@@ -1034,6 +1075,9 @@ export function opzioniHarness(
     ...(modo === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
     // Senza le impostazioni dell'ambiente la conversazione vede solo ciò che le diamo noi.
     ...(cfg.impostazioniDellAmbiente === true ? {} : { settingSources: [], strictMcpConfig: true }),
+    // I server MCP dell'ambiente possono pesare più del contesto di un modello locale: lì valgono
+    // solo quelli di Shinka e delle estensioni, come fa il profilo del proprietario con --strict-mcp-config.
+    ...(locale === undefined ? {} : { strictMcpConfig: true }),
     ...(cfg.strumentiNostri === undefined ? {} : { mcpServers: cfg.strumentiNostri() }),
     ...(plugin.length === 0 ? {} : { plugins: plugin.map((path) => ({ type: "local" as const, path })) }),
     // Claude Code collega l'estensione del browser solo se glielo si chiede all'avvio, con --chrome.

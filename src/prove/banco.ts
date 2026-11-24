@@ -3,6 +3,7 @@
  * così i test esercitano tutto il percorso senza consumare la quota di Claude.
  */
 
+import { ModelliLocali } from "../nodo/modelli-locali.ts";
 import { PrimoAvvio } from "../centro/primo-avvio.ts";
 import { AccessiNegliAmbienti, type PortaAccessi } from "../centro/accessi.ts";
 import { ImpostazioniDellInstallazione } from "../centro/impostazioni-installazione.ts";
@@ -558,6 +559,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
           cartella: join(cartella, "estensioni"),
           radiceProgetti,
           apriHarness: harnessEstensioni.apri,
+          modelliLocali: new ModelliLocali({ passoMs: 50, fermoMs: 200, vram: async () => undefined }),
           chiavi: (nome) => estensioniNegliAmbienti?.chiavi(nome, ID_AMBIENTE_DEL_CENTRO) ?? Promise.resolve({ motivo: "non c'è un vault" }),
           alCambio: () => {
             casa.ricaricaEstensioni();
@@ -590,7 +592,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
       strumento: strumentoDiProgetto,
       cartellaSkill: skill.cartella,
       diShinka: (idProgetto) => progetti.trova(idProgetto)?.diShinka === true,
-      ...(estensioniDelCentro === undefined ? {} : { estensioni: estensioniDelCentro }),
+      ...(estensioniDelCentro === undefined ? {} : { estensioni: estensioniDelCentro, modelliLocali: estensioniDelCentro.modelliLocali }),
       ...(opzioni.preparaProgetto === undefined ? {} : { preparaProgetto: opzioni.preparaProgetto }),
     },
   );

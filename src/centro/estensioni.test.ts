@@ -576,3 +576,66 @@ test("nella Home una skill di Shinka non chiede consenso, quella di un plugin s�
     assert.equal(consenso("mcp__meteo__saluta", {}, modo), false);
   }
 });
+
+test("un modello locale si propone dalla Home, si prova accendendo il suo server, e i progetti lo possono scegliere", async (t) => {
+  const { banco, estensioni } = await conEstensioni(t);
+  const comuni = { ambienti: banco.ambienti, lavori: banco.lavori, proposte: banco.proposte, home: () => banco.casa, agisci: banco.agisci };
+  const azioni = azioniDellaHome({ ...comuni, estensioni });
+  const { createServer } = await import("node:net");
+  const libera = createServer();
+  await new Promise<void>((fatto) => libera.listen(0, "127.0.0.1", fatto));
+  const porta = (libera.address() as AddressInfo).port;
+  await new Promise<void>((fatto) => libera.close(() => fatto()));
+  // Al posto di llama-server, un server di Node che risponde su /health.
+  const programma = "require('node:http').createServer((q, r) => r.end('ok')).listen(Number(process.argv.at(-2)), '127.0.0.1')";
+  const base = { nome: "qwen", descrizione: "Qwen 3.8 27B sulla scheda video.", ambiente: "Unraid", tipo: "modello-locale" as const, comando: process.execPath };
+
+  for (const [argomenti, motivo] of [
+    [{ ...base, porta }, /servono il comando del server, la porta, il nome del modello e il contesto/],
+    [{ ...base, porta: 80, modello: "qwen3.8-27b", contesto: 98_304 }, /da 1024 in su/],
+    [{ ...base, porta, modello: "qwen 3.8", contesto: 98_304 }, /non è descritto per intero/],
+    [{ ...base, porta, modello: "qwen3.8-27b", contesto: 98_304, chiavi: ["HF_TOKEN"] }, /non riceve chiavi/],
+    [{ ...base, porta, modello: "qwen3.8-27b", contesto: 98_304, argomenti: ["--api-key=abcdefgh"] }, /sembra contenere un segreto/],
+  ] as [Parameters<typeof azioni.proponiEstensione>[0], RegExp][]) {
+    const risposta = await azioni.proponiEstensione(argomenti);
+    assert.equal(risposta.isError, true, JSON.stringify(argomenti));
+    assert.match(testo(risposta), motivo);
+  }
+
+  const mostrata = await azioni.proponiEstensione({
+    ...base,
+    argomenti: ["-e", programma, String(porta), "{impegno}"],
+    porta,
+    modello: "qwen3.8-27b",
+    contesto: 98_304,
+    impegni: ["xhigh", "medium"],
+  });
+  assert.equal(mostrata.isError, undefined, testo(mostrata));
+  const [scheda] = eventi(banco, "estensione-proposta");
+  assert.deepEqual(scheda?.definizione, {
+    tipo: "modello-locale",
+    comando: process.execPath,
+    argomenti: ["-e", programma, String(porta), "{impegno}"],
+    variabili: {},
+    porta,
+    modello: "qwen3.8-27b",
+    contesto: 98_304,
+    uscita: 32_000,
+    impegni: ["xhigh", "medium"],
+  });
+  assert.match(scheda?.avvisi[0] ?? "", /lo spegne dopo dieci minuti/);
+  assert.match(scheda?.avvisi[1] ?? "", /scheda video/);
+
+  const esito = await estensioni.conferma(scheda?.idProposta ?? "");
+  assert.equal(esito?.stato, "accesa", JSON.stringify(esito));
+  assert.deepEqual(eventi(banco, "estensione-decisa").at(-1), { tipo: "estensione-decisa", idProposta: scheda?.idProposta, esito: "accesa", strumenti: ["qwen3.8-27b"] });
+  assert.match(banco.home.annotazioni.at(-1) ?? "", /Il modello qwen3\.8-27b si sceglie come modello, o come chi implementa, nei progetti di quell'ambiente/);
+  // La prova lo ha spento; non è tra le estensioni da scegliere per un progetto, ma tra i modelli.
+  assert.equal(estensioni.perProgetto()[CENTRO]?.voci.some((voce) => voce.nome === "qwen"), false);
+  await banco.lavori.crea("Calcoli", CENTRO, "Una libreria.");
+  await finche(() => banco.conversazioniLocali.length === 1, "il progetto apre la sua conversazione");
+  const modelli = banco.conversazioniLocali[0]?.configurazione?.modelliLocali;
+  await finche(() => (modelli?.modelli().length ?? 0) === 1, "il modello locale arriva alle conversazioni dell'ambiente");
+  assert.partialDeepStrictEqual(modelli?.modelli(), [{ valore: "locale:qwen", nome: "qwen3.8-27b (locale)", impegni: ["xhigh", "medium"] }]);
+  assert.match(testo(await azioni.elencaEstensioni({})), /- qwen: Modello locale\. Qwen 3\.8 27B sulla scheda video\./);
+});

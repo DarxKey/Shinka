@@ -344,6 +344,10 @@ _Avoid_: planner, orchestratore
 Il modello che il proprietario sceglie per svolgere gli incarichi di un progetto; senza, il progetto lavora con un modello solo.
 _Avoid_: executor, esecutore, worker
 
+**Modello locale**:
+Un modello che gira su una macchina del proprietario, con un server che parla come l'API di Anthropic (per esempio Qwen con llama-server): è un'estensione di Shinka, il nodo lo accende quando una conversazione lo sceglie e lo spegne dopo dieci minuti fermo.
+_Avoid_: LLM locale, modello offline
+
 **Cartella collegata** (di un progetto):
 Una cartella di un altro ambiente che il proprietario collega a un progetto: il progetto ci lavora con gli strumenti di Shinka, seguendo il modo dei suoi permessi, mentre il suo motore resta nel suo ambiente. Una per ambiente.
 _Avoid_: cartella remota, mount, progetto multi-ambiente

@@ -20,6 +20,7 @@ import {
   avvisiDellaDefinizione,
   difettoDelNome,
   inUnaRiga,
+  leggiDefinizione,
   nomeDiChiaveValido,
   NOMI_RISERVATI,
   tipoInParole,
@@ -55,7 +56,8 @@ export interface RichiestaEstensione {
   definizione?:
     | { tipo: "mcp-locale"; comando: string; argomenti: string[]; variabili: Record<string, string> }
     | { tipo: "mcp-remoto"; indirizzo: string; trasporto: "http" | "sse" }
-    | { tipo: "plugin"; repository: string; riferimento?: string; cartella?: string };
+    | { tipo: "plugin"; repository: string; riferimento?: string; cartella?: string }
+    | Extract<DefinizioneEstensione, { tipo: "modello-locale" }>;
   chiavi: string[];
 }
 
@@ -153,7 +155,8 @@ export class Estensioni {
   perProgetto(): EstensioniDegliAmbienti {
     const perAmbiente: EstensioniDegliAmbienti = {};
     for (const ambiente of this.#o.ambienti()) {
-      const voci: EstensionePerProgetto[] = this.#estensioni.map((una) => {
+      // Un modello locale non si sceglie tra le estensioni del progetto: si sceglie come modello.
+      const voci: EstensionePerProgetto[] = this.#estensioni.filter((una) => una.definizione.tipo !== "modello-locale").map((una) => {
         const preparazione = preparazioneDa(una.definizione);
         return {
           nome: una.nome,
@@ -329,6 +332,29 @@ export class Estensioni {
       }
       return { definizione: { tipo: "mcp-locale", comando, argomenti: scritta.argomenti, variabili: scritta.variabili } };
     }
+    if (scritta.tipo === "modello-locale") {
+      if (chiavi.length > 0) return { motivo: "Un modello locale non riceve chiavi dal vault." };
+      const comando = scritta.comando.trim();
+      if (comando === "" || /[\r\n]/.test(comando)) return { motivo: "Serve il comando: il programma del server, senza argomenti." };
+      if (scritta.argomenti.length > 80 || scritta.argomenti.some((uno) => uno.length > 2000 || /[\r\n]/.test(uno))) {
+        return { motivo: "Gli argomenti sono troppi, o troppo lunghi." };
+      }
+      const segreto = scritta.argomenti.find((uno) => /(key|token|secret|password|passwd|pwd)s?[=:]\S{6,}/i.test(uno));
+      if (segreto !== undefined) return { motivo: `L'argomento "${segreto.slice(0, 24)}…" sembra contenere un segreto: un modello locale non ne ha bisogno.` };
+      for (const [variabile, valore] of Object.entries(scritta.variabili)) {
+        if (!nomeDiChiaveValido(variabile)) return { motivo: `"${variabile}" non è il nome di una variabile d'ambiente.` };
+        if (SA_DI_SEGRETO.test(variabile) && valore.trim() !== "") return { motivo: `La variabile "${variabile}" sembra un segreto: un modello locale non ne ha bisogno.` };
+      }
+      const definizione = leggiDefinizione({ ...scritta, comando });
+      if (definizione === undefined || definizione.tipo !== "modello-locale") {
+        return {
+          motivo:
+            "Il modello locale non è descritto per intero: servono la porta (da 1 a 65535), il nome del modello come lo chiama il server, il contesto e la lunghezza massima delle risposte in token, e almeno un impegno tra low, medium, high, xhigh e max.",
+        };
+      }
+      if (definizione.porta < 1024) return { motivo: "La porta del server va scelta da 1024 in su." };
+      return { definizione };
+    }
     if (scritta.tipo === "mcp-remoto") {
       let indirizzo: URL;
       try {
@@ -396,7 +422,9 @@ export class Estensioni {
     proposta.canale.pubblica({ tipo: "estensione-decisa", idProposta, esito: "accesa", strumenti: esito.strumenti });
     this.#o.annotaHome(
       `[Shinka] Il proprietario ha confermato l'estensione "${proposta.nome}": nell'ambiente "${ambiente}" è partita ed è accesa. ` +
-        (proposta.definizione.tipo === "plugin"
+        (proposta.definizione.tipo === "modello-locale"
+          ? `Il modello ${proposta.definizione.modello} si sceglie come modello, o come chi implementa, nei progetti di quell'ambiente: il server si accende quando serve e si spegne dopo dieci minuti fermo.`
+          : proposta.definizione.tipo === "plugin"
           ? "Le sue skill valgono nelle conversazioni che partono da adesso."
           : `Offre questi strumenti: ${esito.strumenti.join(", ") || "nessuno"}. Valgono nelle conversazioni che partono da adesso` +
             `${proposta.idAmbiente === ID_AMBIENTE_DEL_CENTRO ? ", questa compresa dal prossimo messaggio" : ""}.`),

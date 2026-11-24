@@ -315,6 +315,8 @@ export class LavoroDelNodo {
     this.chiudiTutto();
     this.#terminali.spegniTutti();
     this.#applicazioni.spegniTutte();
+    // I server dei modelli locali accesi da Shinka non devono restare a occupare la scheda video.
+    this.#estensioni?.modelliLocali.chiudi();
   }
 
   /**
@@ -432,6 +434,7 @@ export class LavoroDelNodo {
           : { estensioni: scelte === undefined ? this.#estensioni : soloLeScelte(this.#estensioni, () => scelte) }),
         ...(this.#contesto.browserDelPc === true ? { browserDelPc: true } : {}),
         ...(eIncarico(idConversazione) ? { incarico: true } : {}),
+        ...(this.#estensioni === undefined ? {} : { modelliLocali: this.#estensioni.modelliLocali }),
         ...(this.#contesto.cartellaModifiche === undefined ? {} : { cartellaModifiche: join(this.#contesto.cartellaModifiche, nomeDiCartella(idConversazione)) }),
       },
     );

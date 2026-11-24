@@ -56,3 +56,35 @@ export function verificaFonte(attesa: FonteAutenticazione, sorgenteChiave: strin
     throw new Error("Shinka è configurato per una API key, ma la sessione non ne ha trovata nessuna.");
   }
 }
+
+/** Il server di un modello locale a cui una conversazione parla al posto di Anthropic (ADR 0051). */
+export interface ServerDelModelloLocale {
+  indirizzo: string;
+  modello: string;
+  contesto: number;
+  uscita: number;
+}
+
+/**
+ * Ambiente da passare al processo dell'harness che parla con un modello locale: l'indirizzo del
+ * server, un gettone che il server non controlla, e il modello per ogni ruolo. Qui il piano non c'è
+ * e una chiave a consumo non serve: quelle dell'ambiente si tolgono, perché non escano dalla macchina.
+ */
+export function ambientePerModelloLocale(server: ServerDelModelloLocale, ambiente: Ambiente = process.env): Ambiente {
+  const risultato: Ambiente = { ...ambiente };
+  for (const nome of VARIABILI_A_CONSUMO) delete risultato[nome];
+  return {
+    ...risultato,
+    ANTHROPIC_BASE_URL: server.indirizzo,
+    ANTHROPIC_AUTH_TOKEN: "modello-locale",
+    ANTHROPIC_MODEL: server.modello,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: server.modello,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: server.modello,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: server.modello,
+    CLAUDE_CODE_SUBAGENT_MODEL: server.modello,
+    CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(server.contesto),
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(server.uscita),
+    API_TIMEOUT_MS: "3600000",
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+  };
+}

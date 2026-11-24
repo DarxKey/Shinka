@@ -567,14 +567,19 @@ export function creaStrumentiDiProgetto(chiama: ChiamaStrumento, opzioni: { inst
     name: GRUPPO_STRUMENTI,
     version: "1.0.0",
     alwaysLoad: true,
-    tools: [
-      ...definizioniComuni(chiama),
-      definizioneAnteprima(chiama),
-      definizioneAvvioApplicazione(chiama),
-      ...definizioniApplicazione(chiama),
-      ...definizioniCollegate(chiama),
-      ...(opzioni.incarico === true ? [] : [definizioneIncarico(chiama)]),
-      ...(opzioni.installazione === true && opzioni.incarico !== true ? [definizioneInstallazione(chiama), definizioneGateway(chiama)] : []),
-    ],
+    // Chi svolge un incarico ha solo gli strumenti per le cartelle collegate: il resto lo fa chi
+    // guida, e un contesto più leggero conta per un modello locale.
+    tools:
+      opzioni.incarico === true
+        ? definizioniCollegate(chiama)
+        : [
+            ...definizioniComuni(chiama),
+            definizioneAnteprima(chiama),
+            definizioneAvvioApplicazione(chiama),
+            ...definizioniApplicazione(chiama),
+            ...definizioniCollegate(chiama),
+            definizioneIncarico(chiama),
+            ...(opzioni.installazione === true ? [definizioneInstallazione(chiama), definizioneGateway(chiama)] : []),
+          ],
   });
 }

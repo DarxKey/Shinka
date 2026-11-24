@@ -357,6 +357,22 @@ export function azioniDellaHome(opzioni: OpzioniStrumentiHome) {
           if (argomenti.indirizzo === undefined) return nonRiuscito("Per un server remoto serve l'indirizzo: la scheda non è stata mostrata.");
           definizione = { tipo: "mcp-remoto", indirizzo: argomenti.indirizzo, trasporto: argomenti.trasporto ?? "http" };
           break;
+        case "modello-locale":
+          if (argomenti.comando === undefined || argomenti.porta === undefined || argomenti.modello === undefined || argomenti.contesto === undefined) {
+            return nonRiuscito("Per un modello locale servono il comando del server, la porta, il nome del modello e il contesto: la scheda non è stata mostrata.");
+          }
+          definizione = {
+            tipo: "modello-locale",
+            comando: argomenti.comando,
+            argomenti: argomenti.argomenti ?? [],
+            variabili: argomenti.variabili ?? {},
+            porta: argomenti.porta,
+            modello: argomenti.modello,
+            contesto: argomenti.contesto,
+            uscita: argomenti.uscita ?? 32_000,
+            impegni: argomenti.impegni ?? ["medium"],
+          };
+          break;
         case "plugin":
           if (argomenti.repository === undefined) return nonRiuscito("Per un plugin serve l'indirizzo del repository: la scheda non è stata mostrata.");
           definizione = {
@@ -702,8 +718,13 @@ interface ArgomentiEstensione {
   nome: string;
   descrizione?: string;
   ambiente: string;
-  tipo?: "mcp-locale" | "mcp-remoto" | "plugin";
+  tipo?: "mcp-locale" | "mcp-remoto" | "plugin" | "modello-locale";
   comando?: string;
+  porta?: number;
+  modello?: string;
+  contesto?: number;
+  uscita?: number;
+  impegni?: Impegno[];
   argomenti?: string[];
   variabili?: Record<string, string>;
   indirizzo?: string;
@@ -962,19 +983,29 @@ export function creaStrumentiHome(opzioni: OpzioniStrumentiHome) {
             ),
             tool(
               "proponi_estensione",
-              "Propone al proprietario di installare e accendere un'estensione in un ambiente: un server MCP locale (un programma che parte lì), un server MCP remoto (un indirizzo), oppure un plugin di Claude Code preso da un repository Git. Non installa né avvia nulla: mostra una scheda con che cosa è, il comando o l'indirizzo esatto, da dove viene e in quale ambiente, e solo se il proprietario conferma l'ambiente la avvia una volta e la accende se parte. Per accendere in un altro ambiente un'estensione che è già nell'elenco, indica solo nome e ambiente, senza tipo. Dopo averlo usato, rispondi con una frase sola.",
+              "Propone al proprietario di installare e accendere un'estensione in un ambiente: un server MCP locale (un programma che parte lì), un server MCP remoto (un indirizzo), un plugin di Claude Code preso da un repository Git, oppure un modello locale (un server come llama-server che gira su quella macchina e parla come l'API di Anthropic: i progetti di quell'ambiente lo scelgono come modello o come chi implementa, e il nodo lo accende quando serve e lo spegne dopo dieci minuti fermo). Non installa né avvia nulla: mostra una scheda con che cosa è, il comando o l'indirizzo esatto, da dove viene e in quale ambiente, e solo se il proprietario conferma l'ambiente la avvia una volta e la accende se parte. Per accendere in un altro ambiente un'estensione che è già nell'elenco, indica solo nome e ambiente, senza tipo. Dopo averlo usato, rispondi con una frase sola.",
               {
                 nome: z.string().min(1).max(40).describe("Il nome dell'estensione: minuscole, cifre e trattini. I suoi strumenti si chiameranno mcp__nome__…"),
                 descrizione: z.string().max(600).optional().describe("Che cosa fa e a che cosa serve al proprietario, in una o due frasi. Serve sempre per un'estensione nuova."),
                 ambiente: AMBIENTE,
-                tipo: z.enum(["mcp-locale", "mcp-remoto", "plugin"]).optional().describe("Che cos'è. Manca solo per accendere altrove un'estensione già in elenco."),
+                tipo: z.enum(["mcp-locale", "mcp-remoto", "plugin", "modello-locale"]).optional().describe("Che cos'è. Manca solo per accendere altrove un'estensione già in elenco."),
                 comando: z
                   .string()
                   .max(400)
                   .optional()
-                  .describe("Per mcp-locale: il programma da avviare, senza argomenti, scritto per il sistema di quell'ambiente. Su Windows un comando come npx va avviato da cmd: comando \"cmd\", argomenti [\"/c\", \"npx\", …]."),
-                argomenti: z.array(z.string().max(2000)).max(60).optional().describe("Per mcp-locale: gli argomenti, uno per voce. Scrivi la versione del pacchetto (pacchetto@1.2.3): un'estensione resta ferma alla versione mostrata nella scheda."),
-                variabili: z.record(z.string(), z.string().max(2000)).optional().describe("Per mcp-locale: variabili d'ambiente che non sono segreti."),
+                  .describe("Per mcp-locale e modello-locale: il programma da avviare, senza argomenti, scritto per il sistema di quell'ambiente. Per un modello locale il server stesso (per esempio il percorso completo di llama-server.exe), non uno script che lo lancia. Su Windows un comando come npx va avviato da cmd: comando \"cmd\", argomenti [\"/c\", \"npx\", …]."),
+                argomenti: z.array(z.string().max(2000)).max(80).optional().describe("Per mcp-locale e modello-locale: gli argomenti, uno per voce; per un modello locale \"{impegno}\" diventa l'impegno con cui il server parte. Scrivi la versione del pacchetto (pacchetto@1.2.3): un'estensione resta ferma alla versione mostrata nella scheda."),
+                variabili: z.record(z.string(), z.string().max(2000)).optional().describe("Per mcp-locale e modello-locale: variabili d'ambiente che non sono segreti."),
+                porta: z.number().int().min(1024).max(65535).optional().describe("Per modello-locale: la porta su cui il server ascolta, su 127.0.0.1."),
+                modello: z.string().max(120).optional().describe("Per modello-locale: il nome con cui il server chiama il modello (per llama-server, il suo --alias)."),
+                contesto: z.number().int().min(1024).optional().describe("Per modello-locale: i token di contesto del server (per llama-server, -c)."),
+                uscita: z.number().int().min(256).optional().describe("Per modello-locale: quanti token può scrivere una risposta, ragionamento compreso. Se manca, 32000."),
+                impegni: z
+                  .array(z.enum(IMPEGNI))
+                  .min(1)
+                  .max(5)
+                  .optional()
+                  .describe("Per modello-locale: gli impegni che il server accetta al posto di \"{impegno}\" negli argomenti (per llama-server, --reasoning-effort {impegno}); il primo è il predefinito."),
                 indirizzo: z.string().max(1000).optional().describe("Per mcp-remoto: l'indirizzo https del server."),
                 trasporto: z.enum(["http", "sse"]).optional().describe("Per mcp-remoto: come ci si collega. Se manca, http."),
                 repository: z.string().max(1000).optional().describe("Per plugin: l'indirizzo https del repository Git."),

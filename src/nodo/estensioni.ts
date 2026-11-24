@@ -10,6 +10,7 @@
  * Nella configurazione personale di Claude Code dell'ambiente qui non si scrive mai.
  */
 
+import { ModelliLocali } from "./modelli-locali.ts";
 import { query, type McpServerConfig, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -453,6 +454,8 @@ export interface OpzioniEstensioniInAmbiente {
   apriHarness?: ApriHarness;
   git?: Git;
   attesaProvaMs?: number;
+  /** I modelli locali dell'ambiente. Nei test, con un server finto. */
+  modelliLocali?: ModelliLocali;
 }
 
 export class EstensioniInAmbiente implements FonteEstensioni {
@@ -462,9 +465,12 @@ export class EstensioniInAmbiente implements FonteEstensioni {
   readonly #pluginPronti = new Map<string, string>();
   /** I cambiamenti si applicano uno alla volta, nell'ordine in cui arrivano. */
   #lavoro: Promise<void> = Promise.resolve();
+  /** I modelli locali accesi qui (ADR 0051): non sono strumenti, ma modelli con cui una conversazione può parlare. */
+  readonly modelliLocali: ModelliLocali;
 
   constructor(opzioni: OpzioniEstensioniInAmbiente) {
     this.#o = opzioni;
+    this.modelliLocali = opzioni.modelliLocali ?? new ModelliLocali();
   }
 
   get #cartellaPlugin(): string {
@@ -483,6 +489,7 @@ export class EstensioniInAmbiente implements FonteEstensioni {
   async #applica(estensioni: EstensioneDistribuita[]): Promise<void> {
     const prima = JSON.stringify([this.#accese, [...this.#pluginPronti]]);
     this.#accese = estensioni;
+    this.modelliLocali.imposta(estensioni);
     const cartelle = new Set<string>();
     for (const id of [...this.#pluginPronti.keys()]) {
       if (!estensioni.some((una) => una.id === id)) this.#pluginPronti.delete(id);
@@ -512,7 +519,7 @@ export class EstensioniInAmbiente implements FonteEstensioni {
   async server(solo?: readonly string[]): Promise<ServerDelleEstensioni> {
     const esito: ServerDelleEstensioni = { server: {}, nonPartite: [] };
     for (const estensione of this.#scelte(solo)) {
-      if (estensione.definizione.tipo === "plugin") continue;
+      if (estensione.definizione.tipo === "plugin" || estensione.definizione.tipo === "modello-locale") continue;
       const pronto = await this.#configura(estensione);
       if ("motivo" in pronto) esito.nonPartite.push({ nome: estensione.nome, motivo: pronto.motivo });
       else esito.server[estensione.nome] = pronto.configurazione;
@@ -546,6 +553,7 @@ export class EstensioniInAmbiente implements FonteEstensioni {
    */
   async prova(estensione: EstensioneDistribuita): Promise<EsitoProva> {
     try {
+      if (estensione.definizione.tipo === "modello-locale") return await this.modelliLocali.prova(estensione.definizione);
       return estensione.definizione.tipo === "plugin"
         ? await this.#provaPlugin(estensione.id, estensione.definizione)
         : await this.#provaServer(estensione);

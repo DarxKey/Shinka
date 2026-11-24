@@ -37,6 +37,16 @@ Il profilo è già quello giusto per la scheda: non serve cambiarlo per comincia
 - Le sue richieste di permesso, le sue domande e la fine di quelle azioni entrano nell'archivio del progetto; il resto della sua storia no: lo riassume il resoconto, e la sua uscita si legge dall'attività.
 - Le misure di ogni incarico finiscono in `incarichi.jsonl` nei dati di Shinka.
 
+## Com'è fatta la fase 2
+
+- Un'estensione di un tipo nuovo, `modello-locale`: il programma del server avviato direttamente (non uno script, che il nodo non saprebbe spegnere con certezza e che su un errore aspetterebbe un tasto), i suoi argomenti, la porta su 127.0.0.1, il nome del modello, il contesto, la lunghezza massima delle risposte e gli impegni che accetta. Negli argomenti `{impegno}` diventa l'impegno con cui il server parte: con llama-server il ragionamento si fissa all'avvio, e un impegno diverso vuol dire riaccenderlo, cosa che si fa solo se nessun'altra conversazione lo sta usando.
+- La propone la Home, come le altre, e la prova è accendere il server e aspettare che risponda su `/health`; poi si spegne.
+- Accesa in un ambiente, i suoi modelli compaiono nella scelta del modello dei progetti di quell'ambiente, con il valore `locale:<nome>`: per chi implementa, ma anche per il modello del progetto. Un modello locale lavora sempre con Claude Code, qualunque sia il motore predefinito.
+- La conversazione che lo sceglie prende il modello (`src/nodo/modelli-locali.ts`): il nodo accende il server se serve, e il primo messaggio aspetta che risponda. Claude Code parla con il server con le variabili del profilo del proprietario (indirizzo, un gettone che il server non controlla, il modello per ogni ruolo, contesto e uscita), senza la ricerca e la lettura del web (passano dai server di Anthropic) e senza i server MCP dell'ambiente, che possono pesare più del contesto. La scelta della fonte di autenticazione resta in un punto solo, `src/harness/autenticazione.ts`.
+- Quando l'ultima conversazione che lo usa chiude il suo processo, dopo dieci minuti il server si spegne. Uno che risponde già sulla porta, acceso dal proprietario, lo si usa e non lo si spegne.
+- Mentre è acceso si misura la memoria della scheda video con `nvidia-smi`; il picco arriva nel resoconto e nelle misure dell'incarico.
+- Chi svolge un incarico ha solo gli strumenti di Shinka per le cartelle collegate: il resto lo fa chi guida, e un contesto più leggero conta per un modello locale.
+
 ## Conseguenze
 
 - Un incarico costa una conversazione nuova: chi pianifica deve scriverlo perché si capisca da solo.

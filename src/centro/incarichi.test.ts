@@ -158,6 +158,7 @@ test("senza chi implementa il lavoro resta a chi guida; scelto, l'incarico gira 
   );
 
   incarico.emetti({ tipo: "stato", stato: { modello: "claude-sonnet-5-5" } });
+  incarico.emetti({ tipo: "stato", stato: { modelloLocale: { modello: "qwen", vramPiccoMb: 23_700 } } });
   incarico.emetti({ tipo: "modifiche", idTurno: "t1", file: [{ percorso: "src/somma.ts", aggiunte: 5, tolte: 0, stato: "nuovo" }, { percorso: "package.json", aggiunte: 1, tolte: 1, stato: "cambiato" }] });
   incarico.emetti({ tipo: "testo-concluso", idTesto: "x1", testo: "Ho scritto somma in src/somma.ts; npm test: 3 su 3." });
   incarico.emetti({ tipo: "turno-concluso", riuscito: true, durataMs: 70_000, token: { ingresso: 12_000, uscita: 900 } });
@@ -166,6 +167,7 @@ test("senza chi implementa il lavoro resta a chi guida; scelto, l'incarico gira 
   assert.equal(esito.errore, undefined, esito.testo);
   assert.match(esito.testo, /^Incarico concluso da sonnet, impegno medium, cioè claude-sonnet-5-5 in \d+ s, con un'azione\./);
   assert.match(esito.testo, /Token: 12\.000 in ingresso, 900 in uscita\./);
+  assert.match(esito.testo, /Scheda video: picco di 23\.700 MB occupati\./);
   assert.match(esito.testo, /File cambiati: src\/somma\.ts \(nuovo\), package\.json\./);
   assert.match(esito.testo, /Resoconto di chi implementa:\nHo scritto somma/);
   assert.equal(incarico.chiusa, true);
@@ -188,6 +190,7 @@ test("senza chi implementa il lavoro resta a chi guida; scelto, l'incarico gira 
   assert.equal(misura.modelloVero, "claude-sonnet-5-5");
   assert.deepEqual(misura.token, { ingresso: 12_000, uscita: 900 });
   assert.equal(misura.file, 2);
+  assert.equal(misura.vramPiccoMb, 23_700);
 
   // Tornato a un modello solo, la conversazione lo sa.
   assert.equal((await chiImplementa(banco, progetto.id, null)).statusCode, 200);

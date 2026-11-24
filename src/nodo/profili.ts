@@ -15,6 +15,7 @@ import {
 import type { ConfigurazioneConversazione } from "./conversazione.ts";
 import type { FonteEstensioni } from "./estensioni.ts";
 import { creaStrumentiDiProgetto } from "./strumenti-comuni.ts";
+import type { ModelliLocali } from "./modelli-locali.ts";
 
 /** Ciò che Shinka mette a disposizione di una conversazione di progetto, oltre a Claude Code. */
 export interface ServiziDiShinka {
@@ -35,6 +36,8 @@ export interface ServiziDiShinka {
    * tiene lo stato del progetto, non affida altri incarichi e non installa.
    */
   incarico?: boolean;
+  /** I modelli locali dell'ambiente (ADR 0051): un progetto può sceglierne uno come modello. */
+  modelliLocali?: ModelliLocali;
 }
 
 /**
@@ -250,6 +253,7 @@ export function configurazioneDiProgetto(
     ...(servizi.estensioni === undefined ? {} : { estensioni: servizi.estensioni }),
     ...(servizi.browserDelPc === true ? { browserDelPc: true } : {}),
     ...(servizi.cartellaModifiche === undefined ? {} : { cartellaModifiche: servizi.cartellaModifiche }),
+    ...(servizi.modelliLocali === undefined ? {} : { modelliLocali: servizi.modelliLocali }),
     impostazioni,
     impostazioniDellAmbiente: true,
     // Lo stato del progetto è un compito che Shinka dà al progetto: scriverlo non chiede consenso,

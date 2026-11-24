@@ -12,6 +12,7 @@ import type { ConfigurazioneConversazione } from "../nodo/conversazione.ts";
 import { apriConversazione, motorePredefinito } from "../nodo/motore.ts";
 import { soloLeScelte, type FonteEstensioni } from "../nodo/estensioni.ts";
 import { preparaProgetto } from "../nodo/preparazione.ts";
+import type { ModelliLocali } from "../nodo/modelli-locali.ts";
 import { DURATA_PREPARAZIONE_MS, type EsitoPreparazione, type PreparazioneDelProgetto } from "../protocollo/avvio-progetto.ts";
 import { configurazioneDiProgetto } from "../nodo/profili.ts";
 import { eIncarico } from "../protocollo/incarichi.ts";
@@ -110,6 +111,8 @@ export interface ServiziLocali {
   preparaProgetto?: typeof preparaProgetto;
   /** Dove tenere le modifiche dei turni, una cartella per progetto. Senza, restano in memoria. */
   cartellaModifiche?: string;
+  /** I modelli locali accesi nell'ambiente del centro (ADR 0051). */
+  modelliLocali?: ModelliLocali;
 }
 
 /** Esegue nell'ambiente in cui gira il centro. */
@@ -182,6 +185,7 @@ export class EsecutoreLocale implements Esecutore {
         ...(estensioni === undefined ? {} : { estensioni }),
         ...(diShinka?.(idConversazione) === true ? { sviluppoDiShinka: true } : {}),
         ...(eIncarico(idConversazione) ? { incarico: true } : {}),
+        ...(this.#servizi.modelliLocali === undefined ? {} : { modelliLocali: this.#servizi.modelliLocali }),
         ...(this.#servizi.cartellaModifiche === undefined ? {} : { cartellaModifiche: join(this.#servizi.cartellaModifiche, nomeDiCartella(idConversazione)) }),
       }),
     );

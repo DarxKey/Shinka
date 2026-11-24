@@ -59,6 +59,8 @@ export interface MisuraIncarico {
   token?: TokenDelTurno;
   azioni: number;
   file: number;
+  /** Con un modello locale: il picco di memoria della scheda video mentre il server era acceso, in MB. */
+  vramPiccoMb?: number;
 }
 
 export interface OpzioniIncarichi {
@@ -91,6 +93,7 @@ interface InCorso {
   ultimoTesto?: string;
   ultimoErrore?: string;
   modelloVero?: string;
+  vramPiccoMb?: number;
   azioni: number;
   file: Map<string, string>;
   altriFile: number;
@@ -341,9 +344,12 @@ export class Incarichi {
   #evento(stato: InCorso, evento: EventoConversazione): void {
     const { idProgetto } = stato;
     switch (evento.tipo) {
-      case "stato":
+      case "stato": {
         if (evento.stato.modello !== undefined) stato.modelloVero = evento.stato.modello;
+        const vram = evento.stato.modelloLocale?.vramPiccoMb;
+        if (vram !== undefined && (stato.vramPiccoMb === undefined || vram > stato.vramPiccoMb)) stato.vramPiccoMb = vram;
         return;
+      }
       case "azione-iniziata":
         stato.azioni += 1;
         stato.trascrizione.push(`→ ${nomeBreve(evento.strumento)}`);
@@ -455,6 +461,7 @@ export class Incarichi {
       ...(esito.token === undefined ? {} : { token: esito.token }),
       azioni: stato.azioni,
       file: stato.file.size + stato.altriFile,
+      ...(stato.vramPiccoMb === undefined ? {} : { vramPiccoMb: stato.vramPiccoMb }),
     };
     void this.#registra(misura);
 
@@ -462,10 +469,12 @@ export class Incarichi {
     const righe = [
       `Incarico ${comeFinito} da ${nome} in ${durataInParole(esito.durataMs)}, con ${stato.azioni === 1 ? "un'azione" : `${stato.azioni} azioni`}.`,
       ...(token === undefined ? [] : [`Token: ${token}.`]),
+      ...(stato.vramPiccoMb === undefined ? [] : [`Scheda video: picco di ${IN_MIGLIAIA.format(stato.vramPiccoMb)} MB occupati.`]),
       file.length === 0 && stato.altriFile === 0
         ? "File cambiati: nessuno riferito."
         : `File cambiati: ${file.join(", ")}${stato.altriFile > 0 ? `${file.length > 0 ? ", e " : ""}${stato.altriFile} senza versione` : ""}.`,
       ...(esito.errore === undefined ? [] : [`Errore: ${esito.errore}`]),
+      ...(stato.ultimoErrore === undefined || stato.ultimoErrore === esito.errore ? [] : [`Ultimo errore riferito: ${stato.ultimoErrore}`]),
       "",
       resoconto === undefined || resoconto === ""
         ? "Chi implementa non ha scritto un resoconto."

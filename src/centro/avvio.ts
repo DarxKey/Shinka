@@ -342,6 +342,7 @@ const locale = new EsecutoreLocale(radiceProgetti, undefined, {
   cartellaSkill: skill.cartella,
   diShinka: (idProgetto) => progetti.trova(idProgetto)?.diShinka === true,
   estensioni: estensioniDelCentro,
+  modelliLocali: estensioniDelCentro.modelliLocali,
   cartellaModifiche: join(dati, "modifiche"),
 });
 const remoti = new EsecutoriRemoti(ambienti, undefined, undefined, strumentoDiProgetto);
@@ -667,6 +668,7 @@ async function spegni(codice = 0): Promise<void> {
   telegram?.chiudi();
   laHome().chiudi();
   lavori.chiudi();
+  estensioniDelCentro.modelliLocali.chiudi();
   gateway.chiudi();
   // I terminali dell'ambiente del centro vivono in questo processo: si spengono con lui.
   for (const qui of terminaliDelCentro) qui.spegniTutti();

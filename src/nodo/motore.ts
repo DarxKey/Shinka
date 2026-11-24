@@ -21,6 +21,7 @@ import type {
   ScambioDellaStoria,
   UscitaAttivita,
 } from "../protocollo/eventi.ts";
+import { estensioneDelModello } from "../protocollo/estensioni.ts";
 import { MOTORI, NOMI_MOTORI, type ImpostazioniConversazione, type ModelloDisponibile, type Motore } from "../protocollo/impostazioni.ts";
 import type { EsitoAnnullamento, VersioniDiUnFile } from "../protocollo/modifiche.ts";
 import { leggiSessioni, scriviSessioni, type SessioniDeiMotori } from "../protocollo/sessioni.ts";
@@ -132,6 +133,8 @@ class ConversazioneConMotore implements PortaConversazione {
    * vale per le conversazioni nuove, e quelle già cominciate restano con il loro motore.
    */
   #scelto(): Motore {
+    // Un modello locale parla come l'API di Anthropic: lo usa Claude Code (ADR 0051).
+    if (estensioneDelModello(this.#impostazioni.modello) !== undefined) return "claude";
     if (this.#impostazioni.motore !== undefined) return this.#impostazioni.motore;
     const conStoria = MOTORI.some((motore) => this.#sessioni.sessioni[motore] !== undefined);
     return conStoria ? this.#sessioni.ultimo : this.#predefinito;
@@ -186,7 +189,11 @@ class ConversazioneConMotore implements PortaConversazione {
 
   /** I modelli di tutti i motori che si conoscono, ciascuno con il suo motore. */
   #elencoModelli(): { modelli?: ModelloDisponibile[] } {
-    const tutti = MOTORI.flatMap((motore) => (this.#modelli.noti(motore) ?? []).map((modello) => ({ ...modello, motore })));
+    const tutti = [
+      ...MOTORI.flatMap((motore) => (this.#modelli.noti(motore) ?? []).map((modello) => ({ ...modello, motore }))),
+      // I modelli locali accesi in questo ambiente, dopo quelli degli accessi.
+      ...(this.#cfg.modelliLocali?.modelli() ?? []),
+    ];
     return tutti.length === 0 ? {} : { modelli: tutti };
   }
 
