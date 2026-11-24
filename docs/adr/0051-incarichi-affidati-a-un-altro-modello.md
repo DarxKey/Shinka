@@ -47,6 +47,30 @@ Il profilo è già quello giusto per la scheda: non serve cambiarlo per comincia
 - Mentre è acceso si misura la memoria della scheda video con `nvidia-smi`; il picco arriva nel resoconto e nelle misure dell'incarico.
 - Chi svolge un incarico ha solo gli strumenti di Shinka per le cartelle collegate: il resto lo fa chi guida, e un contesto più leggero conta per un modello locale.
 
+## Risultati delle prove a confronto (fase 3)
+
+Il 24 novembre 2026, in un progetto di prova sul PC, il modello del progetto (Opus) ha preparato tre compiti con i loro test di accettazione, scritti prima: leggere durate (18 test), una cache LRU con scadenza (22 test), correggere un modulo con tre difetti nascosti (23 test). Ogni prova è partita dallo stesso punto, su un ramo suo, con lo stesso testo d'incarico. Una prova per cella, non una media.
+
+| Configurazione | Tempo totale | Token in / out | Test al primo colpo | Correzioni |
+|---|---|---|---|---|
+| A, Opus da solo | circa 1 min 30 s | non visibili | 3/3 | 0 |
+| B, Qwen 3.8 27B locale, xhigh | 45 min | 1,62 M / 115 K | 3/3 | 0 |
+| C, Qwen 3.8 27B locale, medium | 22 min | 1,55 M / 72 K | 3/3 | 0 |
+| D, Sonnet che implementa | 2 min 16 s | 0,96 M / 19 K | 3/3 | 0 |
+
+La scheda video è arrivata a circa 23 GB su 24, con medium come con xhigh. I token in ingresso comprendono quelli letti dalla cache.
+
+Che cosa se ne ricava:
+
+- Su compiti di questa misura (un modulo, una specifica precisa) tutte le coppie passano i test: Qwen locale basta.
+- Sonnet che implementa è 10-20 volte più veloce di Qwen e scrive il codice più compatto: è la scelta quando conta il tempo.
+- Qwen non consuma l'abbonamento e conviene per incarichi non urgenti. Va però controllato più da vicino: in un compito ha lasciato un difetto che i test non coprivano, e Sonnet no.
+- Qwen con medium vale quanto con xhigh, in metà tempo e con un terzo di token in uscita in meno: medium è l'impegno da usare per primo.
+- Il dato di A vale poco: lo stesso modello aveva scritto i test e i difetti.
+- I compiti sono stati troppo facili per separare le coppie: un altro giro andrebbe fatto su lavori che toccano più file, con test di accettazione che chi implementa non vede.
+
+Le prove hanno trovato due difetti del modello locale, corretti nella versione 2c3a86d0: il cambio d'impegno non aspettava lo spegnimento del server di prima, e il picco della VRAM arrivava al resoconto troppo tardi.
+
 ## Conseguenze
 
 - Un incarico costa una conversazione nuova: chi pianifica deve scriverlo perché si capisca da solo.
