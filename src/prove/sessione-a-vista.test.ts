@@ -79,6 +79,7 @@ for (const [nome, larghezza] of [["largo", 1400], ["telefono", 390]] as const) {
       attivita: [
         { id: "a1", genere: "agente", tipoAgente: "Explore", descrizione: "Cerca dove si salta", stato: "in-corso", inSfondo: false, ultimoStrumento: "Grep", strumentiUsati: 4 },
         { id: "c1", genere: "comando", descrizione: "npm test", stato: "finita", inSfondo: true, riassunto: "Finito (codice 0)", conUscita: true },
+        { id: "c2", genere: "comando", descrizione: "Server di sviluppo", comando: "npm run dev -- --port 5173", stato: "in-corso", inSfondo: true, conUscita: true },
       ],
     });
     conversazione.uscite.set("c1", "✔ 42 test superati");
@@ -94,7 +95,7 @@ for (const [nome, larghezza] of [["largo", 1400], ["telefono", 390]] as const) {
     conversazione.emetti({ tipo: "turno-concluso", riuscito: true, durataMs: 5 });
 
     // La scheda della sessione.
-    await pagina.getByLabel("Sessione: un'attività in corso").waitFor();
+    await pagina.getByLabel("Sessione: 2 attività in corso").waitFor();
     await pagina.locator(".menu-sessione > summary").click();
     const scheda = pagina.locator(".scheda-sessione");
     await scheda.getByText("claude-opus-5-5").waitFor();
@@ -107,6 +108,14 @@ for (const [nome, larghezza] of [["largo", 1400], ["telefono", 390]] as const) {
     await scheda.locator(".attivita.in-corso", { hasText: "Cerca dove si salta" }).getByText("ora: Grep").waitFor();
     await scheda.locator(".attivita", { hasText: "npm test" }).getByRole("button", { name: "Mostra l'uscita" }).click();
     await scheda.getByText("✔ 42 test superati").waitFor();
+    // Un comando che lavora mostra che cosa esegue, e la sua uscita si aggiorna da sola.
+    const server = scheda.locator(".attivita", { hasText: "Server di sviluppo" });
+    await server.getByText("$ npm run dev -- --port 5173").waitFor();
+    conversazione.uscite.set("c2", "VITE pronto");
+    await server.getByRole("button", { name: "Segui l'uscita" }).click();
+    await server.getByText("VITE pronto").waitFor();
+    conversazione.uscite.set("c2", "VITE pronto\nhmr update /src/App.tsx");
+    await server.getByText("hmr update /src/App.tsx").waitFor();
     await fotografa("sessione");
     await scheda.getByRole("button", { name: "Apri il pannello" }).click();
     await pagina.locator(".pannello-modifiche").getByText("src/salto.ts").waitFor();

@@ -39,6 +39,8 @@ flowchart LR
   C -->|sì| D[Progetto]
   C -->|no| E[Risposta]
 \`\`\`
+
+Fonti: [Node.js: fs/promises](https://nodejs.org/api/fs.html), [GNU coreutils: wc](https://www.gnu.org/software/coreutils/wc)
 `;
 
 export function chatDiProva(banco: Pick<Banco, "home">): void {

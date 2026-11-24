@@ -6,7 +6,7 @@
 
 import { CartelleCollegate } from "./Collegate.tsx";
 import { ChiImplementa } from "./ChiImplementa.tsx";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Attivita } from "../../src/protocollo/attivita.ts";
 import type { UscitaAttivita } from "../../src/protocollo/eventi.ts";
 import type { ImpostazioniConversazione, StatoConversazione } from "../../src/protocollo/impostazioni.ts";
@@ -163,6 +163,28 @@ export function SchedaSessione({
 
 function VoceAttivita({ base, attivita }: { base: string; attivita: Attivita }): ReactNode {
   const [uscita, setUscita] = useState<UscitaAttivita | { motivo: string }>();
+  const [aperta, setAperta] = useState(false);
+  const inCorso = attivita.stato === "in-corso";
+  // L'uscita aperta si rilegge mentre l'attività lavora, e una volta ancora quando finisce.
+  useEffect(() => {
+    if (!aperta || attivita.conUscita !== true) return;
+    let valido = true;
+    const leggi = (): void => {
+      void leggiUscitaAttivita(base, attivita.id)
+        .then((letta) => {
+          if (valido) setUscita(letta);
+        })
+        .catch((causa: unknown) => {
+          if (valido) setUscita({ motivo: causa instanceof Error ? causa.message : "L'uscita non si legge." });
+        });
+    };
+    leggi();
+    const ogni = inCorso ? window.setInterval(leggi, 2000) : undefined;
+    return () => {
+      valido = false;
+      if (ogni !== undefined) window.clearInterval(ogni);
+    };
+  }, [aperta, inCorso, attivita.conUscita, attivita.id, base]);
   const genere = attivita.genere === "agente" ? `Agente${attivita.tipoAgente === undefined ? "" : ` ${attivita.tipoAgente}`}` : attivita.genere === "comando" ? "Comando" : "Attività";
   const dettagli = [
     attivita.inSfondo ? "in background" : undefined,
@@ -177,28 +199,39 @@ function VoceAttivita({ base, attivita }: { base: string; attivita: Attivita }):
         <span className="genere-attivita">{genere}</span>
         <span className="descrizione-attivita">{attivita.descrizione}</span>
       </div>
+      {attivita.comando !== undefined && <pre className="comando-attivita">$ {attivita.comando}</pre>}
       {dettagli.length > 0 && <p className="tenue">{dettagli.join(" · ")}</p>}
       {attivita.riassunto !== undefined && <p className="riassunto-attivita">{attivita.riassunto}</p>}
-      {attivita.conUscita === true && uscita === undefined && (
-        <button
-          type="button"
-          className="mini discreto"
-          onClick={() =>
-            void leggiUscitaAttivita(base, attivita.id)
-              .then(setUscita)
-              .catch((causa: unknown) => setUscita({ motivo: causa instanceof Error ? causa.message : "L'uscita non si legge." }))
-          }
-        >
-          Mostra l'uscita
+      {attivita.conUscita === true && (
+        <button type="button" className="mini discreto" onClick={() => setAperta((prima) => !prima)}>
+          {aperta ? "Nascondi l'uscita" : inCorso ? "Segui l'uscita" : "Mostra l'uscita"}
         </button>
       )}
-      {uscita !== undefined && "motivo" in uscita && <p className="errore">{uscita.motivo}</p>}
-      {uscita !== undefined && "testo" in uscita && (
-        <pre className="uscita-attivita">
-          {uscita.troncata ? "…\n" : ""}
-          {uscita.testo === "" ? "(nessuna uscita)" : uscita.testo}
-        </pre>
-      )}
+      {aperta && uscita !== undefined && "motivo" in uscita && <p className="errore">{uscita.motivo}</p>}
+      {aperta && uscita !== undefined && "testo" in uscita && <UscitaInFondo uscita={uscita} inCorso={inCorso} />}
     </li>
+  );
+}
+
+/** L'uscita di un'attività, che resta in fondo mentre cresce, se chi legge non è risalito. */
+function UscitaInFondo({ uscita, inCorso }: { uscita: UscitaAttivita; inCorso: boolean }): ReactNode {
+  const riquadro = useRef<HTMLPreElement>(null);
+  const inFondo = useRef(true);
+  useEffect(() => {
+    const elemento = riquadro.current;
+    if (elemento !== null && inFondo.current) elemento.scrollTop = elemento.scrollHeight;
+  }, [uscita.testo]);
+  return (
+    <pre
+      ref={riquadro}
+      className="uscita-attivita"
+      onScroll={(evento) => {
+        const elemento = evento.currentTarget;
+        inFondo.current = elemento.scrollHeight - elemento.scrollTop - elemento.clientHeight < 24;
+      }}
+    >
+      {uscita.troncata ? "…\n" : ""}
+      {uscita.testo === "" ? (inCorso ? "(ancora nessuna uscita)" : "(nessuna uscita)") : uscita.testo}
+    </pre>
   );
 }

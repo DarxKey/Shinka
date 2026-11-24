@@ -54,6 +54,16 @@ test("la chat si legge come in Claude: codice, formule, diagrammi, viste, tema e
   // Le cose da fare in una scheda, e nessuna azione per la lista.
   assert.equal(await pagina.locator(".riga.cose-da-fare li").count(), 3);
   assert.equal(await pagina.locator(".riga.cose-da-fare .conto-cose").textContent(), "1 di 3");
+  // Mentre Claude lavora, la lista resta in vista sopra il campo di scrittura, con ciò che sta facendo.
+  assert.equal(await pagina.locator(".cose-in-vista .conto-cose").textContent(), "1 di 3");
+  assert.equal(await pagina.locator(".cose-in-vista .ora-cose").textContent(), "Correggo le date");
+  // Le fonti in fondo alla risposta stanno chiuse sotto un pulsante.
+  const fonti = pagina.locator(".fonti-risposta");
+  assert.equal(await fonti.locator("summary").textContent(), "Fonti (2)");
+  assert.equal(await fonti.getByRole("link", { name: "GNU coreutils: wc" }).isVisible(), false);
+  await fonti.locator("summary").click();
+  await fonti.getByRole("link", { name: "GNU coreutils: wc" }).waitFor();
+  assert.doesNotMatch((await pagina.locator(".riga.claude").first().textContent()) ?? "", /^Fonti:/m);
   // La Home aspetta il proprietario: lo dice la chat, e la barra laterale.
   await pagina.locator(".laterale .voce.aspetta-te").getByText("aspetta te").waitFor();
   await pagina.getByText("Aspetta una tua risposta").first().waitFor();

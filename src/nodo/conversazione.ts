@@ -636,6 +636,9 @@ export class Conversazione implements PortaConversazione {
           this.#cfg.alEvento({ tipo: "stato", stato: { modelloLocale: { modello: locale.modello, ...(vramPiccoMb === undefined ? {} : { vramPiccoMb }) } } });
         }
         for (const evento of traduci(messaggio, stato)) {
+          // Le attività in background prendono dalle azioni il loro comando e dove scrivono l'uscita.
+          if (evento.tipo === "azione-iniziata") this.#attivita.azioneIniziata(evento.idAzione, evento.strumento, evento.ingresso);
+          if (evento.tipo === "azione-conclusa" && this.#attivita.azioneConclusa(evento.idAzione, evento.esito)) this.#riferisciAttivita(true);
           if (evento.tipo === "turno-concluso" && this.#interruzioneRichiesta) {
             // L'harness chiude un turno interrotto come se fosse fallito: per noi non è un errore.
             this.#interruzioneRichiesta = false;

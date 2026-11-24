@@ -12,6 +12,7 @@ export type MessaggioAttivita =
       subtype: "task_started";
       task_id: string;
       description: string;
+      tool_use_id?: string;
       task_type?: string;
       subagent_type?: string;
       is_backgrounded?: boolean;
@@ -46,6 +47,36 @@ export class RegistroAttivita {
   readonly #uscite = new Map<string, string>();
   /** Quelle che non sono lavoro (osservatori, pulizie): l'harness le segnala, qui si ignorano. */
   readonly #ignorate = new Set<string>();
+  /** I comandi lanciati da Claude, per azione: un'attività nata da un'azione ne prende il comando. */
+  readonly #comandi = new Map<string, string>();
+  /** L'attività nata da ciascuna azione. */
+  readonly #perAzione = new Map<string, string>();
+
+  /** Claude ha lanciato uno strumento: di un comando si tiene il testo, per l'attività che ne nascerà. */
+  azioneIniziata(idAzione: string, strumento: string, ingresso: unknown): void {
+    if (strumento !== "Bash" && strumento !== "PowerShell") return;
+    const comando = typeof ingresso === "object" && ingresso !== null ? (ingresso as Record<string, unknown>).command : undefined;
+    if (typeof comando !== "string") return;
+    this.#comandi.set(idAzione, comando.slice(0, 2000));
+    // Non servono per sempre: si tengono gli ultimi.
+    if (this.#comandi.size > 200) this.#comandi.delete(this.#comandi.keys().next().value as string);
+  }
+
+  /**
+   * Lo strumento ha risposto: un comando mandato in background dice dove scrive la sua uscita, e da
+   * lì la si legge mentre lavora. Vero se l'elenco è cambiato.
+   */
+  azioneConclusa(idAzione: string, esito: string): boolean {
+    const percorso = /Output is being written to: (.+?)\.(?:\s|$)/.exec(esito)?.[1];
+    if (percorso === undefined) return false;
+    const id = this.#perAzione.get(idAzione) ?? /running in background with ID: (\S+?)\.(?:\s|$)/.exec(esito)?.[1];
+    const attivita = id === undefined ? undefined : this.#attivita.get(id);
+    if (id === undefined || attivita === undefined) return false;
+    this.#uscite.set(id, percorso.trim());
+    if (attivita.conUscita === true) return false;
+    this.#metti({ ...attivita, conUscita: true });
+    return true;
+  }
 
   /** Riceve un messaggio dell'harness; vero se l'elenco è cambiato. */
   ricevi(messaggio: MessaggioAttivita): boolean {
@@ -59,6 +90,8 @@ export class RegistroAttivita {
           return false;
         }
         const agente = messaggio.task_type === "local_agent" || messaggio.subagent_type !== undefined;
+        const comando = messaggio.tool_use_id === undefined ? undefined : this.#comandi.get(messaggio.tool_use_id);
+        if (messaggio.tool_use_id !== undefined) this.#perAzione.set(messaggio.tool_use_id, id);
         this.#metti({
           id,
           genere: agente ? "agente" : messaggio.task_type === "local_bash" ? "comando" : "altro",
@@ -67,6 +100,7 @@ export class RegistroAttivita {
           inSfondo: messaggio.is_backgrounded === true,
           ...(messaggio.subagent_type === undefined ? {} : { tipoAgente: messaggio.subagent_type }),
           ...(messaggio.parent_task_id === undefined ? {} : { genitore: messaggio.parent_task_id }),
+          ...(comando === undefined ? {} : { comando }),
         });
         return true;
       }

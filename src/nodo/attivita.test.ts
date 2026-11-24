@@ -50,3 +50,24 @@ test("chiuso il processo, ciò che lavorava risulta fermato; delle finite si ten
   assert.equal(elenco.length, 20);
   assert.equal(elenco[0]?.id, "t29");
 });
+
+test("un comando in background mostra che cosa esegue, e la sua uscita si legge mentre lavora", async (t) => {
+  const cartella = mkdtempSync(join(tmpdir(), "shinka-attivita-"));
+  t.after(() => rm(cartella, { recursive: true, force: true }));
+  const uscita = join(cartella, "b7k2.output");
+  writeFileSync(uscita, "Compilo…\n");
+  const registro = new RegistroAttivita();
+  registro.azioneIniziata("toolu_1", "Bash", { command: "npm run build -- --watch", run_in_background: true, description: "Build" });
+  registro.azioneIniziata("toolu_2", "Read", { file_path: "/a" });
+  registro.ricevi({ subtype: "task_started", task_id: "b7k2", tool_use_id: "toolu_1", description: "Build", task_type: "local_bash", is_backgrounded: true });
+  assert.equal(registro.elenco()[0]?.comando, "npm run build -- --watch");
+  assert.equal(registro.elenco()[0]?.conUscita, undefined);
+  // L'harness risponde all'azione dicendo dove scrive l'uscita.
+  assert.equal(registro.azioneConclusa("toolu_1", `Command running in background with ID: b7k2. Output is being written to: ${uscita}.`), true);
+  assert.equal(registro.elenco()[0]?.conUscita, true);
+  assert.equal(registro.elenco()[0]?.stato, "in-corso");
+  assert.deepEqual(await registro.uscita("b7k2"), { testo: "Compilo…\n", troncata: false });
+  // Una risposta qualunque non cambia nulla.
+  assert.equal(registro.azioneConclusa("toolu_2", "contenuto del file"), false);
+  assert.deepEqual(leggiAttivita(JSON.parse(JSON.stringify(registro.elenco()))), registro.elenco());
+});

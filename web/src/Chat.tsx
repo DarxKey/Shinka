@@ -32,6 +32,7 @@ import { Controlli } from "./Controlli.tsx";
 import { Formattato, VistaVoce } from "./Elementi.tsx";
 import { raggruppa } from "./gruppi.ts";
 import { aCapo } from "./scrittura.ts";
+import { CoseDaFareInVista } from "./Piano.tsx";
 import { leggiBozza, leggiInCoda, quandoRiparte, scriviBozza, scriviInCoda, type MessaggioInCoda } from "./bozze.ts";
 import { COMANDO_A_PARTE, comandiPer, domandaAParte, testoDelComando } from "./comandi.ts";
 import { NOMI_MOTORI, type ComandoDisponibile } from "../../src/protocollo/impostazioni.ts";
@@ -186,6 +187,11 @@ export function Chat(proprieta: ProprietaChat): ReactNode {
     [stato.elementi, vista],
   );
   const aspettaTe = useMemo(() => aspettaIlProprietario(stato.elementi), [stato.elementi]);
+  // La lista delle cose da fare del turno in corso, per tenerla in vista sopra il campo di scrittura.
+  const coseInCorso = useMemo(() => {
+    const trovata = stato.coseDaFare === undefined ? undefined : stato.elementi.find((elemento) => elemento.chiave === stato.coseDaFare);
+    return trovata?.tipo === "cose-da-fare" && !trovata.finito ? trovata : undefined;
+  }, [stato.elementi, stato.coseDaFare]);
   /** Quando è arrivato l'ultimo segno di vita della conversazione: l'attesa dice se Claude tace da un po'. */
   const ultimaNovita = useRef(Date.now());
   /** Falso quando il proprietario è salito a leggere: compare il pulsante per tornare all'ultimo messaggio. */
@@ -597,6 +603,11 @@ export function Chat(proprieta: ProprietaChat): ReactNode {
         </div>
 
 
+        {occupata && coseInCorso !== undefined && (
+          <div className="colonna-cose">
+            <CoseDaFareInVista scheda={coseInCorso} />
+          </div>
+        )}
         <form className="scrittura" onSubmit={(evento) => void invia(evento)}>
           {/* Chi è salito a leggere torna all'ultimo messaggio con un tocco; la chat non lo tira giù da sola. */}
           {!inFondo && (

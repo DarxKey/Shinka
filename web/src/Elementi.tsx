@@ -1,4 +1,5 @@
-import { Children, isValidElement, memo, useEffect, useState, type ReactNode } from "react";
+import { separaFonti } from "./fonti.ts";
+import { Children, isValidElement, memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import type { PluggableList } from "unified";
 import { useAspetto } from "./aspetto.ts";
@@ -166,7 +167,7 @@ function RispostaDiClaude({ voce }: { voce: Extract<Elemento, { tipo: "testo" }>
   const [rigenera, setRigenera] = useState(false);
   return (
         <div className={voce.concluso ? "riga claude" : "riga claude in-arrivo"}>
-          <Formattato testo={voce.testo} />
+          <TestoConFonti testo={voce.testo} />
           {voce.concluso && voce.testo.trim() !== "" && (
             <div className="azioni-risposta">
               <PulsanteCopia testo={voce.testo} etichetta="Copia la risposta" />
@@ -181,6 +182,21 @@ function RispostaDiClaude({ voce }: { voce: Extract<Elemento, { tipo: "testo" }>
             <ModificaMessaggio idMessaggio={ultimoModificabile.id} testoIniziale={ultimoModificabile.testo} allaChiusura={() => setRigenera(false)} />
           )}
         </div>
+  );
+}
+
+/** Una risposta con le sue fonti in fondo chiuse sotto un pulsante, per non allungarla. */
+function TestoConFonti({ testo }: { testo: string }): ReactNode {
+  const { corpo, fonti, quante } = useMemo(() => separaFonti(testo), [testo]);
+  if (fonti === undefined) return <Formattato testo={testo} />;
+  return (
+    <>
+      <Formattato testo={corpo} />
+      <details className="fonti-risposta">
+        <summary>{quante === 1 ? "Fonte" : `Fonti (${quante})`}</summary>
+        <Formattato testo={fonti} />
+      </details>
+    </>
   );
 }
 
