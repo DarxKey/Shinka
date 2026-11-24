@@ -110,10 +110,23 @@ export function preparaCopiaPubblica(opzioni: OpzioniCopiaPubblica): EsitoCopiaP
   // Prima si controlla tutto, poi si scrive: un rifiuto a metà non lascia commit pubblici a metà.
   let alberoPrima = partenza === undefined ? undefined : git(cartella, ["rev-parse", `${partenza}^{tree}`]);
   const daScrivere: Passo[] = [];
-  for (const passo of passi) {
+  // Un commit con un'espressione vietata si unisce al successivo: se quello la toglie, la copia
+  // pubblica non la vede mai, nemmeno nella storia. Se resta fino all'ultimo, non si pubblica nulla.
+  let rifiutato: Passo | undefined;
+  for (const [indice, uno] of passi.entries()) {
+    const passo = rifiutato === undefined ? uno : unisci(rifiutato, uno);
+    rifiutato = undefined;
     // Un commit che tocca solo file esclusi non cambia nulla nella copia pubblica.
     if (passo.albero === alberoPrima) continue;
-    controlla(cartella, passo, alberoPrima, vietati);
+    try {
+      controlla(cartella, passo, alberoPrima, vietati);
+    } catch (errore) {
+      if (errore instanceof PubblicazioneRifiutata && indice < passi.length - 1) {
+        rifiutato = passo;
+        continue;
+      }
+      throw errore;
+    }
     daScrivere.push(passo);
     alberoPrima = passo.albero;
   }
@@ -136,6 +149,16 @@ export function preparaCopiaPubblica(opzioni: OpzioniCopiaPubblica): EsitoCopiaP
   if (punta !== partenza) git(cartella, ["update-ref", `refs/heads/${RAMO_PUBBLICO}`, punta]);
   if (cima !== origine) git(cartella, ["update-ref", RIFERIMENTO_ORIGINE, cima]);
   return { nuovi: daScrivere.length, punta };
+}
+
+/** Un commit rifiutato e il successivo, in un commit pubblico solo: l'albero del secondo, i due messaggi. */
+function unisci(primo: Passo, secondo: Passo): Passo {
+  return {
+    albero: secondo.albero,
+    messaggio: `${secondo.messaggio.trimEnd()}\n\nInsieme a:\n\n${primo.messaggio.trimEnd()}\n`,
+    data: secondo.data,
+    nome: `${secondo.nome} (unito a ${primo.nome})`,
+  };
 }
 
 /** Legge l'elenco delle espressioni vietate: una per riga, senza distinguere maiuscole e minuscole. */

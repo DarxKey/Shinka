@@ -88,7 +88,7 @@ test("un'espressione vietata in un file ferma tutto, e dice dove senza ripeterla
 
   r.registra("Pezzo pulito", { "src/b.ts": "due\n" });
   r.registra("Pezzo con l'indirizzo", { "docs/guida.md": "riga uno\nApri https://Casa-Mia.example/shinka\n" });
-  r.registra("Pezzo che lo toglie", { "docs/guida.md": "riga uno\n" });
+  r.registra("Pezzo che non lo toglie", { "docs/altro.md": "tre\n" });
 
   assert.throws(r.prepara, (errore: Error) => {
     assert.ok(errore instanceof PubblicazioneRifiutata);
@@ -98,6 +98,26 @@ test("un'espressione vietata in un file ferma tutto, e dice dove senza ripeterla
   });
   // Nemmeno il commit pulito che veniva prima è stato pubblicato: o tutti o nessuno.
   assert.equal(r.git("rev-parse", RAMO_PUBBLICO), prima.punta);
+});
+
+test("un commit con un'espressione vietata si pubblica unito al successivo che la toglie: la copia pubblica non la vede mai", (t) => {
+  const r = repository(t);
+  r.registra("Primo pezzo", { "src/a.ts": "uno\n" });
+  r.prepara();
+
+  r.registra("Pezzo pulito", { "src/b.ts": "due\n" });
+  r.registra("Pezzo con l'indirizzo", { "docs/guida.md": "riga uno\nApri https://Casa-Mia.example/shinka\n" });
+  r.registra("Pezzo che lo toglie", { "docs/guida.md": "riga uno\n" });
+
+  const esito = r.prepara();
+  assert.equal(esito.nuovi, 2);
+  assert.deepEqual(r.git("log", "--format=%s", `${RAMO_PUBBLICO}~2..${RAMO_PUBBLICO}`).split("\n"), ["Pezzo che lo toglie", "Pezzo pulito"]);
+  assert.match(r.git("log", "-1", "--format=%B", RAMO_PUBBLICO), /Insieme a:\n\nPezzo con l'indirizzo/);
+  // In nessun commit pubblico c'è l'indirizzo.
+  for (const commit of r.git("rev-list", RAMO_PUBBLICO).split("\n")) {
+    // git grep esce con 1 quando non trova nulla: è ciò che si vuole.
+    assert.throws(() => r.git("grep", "-i", "-q", "casa-mia", commit, "--", "."), commit);
+  }
 });
 
 test("un'espressione vietata nel messaggio o nel nome di un file ferma la pubblicazione", (t) => {
