@@ -173,6 +173,15 @@ export class Memoria {
         ? "[Shinka] La memoria del proprietario ora è vuota: se in questa conversazione ti era stata data una memoria, non vale più."
         : "[Shinka] La memoria del proprietario ora è vuota: ciò che ti era stato dato come memoria non vale più.";
     }
+    return this.testoIntero();
+  }
+
+  /**
+   * La memoria come la riceve una conversazione, senza segnarla come consegnata: per i nodi, che la
+   * tengono per il lavoro offline (ADR 0056). Nulla se non ha voci.
+   */
+  testoIntero(): string | undefined {
+    if (this.#voci.length === 0) return undefined;
     return (
       "[Shinka] Memoria del proprietario: preferenze e fatti che valgono in ogni conversazione. " +
       "Tienine conto nel lavoro che ti viene chiesto, senza citarla: non è una richiesta di fare qualcosa adesso, " +

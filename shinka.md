@@ -2,7 +2,7 @@
 
 ## Specifica funzionale e architetturale
 
-**Versione:** 2.24 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
+**Versione:** 2.25 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
 
 Sostituisce la specifica "Atlas Agent 1.0", conservata in [archivio/atlas-agent-v1.md](archivio/atlas-agent-v1.md). I termini usati qui sono definiti in [GLOSSARY.md](GLOSSARY.md). Le decisioni di fondo sono motivate in [docs/adr/](docs/adr/). Lo stato dei lavori è in [STATO.md](STATO.md).
 
@@ -51,6 +51,8 @@ La versione 2.22 dice che cosa fa un lavoro programmato che trova esaurito il li
 La versione 2.23 lascia usare un modello locale anche fuori dal suo ambiente: il proprietario lo mette in rete, e la Home e i progetti degli altri ambienti lo raggiungono con una chiave che Shinka tiene per sé. Cambia la sezione 4.11; si aggiunge la prova A89. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0053](docs/adr/0053-modelli-locali-in-rete.md).
 
 La versione 2.24 aggiunge le estensioni dell'interfaccia: temi, pagine e pulsanti che Claude scrive e il proprietario conferma, al posto di nuove funzioni nel codice di Shinka. Le pagine girano in un recinto e parlano con Shinka solo per leggerne lo stato e mandare messaggi. Cambiano le sezioni 4.11 e 6; si aggiunge la prova A90. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0054](docs/adr/0054-estensioni-dell-interfaccia.md).
+
+La versione 2.25 lascia lavorare sui progetti di un PC anche quando il centro non si raggiunge: Shinka Desktop, su quel PC, li riprende dal suo nodo, e al ritorno il nodo consegna al centro ciò che è stato fatto. Cambiano le sezioni 4.3, 4.4 e 4.5; si aggiunge la prova A91. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0056](docs/adr/0056-il-lavoro-offline-sui-progetti-del-pc.md).
 
 ## 1. Cos'è Shinka
 
@@ -143,6 +145,7 @@ Aperto un progetto, il lavoro prosegue lì: la Home ne riferisce e vi inoltra is
 ### 4.3 Ambienti
 
 - Un ambiente è attivo quando il suo nodo è collegato al centro. È il nodo a collegarsi al centro, non il contrario.
+- Fa eccezione il lavoro offline: quando il centro non si raggiunge, chi sta sulla macchina di un ambiente, con Shinka Desktop, lavora ai progetti di quell'ambiente attraverso il suo nodo, che per questo ascolta solo da quella macchina e solo con un gettone che tiene tra i suoi dati. Offline lavora solo la conversazione principale di un progetto; gli strumenti di Shinka che passano dal centro dicono che manca, salvo leggere le skill, e ricordare in memoria o salvare una skill, che partono verso il centro al ritorno. Le credenziali del vault non arrivano mai al lavoro offline.
 - Il collegamento tra un nodo e il centro è cifrato. Il nodo riconosce il centro dal suo certificato e non parla con chi ne presenta un altro; non torna al collegamento in chiaro una volta che lo ha riconosciuto. Il centro accetta ancora i nodi in chiaro delle versioni di prima, finché il proprietario non sceglie di accettare solo quelli cifrati.
 - Ogni ambiente ha una breve descrizione di ciò che offre, per esempio "PC Windows: Unity, Blender". La Home la usa per scegliere dove lavorare e per proporre l'ambiente di un progetto. *(Assunzione, vedi sezione 11.)*
 - La Home agisce in ogni ambiente attivo, con il modo dei permessi che il proprietario ha scelto per lei: può scrivere file ed eseguire comandi sul PC Windows senza che serva un progetto.
@@ -160,11 +163,12 @@ Aperto un progetto, il lavoro prosegue lì: la Home ne riferisce e vi inoltra is
 - La prima conversazione parte pulita: contiene il brief e nient'altro di ciò che è stato detto nella Home. Di un progetto creato dal proprietario la Home viene avvisata.
 - Può avere più conversazioni nel tempo, e ognuna si può riprendere. Accanto alla principale il proprietario può aprire fino a tre chat parallele, nella stessa cartella e con le stesse impostazioni; chiusa una chat parallela, la sua storia si cancella e restano i file.
 - Se il suo ambiente è spento resta visibile con stato e storia, ma non ci si può lavorare. *(Assunzione, vedi sezione 11.)*
+- Il lavoro offline (sezione 4.3) vale per i progetti di quell'ambiente, e offline il proprietario può crearne uno nuovo lì, con nome e brief. Un progetto lo tocca un posto per volta: offline solo quella macchina, con il centro solo il centro. Finché il lavoro fatto offline non è arrivato al centro, il centro non scrive a quel progetto, e lo dice.
 
 ### 4.5 La Home sa tutto
 
 - Ogni progetto mantiene il proprio stato del progetto, aggiornato alla fine di ogni turno di lavoro.
-- Il centro conserva stato e storia di ogni progetto e di ogni argomento. Per questo la Home sa rispondere anche quando un ambiente è spento.
+- Il centro conserva stato e storia di ogni progetto e di ogni argomento. Per questo la Home sa rispondere anche quando un ambiente è spento. Il lavoro fatto offline in un ambiente il centro lo riceve dal nodo quando torna: la storia del progetto continua da dove si era fermata, con una nota che dice dove è stato fatto, e nulla vi entra due volte. Un progetto nato offline il centro lo registra com'è nato.
 - La Home risponde su qualunque progetto consultando gli stati, e legge la storia completa quando serve il dettaglio.
 - La Home sa anche quali ambienti sono attivi, quali stack di prova sono in funzione e quali progetti aspettano una risposta del proprietario.
 - La conoscenza sale e non passa di lato: un progetto vede il proprio brief, la propria storia, la memoria e le skill, non gli altri progetti né la conversazione della Home. *(Assunzione, vedi sezione 11.)*
@@ -469,6 +473,7 @@ Ogni incremento deve essere usabile e dimostrabile prima di passare al successiv
 | A88 | Un lavoro programmato parte con il limite del piano esaurito, oppure lo esaurisce a metà | Non parte, o si ferma senza errore; nell'elenco dice quando riparte; all'azzeramento riparte una volta sola |
 | A89 | Il proprietario mette in rete il modello locale del PC e lo sceglie per la Home | La Home risponde con quel modello; il server sul PC si accende e poi si spegne da solo; senza la chiave il server non risponde; tolto dalla rete, la Home non lo offre più |
 | A90 | La Home propone un tema con una pagina e un pulsante, e il proprietario la conferma | Il tema cambia l'aspetto; la pagina compare nel menu, legge lo stato e manda un messaggio con il suo nome, ma non raggiunge le API né la rete; il pulsante manda il suo testo; con «?senza-estensioni» non ci sono |
+| A91 | Con il centro irraggiungibile, il proprietario da Shinka Desktop scrive a un progetto del suo PC e ne crea uno nuovo; poi il centro torna | Offline i due progetti lavorano e chiedono i permessi lì; tornato il centro, le loro storie e il progetto nuovo ci sono, una volta sola, e i progetti riprendono dal centro dalla stessa sessione |
 
 ## 10. Regole per chi implementa
 

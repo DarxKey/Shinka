@@ -52,6 +52,8 @@ import { PonteTelegram, type OpzioniPonte } from "../centro/telegram.ts";
 import { GatewayAssente, type PortaGateway } from "../centro/gateway.ts";
 import { LavoriDeiProgetti } from "../centro/lavori.ts";
 import { distribuisciSkill } from "../centro/distribuzione-skill.ts";
+import { colLavoroOffline } from "../centro/lavoro-offline.ts";
+import { LavoroOffline } from "../nodo/offline.ts";
 import { Memoria } from "../centro/memoria.ts";
 import { RegistroSkill } from "../centro/skill.ts";
 import { RegistroStili } from "../centro/stili.ts";
@@ -742,6 +744,8 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     casa.ricaricaSkill();
     lavori.ricaricaSkill();
   });
+  // Il lavoro offline dei nodi (ADR 0056), come al centro vero.
+  colLavoroOffline({ ambienti, lavori, progetti, memoria, strumento: strumentoDiProgetto });
   // Come al centro vero, il nome scelto per l'ambiente del centro vale subito.
   const impostazioniInstallazione = ImpostazioniDellInstallazione.apri(cartella, (scelte) =>
     ambienti.rinominaDelCentro({ nome: scelte.ambiente?.nome ?? "Unraid", descrizione: scelte.ambiente?.descrizione ?? "Linux" }),
@@ -918,6 +922,8 @@ export interface NodoInProva {
   lavoro: LavoroDelNodo;
   /** L'harness finto con cui questo nodo prova le estensioni e guarda ciò che ha già. */
   harness: HarnessDiProva;
+  /** Il lavoro offline del nodo, se la prova lo ha chiesto (ADR 0056). */
+  offline?: LavoroOffline;
 }
 
 /** Avvia un nodo vero verso il centro in prova, con conversazioni finte, e ne raccoglie gli stati. */
@@ -945,6 +951,8 @@ export async function avviaNodo(
     applicazioni?: NonNullable<ContestoLavoro["applicazioni"]>;
     /** Ciò che riguarda il collegamento cifrato: l'identità con la sua custodia, l'impronta ricordata, e chi ascolta. */
     collegamento?: Partial<Pick<ConfigurazioneCollegamento, "identita" | "segreto" | "impronta" | "alImpronta" | "alCifrato">>;
+    /** Con il lavoro offline: i suoi dati stanno in questa cartella, che resta tra un avvio e l'altro del nodo. */
+    offline?: string;
   } = {},
 ): Promise<NodoInProva> {
   if (!banco.centro.server.listening) await banco.centro.listen({ host: "127.0.0.1", port: 0 });
@@ -982,6 +990,18 @@ export async function avviaNodo(
       return conversazione;
     },
   });
+  const offline =
+    opzioni.offline === undefined
+      ? undefined
+      : await LavoroOffline.apri({
+          cartella: opzioni.offline,
+          nome: "PC Windows",
+          radiceProgetti,
+          cartellaSkill,
+          apri: lavoro.apriPerOffline,
+          riferisci: (messaggio) => collegamento.riferisci(messaggio),
+        });
+  if (offline !== undefined) lavoro.usaOffline(offline);
   const collegamento: CollegamentoAlCentro = new CollegamentoAlCentro({
     centro: `http://127.0.0.1:${port}`,
     identita: { idNodo: ID_NODO, segreto: SEGRETO_NODO },
@@ -997,8 +1017,13 @@ export async function avviaNodo(
       if (opzioni.senzaPreparazione === true && comando.tipo === "prepara-progetto") return;
       lavoro.esegui(comando);
     },
+    ...(offline === undefined ? {} : { offline: () => offline.daConsegnare() }),
     alCambio: (stato) => {
-      if (stato.stato !== "collegamento" && stato.stato !== "in-attesa" && stato.stato !== "attivo") lavoro.chiudiTutto();
+      if (stato.stato !== "collegamento" && stato.stato !== "in-attesa" && stato.stato !== "attivo") {
+        lavoro.chiudiTutto();
+        if (offline?.eCollegato === true) offline.collegato(false);
+      }
+      if (stato.stato === "attivo" && offline?.eCollegato === false) offline.collegato(true);
       stati.push(stato);
     },
     attesaInizialeMs: 50,
@@ -1008,7 +1033,7 @@ export async function avviaNodo(
     collegamento.ferma();
   });
   collegamento.avvia();
-  return { collegamento, stati, radiceProgetti, conversazioni, cartellaSkill, shell, lavoro, harness };
+  return { collegamento, stati, radiceProgetti, conversazioni, cartellaSkill, shell, lavoro, harness, ...(offline === undefined ? {} : { offline }) };
 }
 
 /** Avvia un nodo e lo fa accettare dal proprietario: il suo ambiente è attivo. */

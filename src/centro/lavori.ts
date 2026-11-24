@@ -46,6 +46,7 @@ import type { Attivita } from "../protocollo/attivita.ts";
 import { descriviChiImplementa, progettoDellaConversazione, type ChiImplementa } from "../protocollo/incarichi.ts";
 import { CHAT_PRINCIPALE, conversazioneDellaChat, numeroDellaChat } from "../protocollo/chat-parallele.ts";
 import type { EsitoStrumento } from "../protocollo/strumenti.ts";
+import { notaDelLavoroOffline, type ConsegnaOffline, type ProgettoDelNodo } from "../protocollo/offline.ts";
 
 /** Un progetto appena nato. `filePortati` c'è se doveva portare con sé i file di un argomento. */
 export interface ProgettoNato extends Progetto {
@@ -68,6 +69,14 @@ export interface AvvioDelProgetto {
 export interface CartellaControllata {
   percorso: string;
   git: boolean;
+}
+
+/** Il progetto ha lavoro fatto offline che sta arrivando dal suo ambiente: finché non arriva, non gli si scrive. */
+export class LavoroOfflineInArrivo extends AmbienteSpento {
+  constructor() {
+    super();
+    this.message = "Il progetto ha lavoro fatto offline che sta arrivando dal suo ambiente: riprova tra poco.";
+  }
 }
 
 /** Il progetto non può nascere, e il messaggio dice perché in parole per il proprietario. */
@@ -119,6 +128,10 @@ export class LavoriDeiProgetti {
   readonly #daRiaprire = new Set<string>();
   /** Ciò che la conversazione di un progetto deve sapere e non ha ancora saputo, perché non era aperta. */
   readonly #daDire = new Map<string, string[]>();
+  /** I progetti con lavoro fatto offline nel loro ambiente e non ancora consegnato (ADR 0056): il centro non vi scrive. */
+  readonly #inConsegna = new Set<string>();
+  /** Vero mentre si riportano gli eventi di un lavoro offline: chi ascolta i progetti non li riceve come nuovi. */
+  #riportando = false;
 
   private constructor(opzioni: OpzioniLavori) {
     this.#o = opzioni;
@@ -391,6 +404,7 @@ export class LavoriDeiProgetti {
   /** Il proprietario ha aperto una conversazione del progetto: la prepara, se il suo ambiente è attivo. */
   prepara(idConversazione: string): void {
     const progetto = this.#progettoDi(idConversazione);
+    if (progetto !== undefined && this.#inConsegna.has(progetto.id)) return;
     if (progetto !== undefined && this.#o.ambienti.attivo(progetto.idAmbiente)) {
       this.#porta(progetto, idConversazione).prepara();
     }
@@ -413,6 +427,7 @@ export class LavoriDeiProgetti {
     const progetto = this.#progettoDi(idConversazione);
     if (progetto === undefined) throw new Error("Progetto non trovato.");
     if (!this.#o.ambienti.attivo(progetto.idAmbiente)) throw new AmbienteSpento();
+    if (this.#inConsegna.has(progetto.id)) throw new LavoroOfflineInArrivo();
     const porta = this.#porta(progetto, idConversazione);
     // Le impostazioni per un lavoro solo valgono nella principale: è lì che partono i lavori programmati.
     if (perQuestoLavoro !== undefined && idConversazione === progetto.id) {
@@ -611,6 +626,96 @@ export class LavoriDeiProgetti {
     await this.#porte.get(idConversazione)?.interrompi();
   }
 
+  // --- Il lavoro offline (ADR 0056) ---
+
+  /**
+   * I progetti di un ambiente come li tiene il suo nodo per il lavoro offline: tutti, con le
+   * impostazioni e la sessione da cui riprendere la conversazione principale.
+   */
+  progettiDelNodo(idAmbiente: string): ProgettoDelNodo[] {
+    return this.#o.progetti
+      .elenco()
+      .filter((progetto) => progetto.idAmbiente === idAmbiente)
+      .map((progetto) => {
+        const idSessione = this.#o.progetti.idSessione(progetto.id);
+        const estensioni = this.#o.progetti.estensioni(progetto.id);
+        return {
+          id: progetto.id,
+          nome: progetto.nome,
+          cartella: progetto.cartella,
+          brief: progetto.brief,
+          creatoIl: progetto.creatoIl,
+          impostazioni: this.impostazioni(progetto.id),
+          ...(idSessione === undefined ? {} : { idSessione }),
+          ...(estensioni === undefined ? {} : { estensioni }),
+          ...(progetto.diShinka === true ? { diShinka: true as const } : {}),
+        };
+      });
+  }
+
+  /** Il nodo di un ambiente si è collegato dicendo quali progetti hanno lavoro offline da consegnare. */
+  inConsegnaDa(idAmbiente: string, idProgetti: readonly string[]): void {
+    const dichiarati = new Set(idProgetti);
+    let cambiato = false;
+    for (const progetto of this.#o.progetti.elenco()) {
+      if (progetto.idAmbiente !== idAmbiente) continue;
+      const prima = this.#inConsegna.has(progetto.id);
+      if (dichiarati.has(progetto.id)) this.#inConsegna.add(progetto.id);
+      else this.#inConsegna.delete(progetto.id);
+      cambiato ||= prima !== dichiarati.has(progetto.id);
+    }
+    // Quelli nati offline il centro non li conosce ancora: li registrerà la consegna.
+    if (cambiato) this.#avvisa();
+  }
+
+  inConsegna(idProgetto: string): boolean {
+    return this.#inConsegna.has(progettoDellaConversazione(idProgetto));
+  }
+
+  /**
+   * Un pezzo del lavoro offline di un progetto, consegnato dal nodo del suo ambiente: gli eventi vanno
+   * in fondo all'archivio, ciascuno una volta sola. Dice fin dove il centro ha preso l'archivio offline.
+   */
+  async riceviOffline(idAmbiente: string, consegna: Extract<ConsegnaOffline, { tipo: "offline-eventi" }>): Promise<number> {
+    const id = consegna.idProgetto;
+    let progetto = this.#o.progetti.trova(id);
+    if (progetto === undefined) {
+      // Un progetto eliminato mentre il PC era offline: ciò che arriva non ha più dove andare.
+      if (consegna.nuovo === undefined) return consegna.ultimo;
+      progetto = await this.#o.progetti.adottaNatoOffline(consegna.nuovo, idAmbiente);
+      await this.#apriCanale(id);
+    }
+    // Un nodo consegna solo i progetti del suo ambiente.
+    if (progetto.idAmbiente !== idAmbiente) return consegna.ultimo;
+    this.#inConsegna.add(id);
+    const canale = this.#canali.get(id);
+    let fino = this.#o.progetti.offlinePreso(id, consegna.versione);
+    if (canale !== undefined) {
+      this.#riportando = true;
+      try {
+        for (const archiviato of [...consegna.eventi].sort((a, b) => a.n - b.n)) {
+          if (archiviato.n <= fino) continue;
+          // Un buco: il nodo rimanda da dove il centro è arrivato.
+          if (archiviato.n !== fino + 1) break;
+          if (fino === 0) canale.riporta({ n: 0, quando: archiviato.quando, evento: { tipo: "nota", testo: notaDelLavoroOffline(consegna.ambiente, archiviato.quando) } });
+          canale.riporta({ ...archiviato, evento: this.#o.immagini.prendi(id, archiviato.evento) });
+          fino = archiviato.n;
+        }
+      } finally {
+        this.#riportando = false;
+      }
+    }
+    await this.#o.progetti.ricordaOfflinePreso(id, consegna.versione, fino);
+    if (fino >= consegna.ultimo) {
+      if (consegna.idSessione !== undefined) await this.#o.progetti.ricordaSessione(id, consegna.idSessione);
+      const impostazioni = consegna.impostazioni ?? consegna.nuovo?.impostazioni;
+      if (impostazioni !== undefined) await this.#o.progetti.ricordaImpostazioni(id, impostazioni);
+      this.#inConsegna.delete(id);
+    }
+    this.#avvisa();
+    return fino;
+  }
+
   stato(): StatoProgetti {
     const ambienti = new Map(this.#o.ambienti.stato().ambienti.map((a) => [a.id, a]));
     return {
@@ -618,6 +723,7 @@ export class LavoriDeiProgetti {
         ...progetto,
         nomeAmbiente: ambienti.get(progetto.idAmbiente)?.nome ?? "ambiente rimosso",
         condizione: this.#condizione(progetto),
+        ...(this.#inConsegna.has(progetto.id) ? { offlineInArrivo: true as const } : {}),
         // Fin dove arriva il suo archivio: chi ne tiene una copia sa se gli manca qualcosa.
         ...this.#canali.get(progetto.id)?.indice,
         ...(this.#o.progetti.chatParallele(progetto.id).length === 0
@@ -803,7 +909,7 @@ export class LavoriDeiProgetti {
         if (this.#daRiaprire.has(idConversazione)) this.#riapri(idConversazione);
       }
       // Chi ascolta il progetto (lavori programmati, avvisi) segue la sua conversazione principale.
-      if (principale) for (const ascoltatore of this.#ascoltatoriDegliEventi) ascoltatore(idProgetto, archiviato);
+      if (principale && !this.#riportando) for (const ascoltatore of this.#ascoltatoriDegliEventi) ascoltatore(idProgetto, archiviato);
       if (
         evento.tipo === "turno-iniziato" ||
         evento.tipo === "turno-concluso" ||

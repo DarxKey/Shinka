@@ -222,6 +222,14 @@ _Avoid_: fork, biforcazione, branch
 Un'altra conversazione aperta in una scheda accanto alla principale, nella Home o in un progetto, che lavora anche mentre la principale lavora. Nella Home è un argomento aperto, archiviato quando la scheda si chiude; in un progetto lavora nella sua cartella, e chiusa si cancella.
 _Avoid_: side chat, btw, domanda a parte, thread
 
+**Lavoro offline**:
+Il lavoro su un progetto di un ambiente fatto da quella macchina, con Shinka Desktop, mentre il centro non si raggiunge: lo porta avanti il nodo dell'ambiente, che ne tiene la storia e la consegna al centro quando torna.
+_Avoid_: modalità aereo, sincronizzazione, fork
+
+**Sportello del nodo**:
+Il punto da cui Shinka Desktop, sulla stessa macchina, parla con il nodo per il lavoro offline: ascolta solo da quella macchina e risponde solo con il gettone scritto tra i dati del nodo.
+_Avoid_: API locale, server locale, proxy
+
 **Stile delle risposte**:
 Come Claude scrive in una conversazione, scelto dal proprietario accanto a modello ed effort: uno di quelli di Shinka, oppure uno suo, le cui istruzioni Claude scrive a partire da una descrizione.
 _Avoid_: output style, tono, personalità

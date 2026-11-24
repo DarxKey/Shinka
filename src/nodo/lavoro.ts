@@ -30,6 +30,9 @@ import { preparaProgetto } from "./preparazione.ts";
 import { scriviSkill } from "./skill.ts";
 import type { SkillDistribuita } from "../protocollo/skill.ts";
 import { attesaDelloStrumento, type ChiamaStrumento, type EsitoStrumento } from "../protocollo/strumenti.ts";
+import type { EventoConversazione } from "../protocollo/eventi.ts";
+import type { ProgettoDelNodo } from "../protocollo/offline.ts";
+import type { LavoroOffline } from "./offline.ts";
 
 export interface ContestoLavoro {
   /** Cartella in cui nascono le cartelle dei progetti nuovi. */
@@ -87,6 +90,8 @@ export class LavoroDelNodo {
   readonly #chiavi = new Map<string, { risolvi(chiavi: ChiaviConsegnate): void; scadenza: NodeJS.Timeout }>();
   /** I modelli locali in rete presi dalle conversazioni di altri ambienti, finché il centro non li lascia (ADR 0053). */
   readonly #preseDaFuori = new Map<string, PresaDelModello>();
+  /** Il lavoro sui progetti di qui quando il centro non c'è (ADR 0056), se il nodo lo sa fare. */
+  #offline: LavoroOffline | undefined;
 
   constructor(contesto: ContestoLavoro) {
     this.#contesto = contesto;
@@ -118,9 +123,26 @@ export class LavoroDelNodo {
     });
   }
 
+  /** Collega il lavoro offline: da qui il nodo tiene i suoi progetti e la memoria per quando il centro non c'è. */
+  usaOffline(offline: LavoroOffline): void {
+    this.#offline = offline;
+  }
+
   /** Esegue un comando arrivato dal centro. */
   esegui(comando: ComandoPerNodo): void {
     switch (comando.tipo) {
+      case "progetti":
+        void this.#offline?.progetti(comando.progetti, comando.motorePredefinito).catch(() => {});
+        return;
+      case "memoria":
+        void this.#offline?.memoria(comando.testo).catch(() => {});
+        return;
+      case "offline-preso":
+        void this.#offline?.preso(comando.idProgetto, comando.versione, comando.fino).catch(() => {});
+        return;
+      case "annotati-presi":
+        void this.#offline?.annotatiPresi(comando.id).catch(() => {});
+        return;
       case "crea-cartella":
         void this.#creaCartella(comando.idRichiesta, comando.nomeCartella, comando.brief, comando.daArgomento);
         return;
@@ -375,6 +397,7 @@ export class LavoroDelNodo {
   /** Il nodo si ferma: con lui si fermano le conversazioni e si spengono i terminali. */
   spegni(): void {
     this.chiudiTutto();
+    this.#offline?.chiudiTutto();
     this.#terminali.spegniTutti();
     this.#applicazioni.spegniTutte();
     // I server dei modelli locali accesi da Shinka non devono restare a occupare la scheda video.
@@ -484,30 +507,67 @@ export class LavoroDelNodo {
       esistente.imposta(impostazioni);
       return;
     }
-    const configurazione = configurazioneDiProgetto(
-      cartella,
-      idSessione,
-      impostazioni,
-      (evento) => this.#contesto.riferisci({ tipo: "evento", idConversazione, evento }),
-      (id) => this.#contesto.riferisci({ tipo: "id-sessione", idConversazione, idSessione: id }),
-      {
-        chiama: this.#chiama(idConversazione),
-        ...(this.#contesto.cartellaSkill === undefined ? {} : { cartellaSkill: this.#contesto.cartellaSkill }),
-        ...(this.#estensioni === undefined
-          ? {}
-          : { estensioni: scelte === undefined ? this.#estensioni : soloLeScelte(this.#estensioni, () => scelte) }),
-        ...(this.#contesto.browserDelPc === true ? { browserDelPc: true } : {}),
-        ...(eIncarico(idConversazione) ? { incarico: true } : {}),
-        ...(this.#estensioni === undefined
-          ? {}
-          : { modelliLocali: scelte === undefined ? this.#estensioni.modelliLocali : soloIModelliScelti(this.#estensioni.modelliLocali, () => scelte) }),
-        ...(this.#contesto.cartellaModifiche === undefined ? {} : { cartellaModifiche: join(this.#contesto.cartellaModifiche, nomeDiCartella(idConversazione)) }),
-      },
+    // Il progetto sta finendo qui un lavoro cominciato offline: la conversazione è una, e il centro la
+    // riprende dopo la consegna (ADR 0056).
+    if (this.#offline?.aperta(idConversazione) === true) return;
+    this.#conversazioni.set(
+      idConversazione,
+      this.#apriConversazione(
+        idConversazione,
+        cartella,
+        idSessione,
+        impostazioni,
+        scelte,
+        motorePredefinito,
+        (evento) => this.#contesto.riferisci({ tipo: "evento", idConversazione, evento }),
+        (id) => {
+          this.#contesto.riferisci({ tipo: "id-sessione", idConversazione, idSessione: id });
+          // Il nodo la ricorda anche per sé: senza centro, la conversazione riprende da qui.
+          void this.#offline?.sessione(idConversazione, id).catch(() => {});
+        },
+        this.#chiama(idConversazione),
+      ),
     );
+  }
+
+  /** Apre la conversazione principale di un progetto per il lavoro offline: come per il centro, con chi ascolta di qui. */
+  readonly apriPerOffline = (
+    progetto: ProgettoDelNodo,
+    motorePredefinito: Motore | undefined,
+    alEvento: (evento: EventoConversazione) => void,
+    alIdSessione: (idSessione: string) => void,
+    chiama: ChiamaStrumento,
+  ): PortaConversazione =>
+    this.#apriConversazione(progetto.id, progetto.cartella, progetto.idSessione, progetto.impostazioni, progetto.estensioni, motorePredefinito, alEvento, alIdSessione, chiama);
+
+  #apriConversazione(
+    idConversazione: string,
+    cartella: string,
+    idSessione: string | undefined,
+    impostazioni: ImpostazioniConversazione,
+    scelte: readonly string[] | undefined,
+    motorePredefinito: Motore | undefined,
+    alEvento: (evento: EventoConversazione) => void,
+    alIdSessione: (idSessione: string) => void,
+    chiama: ChiamaStrumento,
+  ): PortaConversazione {
+    const configurazione = configurazioneDiProgetto(cartella, idSessione, impostazioni, alEvento, alIdSessione, {
+      chiama,
+      ...(this.#contesto.cartellaSkill === undefined ? {} : { cartellaSkill: this.#contesto.cartellaSkill }),
+      ...(this.#estensioni === undefined
+        ? {}
+        : { estensioni: scelte === undefined ? this.#estensioni : soloLeScelte(this.#estensioni, () => scelte) }),
+      ...(this.#contesto.browserDelPc === true ? { browserDelPc: true } : {}),
+      ...(eIncarico(idConversazione) ? { incarico: true } : {}),
+      ...(this.#estensioni === undefined
+        ? {}
+        : { modelliLocali: scelte === undefined ? this.#estensioni.modelliLocali : soloIModelliScelti(this.#estensioni.modelliLocali, () => scelte) }),
+      ...(this.#contesto.cartellaModifiche === undefined ? {} : { cartellaModifiche: join(this.#contesto.cartellaModifiche, nomeDiCartella(idConversazione)) }),
+    });
     const apri =
       this.#contesto.apriConversazione ??
       ((cfg: ConfigurazioneConversazione, predefinito?: Motore): PortaConversazione =>
         apriConversazione(cfg, predefinito === undefined ? {} : { predefinito }));
-    this.#conversazioni.set(idConversazione, apri(configurazione, motorePredefinito));
+    return apri(configurazione, motorePredefinito);
   }
 }

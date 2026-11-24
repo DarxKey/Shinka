@@ -66,6 +66,8 @@ interface NodoCollegato extends VersioneDelNodo {
   canale: CanaleNodo;
   ultimoBattito: number;
   cifrato: boolean;
+  /** I progetti con lavoro fatto offline che il nodo ha detto di dover consegnare (ADR 0056). */
+  offline?: string[];
 }
 
 interface NodoInAttesa extends VersioneDelNodo {
@@ -186,7 +188,7 @@ export class RegistroAmbienti {
       }
       await this.#aggiornaDati(registrato, presentazione);
       this.#esitoAggiornamento(registrato.id, presentazione);
-      this.#collega(registrato, canale, ora, versioneDichiarata(presentazione), prossima !== undefined);
+      this.#collega(registrato, canale, ora, versioneDichiarata(presentazione), prossima !== undefined, presentazione.offline);
       return "accolto";
     }
 
@@ -278,6 +280,11 @@ export class RegistroAmbienti {
   }
 
   /** Gli ambienti degli altri nodi che in questo momento sono attivi. */
+  /** I progetti con lavoro offline da consegnare che il nodo ha detto collegandosi (ADR 0056). */
+  offlineDichiarato(idNodo: string): readonly string[] {
+    return this.#collegati.get(idNodo)?.offline ?? [];
+  }
+
   collegati(): string[] {
     return [...this.#collegati.keys()];
   }
@@ -446,7 +453,7 @@ export class RegistroAmbienti {
     }
   }
 
-  #collega(registrato: NodoRegistrato, canale: CanaleNodo, ora: number, dichiarata: VersioneDelNodo, segretoCambiato = false): void {
+  #collega(registrato: NodoRegistrato, canale: CanaleNodo, ora: number, dichiarata: VersioneDelNodo, segretoCambiato = false, offline?: string[]): void {
     const precedente = this.#collegati.get(registrato.id);
     // Lo stesso nodo si è ricollegato: il canale vecchio non serve più, e il lavoro
     // che vi passava si è fermato con lui.
@@ -461,6 +468,7 @@ export class RegistroAmbienti {
       siAggiorna: dichiarata.siAggiorna,
       ...(dichiarata.avvioConWindows === undefined ? {} : { avvioConWindows: dichiarata.avvioConWindows }),
       cifrato: canale.cifrato === true,
+      ...(offline === undefined ? {} : { offline: offline.filter((id) => typeof id === "string").slice(0, 1000) }),
     });
     canale.invia({ tipo: "accolto", nome: registrato.nome, ...(segretoCambiato ? { segretoCambiato: true as const } : {}) });
     for (const ascoltatore of this.#ascoltatoriCollegamenti) ascoltatore(registrato.id);

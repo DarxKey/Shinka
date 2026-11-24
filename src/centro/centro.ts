@@ -3,6 +3,7 @@
  * tra il browser e la conversazione della Home e accoglie i nodi degli ambienti.
  */
 
+import { leggiConsegnaOffline } from "../protocollo/offline.ts";
 import { POLITICA_PAGINA_ESTENSIONE } from "../protocollo/interfaccia.ts";
 import type { EstensioniInterfaccia } from "./interfaccia.ts";
 import type { StatoEstensioniDelProgetto } from "../protocollo/progetti.ts";
@@ -2811,6 +2812,7 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
         ...(aggiornamentoFallito === undefined ? {} : { aggiornamentoFallito }),
         ...(typeof campi.centro === "string" && /^https?:\/\/[A-Za-z0-9.\-[\]:]+$/.test(campi.centro) ? { centro: campi.centro } : {}),
         ...(typeof campi.avvioConWindows === "boolean" ? { avvioConWindows: campi.avvioConWindows } : {}),
+        ...(Array.isArray(campi.offline) ? { offline: campi.offline.filter((id): id is string => typeof id === "string" && id.length <= 64).slice(0, 1000) } : {}),
       };
     }
     case "evento": {
@@ -2963,7 +2965,7 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
       return { tipo: "aggiornamento-non-riuscito", idRichiesta, motivo: motivo.slice(0, 4000) };
     }
     default:
-      return leggiRiferitoTerminale(campi) ?? leggiRiferitoAnteprima(campi) ?? leggiRiferitoApplicazione(campi) ?? leggiRiferitoFile(campi);
+      return leggiRiferitoTerminale(campi) ?? leggiRiferitoAnteprima(campi) ?? leggiRiferitoApplicazione(campi) ?? leggiRiferitoFile(campi) ?? leggiConsegnaOffline(campi);
   }
 }
 

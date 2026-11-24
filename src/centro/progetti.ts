@@ -8,6 +8,7 @@ import { leggiImpostazioni, type ImpostazioniConversazione } from "../protocollo
 import { leggiAvvio, type AvvioApplicazione } from "../protocollo/applicazioni.ts";
 import { leggiEstensioniScelte } from "../protocollo/avvio-progetto.ts";
 import type { CartellaCollegata, Progetto } from "../protocollo/progetti.ts";
+import type { ProgettoNatoOffline } from "../protocollo/offline.ts";
 import { leggiChiImplementa, progettoDellaConversazione, type ChiImplementa } from "../protocollo/incarichi.ts";
 import { eNumeroDiChatParallela, numeroDellaChat, primoNumeroLibero, CHAT_PRINCIPALE } from "../protocollo/chat-parallele.ts";
 
@@ -26,6 +27,8 @@ interface ProgettoSalvato extends Progetto {
   chiImplementa?: ChiImplementa;
   /** Le chat parallele aperte (ADR 0052), ciascuna con il punto da cui riprende la sua conversazione. */
   chat?: ChatSalvata[];
+  /** Fin dove il centro ha preso l'archivio offline del progetto, per versione (ADR 0056). */
+  offline?: { versione: string; fino: number };
 }
 
 interface ChatSalvata {
@@ -101,6 +104,41 @@ export class RegistroProgetti {
     await this.#salva();
     this.#avvisa();
     return soloProgetto(progetto);
+  }
+
+  /**
+   * Registra un progetto nato offline in un ambiente (ADR 0056): con l'identificativo, la cartella e
+   * la data che ha avuto là. Se c'è già, resta com'è.
+   */
+  async adottaNatoOffline(nato: ProgettoNatoOffline, idAmbiente: string): Promise<Progetto> {
+    const esistente = this.#progetti.get(nato.id);
+    if (esistente !== undefined) return soloProgetto(esistente);
+    const progetto: ProgettoSalvato = {
+      id: nato.id,
+      nome: nato.nome,
+      cartella: nato.cartella,
+      idAmbiente,
+      brief: nato.brief,
+      creatoIl: nato.creatoIl,
+      impostazioni: nato.impostazioni,
+    };
+    this.#progetti.set(progetto.id, progetto);
+    await this.#salva();
+    this.#avvisa();
+    return soloProgetto(progetto);
+  }
+
+  /** Fin dove il centro ha preso l'archivio offline di un progetto, se quella versione è quella che ha preso. */
+  offlinePreso(idProgetto: string, versione: string): number {
+    const preso = this.#progetti.get(idProgetto)?.offline;
+    return preso?.versione === versione ? preso.fino : 0;
+  }
+
+  async ricordaOfflinePreso(idProgetto: string, versione: string, fino: number): Promise<void> {
+    const progetto = this.#progetti.get(idProgetto);
+    if (progetto === undefined) return;
+    progetto.offline = { versione, fino };
+    await this.#salva();
   }
 
   /** Da dove riprende una conversazione del progetto: la principale o una chat parallela. */

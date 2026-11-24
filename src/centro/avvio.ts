@@ -39,6 +39,7 @@
  *                          solo allora una versione approvata viene messa in funzione
  */
 
+import { colLavoroOffline } from "./lavoro-offline.ts";
 import { ProcessiDiShinka } from "../nodo/processi-di-shinka.ts";
 import { PrimoAvvio } from "./primo-avvio.ts";
 import { existsSync } from "node:fs";
@@ -55,7 +56,7 @@ import { CartelleCollegate } from "./cartelle-collegate.ts";
 import { AggiornamentiDesktop } from "./desktop.ts";
 import { FileDeiProgetti } from "./file-progetto.ts";
 import { FileDeiProgettiQui } from "../nodo/file-progetto.ts";
-import { apriConversazione, impostaMotorePredefinito } from "../nodo/motore.ts";
+import { apriConversazione, impostaMotorePredefinito, motorePredefinito } from "../nodo/motore.ts";
 import { AccessiDeiMotori } from "../nodo/accessi.ts";
 import { modelliDeiMotori } from "../nodo/sonde-motori.ts";
 import { AccessiNegliAmbienti } from "./accessi.ts";
@@ -536,6 +537,10 @@ distribuisciSkill(skill, ambienti, () => {
   home?.ricaricaSkill();
   lavori.ricaricaSkill();
 });
+
+// Il lavoro offline (ADR 0056): ogni nodo riceve i progetti del suo ambiente e la memoria, e al
+// ritorno consegna ciò che è stato fatto senza centro.
+colLavoroOffline({ ambienti, lavori, progetti, memoria, strumento: strumentoDiProgetto, motorePredefinito });
 
 // Le estensioni accese arrivano a ogni nodo quando si collega e a ogni cambiamento; qui si
 // aspetta che i plugin dell'ambiente del centro siano al loro posto.

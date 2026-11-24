@@ -52,6 +52,8 @@ import { CollegamentoAlCentro, indirizzoDelCollegamento } from "./collegamento.t
 import { EstensioniInAmbiente } from "./estensioni.ts";
 import { custodiaDelSegreto, leggiOCreaIdentita } from "./identita.ts";
 import { LavoroDelNodo } from "./lavoro.ts";
+import { LavoroOffline } from "./offline.ts";
+import { Sportello } from "./sportello.ts";
 import { preparaCartellaSkill } from "./skill.ts";
 import { sistemaDiQuestaMacchina } from "./sistema.ts";
 import { FILE_STATO_DEL_COLLEGAMENTO, scriviStatoDelCollegamento } from "./stato-del-collegamento.ts";
@@ -162,6 +164,30 @@ try {
         }
       : {}),
   });
+  // Il lavoro offline (ADR 0056): i progetti di qui si riprendono dallo sportello quando il centro non c'è.
+  const offline = await LavoroOffline.apri({
+    cartella: join(dati, "offline"),
+    nome: impostazioni.nome,
+    radiceProgetti: impostazioni.progetti,
+    cartellaSkill,
+    apri: lavoro.apriPerOffline,
+    riferisci: (messaggio) => collegamento.riferisci(messaggio),
+  });
+  lavoro.usaOffline(offline);
+  const sportello = new Sportello({
+    offline,
+    dati,
+    idAmbiente: identita.idNodo,
+    nome: impostazioni.nome,
+    sistema: sistemaDiQuestaMacchina(),
+    radiceProgetti: impostazioni.progetti,
+  });
+  try {
+    const { porta } = await sportello.apri();
+    console.log(`Sportello per il lavoro offline su 127.0.0.1:${porta}.`);
+  } catch (errore) {
+    console.error(`Lo sportello per il lavoro offline non si è aperto: ${errore instanceof Error ? errore.message : String(errore)}`);
+  }
   const collegamento: CollegamentoAlCentro = new CollegamentoAlCentro({
     centro: impostazioni.centro,
     nome: impostazioni.nome,
@@ -188,10 +214,17 @@ try {
       return { versione: ultima.versione, motivo: ultima.motivo ?? "non è partita" };
     },
     alComando: (comando) => lavoro.esegui(comando),
+    offline: () => offline.daConsegnare(),
     ...(avvioConWindows === undefined ? {} : { avvioConWindows: () => avvioConWindows.attivo() }),
     alCambio: (stato) => {
       // Senza il centro nessuno vedrebbe il lavoro: le conversazioni aperte si fermano.
-      if (stato.stato === "scollegato" || stato.stato === "rifiutato" || stato.stato === "centro-non-riconosciuto" || stato.stato === "solo-cifrato") lavoro.chiudiTutto();
+      if (stato.stato === "scollegato" || stato.stato === "rifiutato" || stato.stato === "centro-non-riconosciuto" || stato.stato === "solo-cifrato") {
+        lavoro.chiudiTutto();
+        // Da qui i progetti di questo ambiente si riprendono dallo sportello.
+        if (offline.eCollegato) offline.collegato(false);
+      }
+      // Accolto dal centro: il lavoro fatto offline si consegna.
+      if (stato.stato === "attivo" && !offline.eCollegato) offline.collegato(true);
       // Durante i tentativi falliti lo stesso avviso si ripeterebbe a ogni giro.
       if (stato.stato === ultimoStato && stato.stato !== "in-attesa") return;
       ultimoStato = stato.stato;
@@ -235,6 +268,7 @@ try {
 
   collegamento.avvia();
   const spegni = (): void => {
+    void sportello.chiudi();
     lavoro.spegni();
     collegamento.ferma();
     process.exit(0);

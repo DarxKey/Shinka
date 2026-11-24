@@ -13,6 +13,7 @@
  * certificato è quello del sito, e vale la verifica di sempre.
  */
 
+import { leggiComandoOffline } from "../protocollo/offline.ts";
 import type { IncomingMessage } from "node:http";
 import type { TLSSocket } from "node:tls";
 import WebSocket from "ws";
@@ -86,6 +87,8 @@ export interface ConfigurazioneCollegamento {
   aggiornamentoFallito?(): { versione: string; motivo: string } | undefined;
   /** Su Windows: se il nodo parte a ogni accesso, chiesto quando si presenta; nulla dove non si sa. */
   avvioConWindows?(): boolean | undefined;
+  /** I progetti con lavoro fatto offline da consegnare (ADR 0056). */
+  offline?(): string[];
   alCambio(stato: StatoCollegamento): void;
   /** Il centro chiede di fare qualcosa in questo ambiente. */
   alComando?(comando: ComandoPerNodo): void;
@@ -210,6 +213,7 @@ export class CollegamentoAlCentro {
       }
       const fallito = this.#cfg.aggiornamentoFallito?.();
       const avvioConWindows = this.#cfg.avvioConWindows?.();
+      const offline = this.#cfg.offline?.() ?? [];
       this.#manda({
         tipo: "presentazione",
         idNodo: this.#cfg.identita.idNodo,
@@ -225,6 +229,7 @@ export class CollegamentoAlCentro {
         // L'indirizzo con cui il nodo raggiunge il centro: per reinstallarlo con lo stesso.
         centro: this.#cfg.centro,
         ...(avvioConWindows === undefined ? {} : { avvioConWindows }),
+        ...(offline.length === 0 ? {} : { offline }),
       });
       this.#battito = setInterval(() => this.#manda({ tipo: "battito" }), INTERVALLO_BATTITO_MS);
     });
@@ -555,6 +560,6 @@ export function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | u
       return { tipo: "azione-in-cartella", idRichiesta, cartella, azione };
     }
     default:
-      return leggiComandoTerminale(campi) ?? leggiComandoAnteprima(campi) ?? leggiComandoApplicazione(campi) ?? leggiComandoFile(campi);
+      return leggiComandoTerminale(campi) ?? leggiComandoAnteprima(campi) ?? leggiComandoApplicazione(campi) ?? leggiComandoFile(campi) ?? leggiComandoOffline(campi);
   }
 }
