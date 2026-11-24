@@ -778,15 +778,46 @@ interface ArgomentiEstensione {
   chiavi?: string[];
 }
 
+/**
+ * Gli strumenti della Home che restano sempre nel contesto: quelli di ogni giorno. Gli altri (stack,
+ * browser, credenziali, programmati, mappe, estensioni, sviluppo, skill) Claude li carica quando gli
+ * servono, con ToolSearch, come quelli delle estensioni: il contesto iniziale resta leggero.
+ */
+export const STRUMENTI_HOME_SEMPRE_CARICATI: readonly string[] = [
+  "elenca_ambienti",
+  "esegui_in_ambiente",
+  "scrivi_file",
+  "leggi_file",
+  "proponi_progetto",
+  "mostra_elaborato",
+  "chiedi_dove_lavorare",
+  "elenca_progetti",
+  "leggi_progetto",
+  "apri_progetto",
+  "inoltra_a_progetto",
+  "cambia_argomento",
+  "cerca_argomenti",
+  "leggi_argomento",
+  "ricorda",
+  "correggi_memoria",
+  "dimentica",
+];
+
 /** Registra gli strumenti della Home presso l'harness, con le descrizioni che Claude legge. */
 export function creaStrumentiHome(opzioni: OpzioniStrumentiHome) {
-  const azioni = azioniDellaHome(opzioni);
-
   return createSdkMcpServer({
     name: GRUPPO_STRUMENTI_HOME,
     version: "1.0.0",
-    alwaysLoad: true,
-    tools: [
+    // Solo quelli di ogni giorno restano sempre caricati; gli altri si cercano con ToolSearch.
+    tools: definizioniHome(opzioni).map((definizione) =>
+      STRUMENTI_HOME_SEMPRE_CARICATI.includes(definizione.name) ? { ...definizione, _meta: { ...definizione._meta, "anthropic/alwaysLoad": true } } : definizione,
+    ),
+  });
+}
+
+function definizioniHome(opzioni: OpzioniStrumentiHome) {
+  const azioni = azioniDellaHome(opzioni);
+  return [
       tool(
         "elenca_ambienti",
         "Elenca gli ambienti attivi, con il sistema, ciò che ciascuno offre, la shell dei comandi e la cartella che questo argomento ha lì. Usalo prima di agire in un ambiente e prima di proporre un progetto.",
@@ -1105,6 +1136,5 @@ export function creaStrumentiHome(opzioni: OpzioniStrumentiHome) {
             ),
           ]),
       ...(opzioni.comuni === undefined ? [] : [...definizioniComuni(opzioni.comuni), ...definizioniApplicazione(opzioni.comuni)]),
-    ],
-  });
+  ];
 }

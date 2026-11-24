@@ -83,6 +83,8 @@ export interface EstensioneInAmbiente {
   strumenti: string[];
   /** Quando è stata provata lì l'ultima volta. */
   provata: string;
+  /** Quanto pesano i suoi strumenti nel contesto di una conversazione, misurato nella prova; manca se non si è potuto. */
+  token?: number;
   /**
    * Per un modello locale: il proprietario lo vuole raggiungibile dalle altre macchine, con una
    * chiave che Shinka tiene per sé, all'indirizzo di questo ambiente visto dal centro.
@@ -120,7 +122,8 @@ export interface EstensioneDistribuita {
 
 /** Com'è andata la prova di un'estensione in un ambiente: è partita, e con quali strumenti, oppure no. */
 export type EsitoProva =
-  | { riuscita: true; strumenti: string[]; contenuto?: ContenutoPlugin }
+  /** `token`, se si è potuto misurare, è quanto pesano i suoi strumenti nel contesto di una conversazione. */
+  | { riuscita: true; strumenti: string[]; contenuto?: ContenutoPlugin; token?: number }
   /** `riprovabile` è vero quando manca solo qualcosa che il proprietario può mettere a posto, come una chiave nel vault. */
   | { riuscita: false; motivo: string; riprovabile?: true };
 
@@ -451,7 +454,8 @@ export function leggiEsitoProva(valore: unknown): EsitoProva | undefined {
     const strumenti = testi(campi.strumenti, 500, 200);
     const contenuto = campi.contenuto === undefined ? undefined : leggiContenuto(campi.contenuto);
     if (strumenti === undefined || (campi.contenuto !== undefined && contenuto === undefined)) return undefined;
-    return { riuscita: true, strumenti, ...(contenuto === undefined ? {} : { contenuto }) };
+    const token = typeof campi.token === "number" && Number.isInteger(campi.token) && campi.token >= 0 && campi.token < 10_000_000 ? campi.token : undefined;
+    return { riuscita: true, strumenti, ...(contenuto === undefined ? {} : { contenuto }), ...(token === undefined ? {} : { token }) };
   }
   if (campi.riuscita !== false || typeof campi.motivo !== "string") return undefined;
   return { riuscita: false, motivo: campi.motivo.slice(0, 2000), ...(campi.riprovabile === true ? { riprovabile: true as const } : {}) };

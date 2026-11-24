@@ -8,7 +8,7 @@ import {
   type StatoEstensioni,
 } from "../../src/protocollo/estensioni.ts";
 import type { Ambiente, StatoAmbienti } from "../../src/protocollo/nodi.ts";
-import { accendiEstensione, accendiInterfaccia, decidiEstensione, guardaEstensioniDellAmbiente, mettiInRete, rimuoviEstensione, togliInterfaccia } from "./api.ts";
+import { accendiEstensione, accendiInterfaccia, impostaUscita, decidiEstensione, guardaEstensioniDellAmbiente, mettiInRete, rimuoviEstensione, togliInterfaccia } from "./api.ts";
 import { useQuadroCorrente } from "./Quadro.tsx";
 import { useSolaLettura } from "./ContestoChat.ts";
 import { momentoInBreve } from "./descrivi.ts";
@@ -255,6 +255,7 @@ function VistaEstensione({ estensione, ambienti }: { estensione: Estensione; amb
       </div>
       <p>{estensione.descrizione}</p>
       <Definizione estensione={estensione} />
+      {estensione.definizione.tipo === "modello-locale" && <RispostaMassima id={estensione.id} uscita={estensione.definizione.uscita} contesto={estensione.definizione.contesto} />}
       {estensione.contenuto !== undefined && (
         <details className="dettaglio-installazione">
           <summary>Che cosa contiene</summary>
@@ -337,7 +338,10 @@ function InAmbiente({ estensione, ambiente }: { estensione: Estensione; ambiente
       </div>
       {dove !== undefined && dove.strumenti.length > 0 && (
         <details className="strumenti-estensione">
-          <summary>{quantiStrumenti(dove.strumenti)}</summary>
+          <summary>
+            {quantiStrumenti(dove.strumenti)}
+            {dove.token !== undefined && <span className="tenue"> · circa {dove.token.toLocaleString("it-IT")} token nel contesto, se caricati tutti</span>}
+          </summary>
           <p>
             {dove.strumenti.map((strumento) => (
               <code key={strumento}>{strumento}</code>
@@ -355,6 +359,49 @@ function InAmbiente({ estensione, ambiente }: { estensione: Estensione; ambiente
         </p>
       )}
     </li>
+  );
+}
+
+/**
+ * La risposta massima di un modello locale: Claude Code tiene da parte per la compattazione la
+ * risposta massima più 13.000 token. Con un contesto piccolo, abbassarla lascia più spazio al lavoro.
+ */
+function RispostaMassima({ id, uscita, contesto }: { id: string; uscita: number; contesto: number }): ReactNode {
+  const [scritta, setScritta] = useState(String(uscita));
+  const [inCorso, setInCorso] = useState(false);
+  const [errore, setErrore] = useState<string>();
+  const numero = Number(scritta);
+  const valida = Number.isInteger(numero) && numero >= 1024 && numero <= Math.floor(contesto / 2);
+  return (
+    <div className="risposta-massima">
+      <label>
+        <span className="tenue">Risposta massima, ragionamento compreso (token)</span>
+        <input type="number" min={1024} max={Math.floor(contesto / 2)} step={1024} value={scritta} onChange={(evento) => setScritta(evento.target.value)} />
+      </label>
+      <button
+        type="button"
+        className="discreto piccolo"
+        disabled={inCorso || !valida || numero === uscita}
+        onClick={() => {
+          setInCorso(true);
+          setErrore(undefined);
+          impostaUscita(id, numero)
+            .catch((causa: unknown) => setErrore(inParole(causa, "Non è riuscito.")))
+            .finally(() => setInCorso(false));
+        }}
+      >
+        Salva
+      </button>
+      <p className="tenue">
+        Riserva per la compattazione: {((valida ? numero : uscita) + 13_000).toLocaleString("it-IT")} token su {contesto.toLocaleString("it-IT")}, cioè la risposta massima più
+        13.000. Vale dalle conversazioni che partono dopo.
+      </p>
+      {errore !== undefined && (
+        <p className="errore" role="alert">
+          {errore}
+        </p>
+      )}
+    </div>
   );
 }
 

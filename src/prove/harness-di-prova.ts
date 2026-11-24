@@ -43,6 +43,9 @@ export interface HarnessDiProva {
  * Di suo un server parte e offre due strumenti; non parte se il suo comando è "non-parte", e
  * vuole un accesso con il browser se il suo indirizzo contiene "oauth". Il test può decidere altro.
  */
+/** Quanti token pesano gli strumenti di un server, per l'harness finto. */
+export const PESO_DI_PROVA = 1234;
+
 export function harnessDiProva(
   opzioni: { stato?(nome: string, configurazione: McpServerConfig): Omit<Stato, "name"> | undefined; ambiente?: Ambiente } = {},
 ): HarnessDiProva {
@@ -72,6 +75,8 @@ export function harnessDiProva(
           return { errors };
         },
         mcpServerStatus: async () => Object.entries(server).map(([nome, configurazione]) => ({ name: nome, ...statoDi(nome, configurazione) })),
+        // Come l'harness vero misura gli strumenti di un server collegato: qui un peso fisso.
+        pesoDegliStrumenti: async (nome) => (server[nome] === undefined ? undefined : PESO_DI_PROVA),
         reloadPlugins: async () =>
           apertura.isolata
             ? { plugins: (apertura.plugin ?? []).map((cartella) => ({ name: basename(cartella), path: cartella })), mcpServers: [], commands: [], error_count: 0 }

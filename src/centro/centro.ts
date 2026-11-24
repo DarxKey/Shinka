@@ -933,6 +933,18 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     },
   );
 
+  // La risposta massima di un modello locale: decide quanto contesto Claude Code tiene da parte per la compattazione.
+  app.post<{ Params: { id: string }; Body: { uscita: number } }>(
+    "/api/estensioni/:id/uscita",
+    { schema: { body: { type: "object", required: ["uscita"], additionalProperties: false, properties: { uscita: { type: "integer" } } } } },
+    async (richiesta, risposta) => {
+      if (opzioni.estensioni === undefined) return risposta.code(404).send({ errore: "In questa installazione le estensioni non ci sono." });
+      const motivo = await opzioni.estensioni.impostaUscita(richiesta.params.id, richiesta.body.uscita);
+      if (motivo !== undefined) return risposta.code(409).send({ errore: motivo });
+      return { uscita: richiesta.body.uscita };
+    },
+  );
+
   // Un modello locale in rete (ADR 0053): con un indirizzo lo usano anche le conversazioni degli altri
   // ambienti, raggiungendolo lì; senza, torna solo per la sua macchina.
   app.post<{ Params: { id: string; idAmbiente: string }; Body: { indirizzo: string | null } }>(

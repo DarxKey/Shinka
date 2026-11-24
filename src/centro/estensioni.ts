@@ -228,6 +228,23 @@ export class Estensioni {
   }
 
   /**
+   * Il proprietario sceglie quanto può essere lunga una risposta di un modello locale. Claude Code
+   * tiene da parte per la compattazione la risposta massima più 13.000 token: abbassarla lascia più
+   * contesto al lavoro. Vale dal prossimo avvio delle conversazioni. Il motivo, se non si può.
+   */
+  async impostaUscita(id: string, uscita: number): Promise<string | undefined> {
+    const estensione = this.#estensioni.find((una) => una.id === id);
+    if (estensione === undefined) return "Estensione non trovata.";
+    const { definizione } = estensione;
+    if (definizione.tipo !== "modello-locale") return "Solo un modello locale ha una risposta massima.";
+    const massima = Math.floor(definizione.contesto / 2);
+    if (!Number.isInteger(uscita) || uscita < 1024 || uscita > massima) return `La risposta massima va da 1024 a ${massima} token.`;
+    this.#estensioni = this.#estensioni.map((una) => (una.id === id && una.definizione.tipo === "modello-locale" ? { ...una, definizione: { ...una.definizione, uscita } } : una));
+    await this.#cambiato();
+    return undefined;
+  }
+
+  /**
    * Il proprietario mette in rete un modello locale acceso in un ambiente, all'indirizzo che il
    * centro usa per raggiungerlo, oppure lo toglie dalla rete. La chiave nasce la prima volta e
    * cambia ogni volta che lo si rimette in rete. Il motivo, se non si può.
@@ -527,7 +544,7 @@ export class Estensioni {
       ...(esito.contenuto === undefined ? {} : { contenuto: esito.contenuto }),
       ambienti: [
         ...estensione.ambienti.filter((dove) => dove.idAmbiente !== idAmbiente),
-        { idAmbiente, accesa: true, strumenti: esito.strumenti, provata: this.#adesso() },
+        { idAmbiente, accesa: true, strumenti: esito.strumenti, provata: this.#adesso(), ...(esito.token === undefined ? {} : { token: esito.token }) },
       ],
     };
     this.#estensioni = [...this.#estensioni.filter((una) => una.id !== accesa.id), accesa].sort((a, b) => a.nome.localeCompare(b.nome));

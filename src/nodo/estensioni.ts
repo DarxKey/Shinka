@@ -64,6 +64,8 @@ export interface HarnessSenzaTurni {
     commands: { name: string; builtin?: boolean }[];
     error_count: number;
   }>;
+  /** Quanto pesano nel contesto gli strumenti di un server collegato, in token; nulla se l'harness non lo dice. */
+  pesoDegliStrumenti?(server: string): Promise<number | undefined>;
   close(): void;
 }
 
@@ -102,6 +104,13 @@ const apriHarnessVero: ApriHarness = ({ cartella, isolata, plugin = [] }) => {
     setMcpServers: (server) => sessione.setMcpServers(server),
     mcpServerStatus: () => sessione.mcpServerStatus(),
     reloadPlugins: () => sessione.reloadPlugins(),
+    pesoDegliStrumenti: async (server) => {
+      // L'harness scrive il nome del server normalizzato: lettere, cifre, trattini e trattini bassi.
+      const normale = (nome: string): string => nome.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const uso = await sessione.getContextUsage({ detail: "full" });
+      const suoi = uso.mcpTools.filter((uno) => normale(uno.serverName) === normale(server));
+      return suoi.length === 0 ? undefined : suoi.reduce((somma, uno) => somma + uno.tokens, 0);
+    },
     close: () => {
       basta();
       sessione.close();
@@ -579,7 +588,11 @@ export class EstensioniInAmbiente implements FonteEstensioni {
       for (;;) {
         const stato = (await entro(harness.mcpServerStatus(), attesa, "L'harness non ha risposto in tempo.")).find((uno) => uno.name === nome);
         if (stato === undefined) return { riuscita: false, motivo: "L'harness non l'ha presa in carico." };
-        if (stato.status === "connected") return { riuscita: true, strumenti: (stato.tools ?? []).map((uno) => uno.name) };
+        if (stato.status === "connected") {
+          // Quanto pesa nel contesto: se l'harness non lo sa dire, la prova riesce lo stesso.
+          const token = await entro(harness.pesoDegliStrumenti?.(nome) ?? Promise.resolve(undefined), attesa, "").catch(() => undefined);
+          return { riuscita: true, strumenti: (stato.tools ?? []).map((uno) => uno.name), ...(token === undefined ? {} : { token }) };
+        }
         if (stato.status === "needs-auth") {
           return { riuscita: false, motivo: "Vuole un accesso con il browser (OAuth), che Shinka non sa fare: serve una chiave dal vault, oppure un altro modo di collegarsi." };
         }

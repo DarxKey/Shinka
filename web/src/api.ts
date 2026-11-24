@@ -332,6 +332,11 @@ export function indirizzoPaginaEstensione(id: string, idPagina: string, proposta
   return `/api/interfaccia/${proposta ? "proposte/" : ""}${encodeURIComponent(id)}/pagine/${encodeURIComponent(idPagina)}`;
 }
 
+/** Sceglie la risposta massima di un modello locale, che decide la riserva per la compattazione. */
+export async function impostaUscita(id: string, uscita: number): Promise<void> {
+  await chiama("POST", `/api/estensioni/${encodeURIComponent(id)}/uscita`, { uscita });
+}
+
 /** Mette in rete un modello locale acceso in un ambiente, all'indirizzo indicato, o con nulla lo toglie dalla rete. */
 export async function mettiInRete(id: string, idAmbiente: string, indirizzo: string | null): Promise<void> {
   await chiama("POST", `/api/estensioni/${encodeURIComponent(id)}/ambienti/${encodeURIComponent(idAmbiente)}/rete`, { indirizzo });

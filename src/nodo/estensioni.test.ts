@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { harnessDiProva } from "../prove/harness-di-prova.ts";
+import { harnessDiProva, PESO_DI_PROVA } from "../prove/harness-di-prova.ts";
 import { repositoryDiProva } from "../prove/plugin-di-prova.ts";
 import { avvisiDellaDefinizione, contenutoInRighe, type ChiaviConsegnate, type EstensioneDistribuita } from "../protocollo/estensioni.ts";
 import {
@@ -128,7 +128,7 @@ test("un server viene provato da solo, in un harness che non vede altro, e dice 
   const harness = harnessDiProva();
   const estensioni = new EstensioniInAmbiente({ cartella, radiceProgetti: join(cartella, "progetti"), apriHarness: harness.apri });
 
-  assert.deepEqual(await estensioni.prova(LOCALE), { riuscita: true, strumenti: ["saluta", "ha_la_chiave"] });
+  assert.deepEqual(await estensioni.prova(LOCALE), { riuscita: true, strumenti: ["saluta", "ha_la_chiave"], token: PESO_DI_PROVA });
   assert.deepEqual(harness.aperture, [{ cartella, isolata: true }]);
   assert.deepEqual(harness.avviati, [{ meteo: { command: "node", args: ["meteo.js"], env: { REGIONE: "veneto" } } }]);
   assert.equal(harness.chiusi, 1);
@@ -153,7 +153,7 @@ test("un server che resta in attesa viene aspettato, e uno che non risponde non 
   let chieste = 0;
   const lento = harnessDiProva({ stato: () => ((chieste += 1) < 3 ? { status: "pending" } : { status: "connected", tools: [{ name: "uno" }] }) });
   const estensioni = new EstensioniInAmbiente({ cartella, radiceProgetti: cartella, apriHarness: lento.apri, attesaProvaMs: 5_000 });
-  assert.deepEqual(await estensioni.prova(LOCALE), { riuscita: true, strumenti: ["uno"] });
+  assert.deepEqual(await estensioni.prova(LOCALE), { riuscita: true, strumenti: ["uno"], token: PESO_DI_PROVA });
 
   const muto = new EstensioniInAmbiente({
     cartella,
