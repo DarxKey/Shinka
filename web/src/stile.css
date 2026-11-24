@@ -1889,6 +1889,10 @@ li.con-immagine {
   color: var(--bene);
 }
 
+.stato-programmato.aspetta-il-limite {
+  color: var(--attesa);
+}
+
 .richiesta-programmato {
   margin: 8px 0;
   white-space: pre-wrap;

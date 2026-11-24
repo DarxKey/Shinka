@@ -12,6 +12,7 @@
  * viene accodato come materiale da leggere, mai come istruzioni. Lo crea solo il proprietario.
  */
 
+import { limiteNelMessaggio, quandoRiparte } from "../protocollo/limiti.ts";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { EsitoApprovazione, EventoArchiviato, OrigineMessaggio } from "../protocollo/eventi.ts";
@@ -46,7 +47,7 @@ export interface HomePerIProgrammati {
   readonly condizione: "al-lavoro" | "aspetta-te" | "fermo";
   readonly staCambiandoArgomento: boolean;
   readonly idArgomentoAperto: string;
-  readonly canale: Pick<Canale, "archiviati" | "sospesi">;
+  readonly canale: Pick<Canale, "archiviati" | "sospesi" | "ricordato">;
   nuovoArgomento(): Promise<RifiutoPassaggio | undefined>;
   riapri(idArgomento: string): Promise<RifiutoPassaggio | undefined>;
   invia(testo: string, allegati?: [], origine?: OrigineMessaggio): void;
@@ -56,7 +57,7 @@ export interface HomePerIProgrammati {
 /** Ciò che i lavori programmati chiedono ai progetti. */
 export interface ProgettiPerIProgrammati {
   progetto(idProgetto: string): { id: string; nome: string } | undefined;
-  canale(idProgetto: string): Pick<Canale, "sospesi"> | undefined;
+  canale(idProgetto: string): Pick<Canale, "sospesi" | "ricordato"> | undefined;
   invia(idProgetto: string, testo: string): void;
   ascolta(ascoltatore: (idProgetto: string, archiviato: EventoArchiviato) => void): () => void;
 }
@@ -100,6 +101,10 @@ const ATTESA_MASSIMA_MS = 60 * 60 * 1000;
 /** Di quanto può essere in ritardo un lavoro che toccava mentre Shinka era spenta: oltre, si salta. */
 const RITARDO_DA_SPENTA_MS = 60 * 60 * 1000;
 const RITARDO_UNA_VOLTA_MS = 24 * 60 * 60 * 1000;
+/** Quanto dopo l'azzeramento del limite del piano un lavoro riparte: il tempo che il piano lo sappia. */
+const MARGINE_DOPO_IL_LIMITE_MS = 60_000;
+/** Quando non si sa quando il limite si azzera, dopo quanto si torna a guardare. */
+const LIMITE_SENZA_ORA_MS = 30 * 60_000;
 /** Dopo quanto un lavoro che non finisce si dà per perso, e la conversazione torna libera per gli altri. */
 const LAVORO_PERSO_MS = 6 * 60 * 60 * 1000;
 
@@ -127,6 +132,8 @@ type Custodito = LavoroProgrammato & {
 
 interface InCorso {
   conversazione: string;
+  /** Gli eventi consegnati con la richiesta: se il limite del piano la ferma, tornano ad aspettare. */
+  eventi: EventoRicevuto[];
   /** Falso finché la richiesta, messa in coda dietro al cambio di argomento, non è arrivata. */
   iniziato: boolean;
   ultimoTesto: string;
@@ -285,6 +292,8 @@ export class LavoriProgrammati {
       if (cambiaIlPosto) delete lavoro.argomento;
     }
     if (typeof campi.attivo === "boolean") lavoro.attivo = campi.attivo;
+    // Messo in pausa, non riparte nemmeno dopo il limite.
+    if (!lavoro.attivo) delete lavoro.riprendeIl;
     if (lavoro.quando.tipo === "evento") {
       // L'indirizzo nasce con il lavoro; il proprietario lo può cambiare, e quello di prima smette di valere.
       if (lavoro.gettone === undefined || campi.nuovoIndirizzo === true) lavoro.gettone = nuovoGettone();
@@ -325,6 +334,10 @@ export class LavoriProgrammati {
     if (this.#inCorso.has(id)) return undefined;
     // Non è partito: resta in attesa solo ciò che tocca per orario, non una richiesta fatta a mano.
     this.#subito.delete(id);
+    if (lavoro.riprendeIl !== undefined) {
+      const ora = new Date(lavoro.riprendeIl).toLocaleString("it-IT", { timeZone: this.#fuso, weekday: "long", hour: "2-digit", minute: "2-digit" });
+      return `Il limite del piano è esaurito: il lavoro parte da solo quando si azzera, ${ora}.`;
+    }
     if (lavoro.ultima?.esito === "saltato") return lavoro.ultima.dettaglio;
     return lavoro.quando.tipo === "evento"
       ? "La conversazione in cui gira è occupata: l'evento di prova resta in attesa, e parte appena è libera."
@@ -372,19 +385,28 @@ export class LavoriProgrammati {
       }
       for (const lavoro of [...this.#lavori]) {
         const subito = this.#subito.has(lavoro.id);
+        // Chi aspetta che il limite del piano si azzeri non parte prima, nemmeno se intanto tocca di nuovo.
+        const riprende = lavoro.riprendeIl;
+        if (riprende !== undefined && !subito && Date.parse(riprende) > adesso) continue;
         const primoEvento = lavoro.quando.tipo === "evento" ? lavoro.coda?.[0] : undefined;
-        const tocca = subito || (lavoro.attivo && (primoEvento !== undefined || (lavoro.prossima !== undefined && Date.parse(lavoro.prossima) <= adesso)));
+        const tocca = subito || riprende !== undefined || (lavoro.attivo && (primoEvento !== undefined || (lavoro.prossima !== undefined && Date.parse(lavoro.prossima) <= adesso)));
         if (!tocca || this.#inCorso.has(lavoro.id)) continue;
-        const attesoDa = primoEvento?.quando ?? lavoro.prossima;
+        const attesoDa = riprende ?? primoEvento?.quando ?? lavoro.prossima;
         const ritardo = subito || attesoDa === undefined ? 0 : adesso - Date.parse(attesoDa);
         const esito = await this.#faiPartire(lavoro, subito, ritardo);
         if (esito === "partito") {
           this.#subito.delete(lavoro.id);
-          if (!subito) this.#fissaLaProssima(lavoro, adesso, true);
+          delete lavoro.riprendeIl;
+          // Ripartendo dopo il limite si fa anche la volta che intanto toccava, non una in più.
+          const toccava = lavoro.prossima !== undefined && Date.parse(lavoro.prossima) <= adesso;
+          if (!subito && (riprende === undefined || toccava)) this.#fissaLaProssima(lavoro, adesso, true);
+        } else if (typeof esito === "object" && "aspetta" in esito) {
+          this.#subito.delete(lavoro.id);
+          lavoro.riprendeIl = esito.aspetta;
         } else if (esito !== "occupata") {
           this.#subito.delete(lavoro.id);
           this.#salta(lavoro, esito.saltato, adesso, subito);
-        } else if (!subito && ritardo > ATTESA_MASSIMA_MS && lavoro.quando.tipo !== "evento") {
+        } else if (!subito && riprende === undefined && ritardo > ATTESA_MASSIMA_MS && lavoro.quando.tipo !== "evento") {
           // Un evento non si butta perché la conversazione è occupata: aspetta, con quelli che arrivano dopo.
           this.#salta(lavoro, "La conversazione in cui gira è rimasta occupata per un'ora.", adesso);
         }
@@ -421,10 +443,13 @@ export class LavoriProgrammati {
     ].join("\n\n");
   }
 
-  async #faiPartire(lavoro: Custodito, subito: boolean, ritardo: number): Promise<"partito" | "occupata" | { saltato: string }> {
+  async #faiPartire(lavoro: Custodito, subito: boolean, ritardo: number): Promise<"partito" | "occupata" | { saltato: string } | { aspetta: string }> {
     const conversazione = conversazioneDi(lavoro.dove);
     if ([...this.#inCorso.values()].some((voce) => voce.conversazione === conversazione)) return "occupata";
     const adesso = this.#adesso();
+    // Con il limite del piano esaurito non si parte: si aspetta che si azzeri.
+    const azzera = this.#limiteEsaurito(lavoro);
+    if (azzera !== undefined) return { aspetta: new Date(Date.parse(azzera) + MARGINE_DOPO_IL_LIMITE_MS).toISOString() };
     if (lavoro.dove.tipo === "progetto") {
       const { id } = lavoro.dove;
       if (this.#o.progetti.progetto(id) === undefined) {
@@ -432,8 +457,8 @@ export class LavoriProgrammati {
         return { saltato: "Il progetto in cui girava non c'è più: il lavoro è in pausa." };
       }
       if ((this.#o.progetti.canale(id)?.sospesi.turni ?? 0) > 0) return "occupata";
-      this.#inCorso.set(lavoro.id, { conversazione, iniziato: true, ultimoTesto: "", dal: adesso });
       const eventi = lavoro.coda?.splice(0) ?? [];
+      this.#inCorso.set(lavoro.id, { conversazione, eventi, iniziato: true, ultimoTesto: "", dal: adesso });
       try {
         this.#o.progetti.invia(id, this.#richiesta(lavoro, eventi));
       } catch (errore) {
@@ -465,8 +490,8 @@ export class LavoriProgrammati {
       if (rifiuto === "non-trovato") rifiuto = await home.nuovoArgomento();
       if (rifiuto !== undefined) return "occupata";
     }
-    this.#inCorso.set(lavoro.id, { conversazione, iniziato: false, ultimoTesto: "", dal: adesso });
     const eventi = lavoro.coda?.splice(0) ?? [];
+    this.#inCorso.set(lavoro.id, { conversazione, eventi, iniziato: false, ultimoTesto: "", dal: adesso });
     try {
       home.invia(this.#richiesta(lavoro, eventi), [], "programmato");
     } catch (errore) {
@@ -496,10 +521,39 @@ export class LavoriProgrammati {
     if (evento.tipo !== "turno-concluso") return;
     const aperti = conversazione === CONVERSAZIONE_HOME ? this.#o.home().canale.sospesi.turni : (this.#o.progetti.canale(conversazione)?.sospesi.turni ?? 0);
     if (aperti > 0) return;
+    // Fermato dal limite del piano: non è un errore, riparte quando il limite si azzera.
+    const limite = evento.interrotto === true ? undefined : (evento.limite ?? (evento.riuscito ? undefined : limiteNelMessaggio(evento.errore)));
+    if (limite !== undefined) {
+      this.#aspettaIlLimite(id, limite.azzeraIl);
+      return;
+    }
     this.#concludi(id, {
       riuscito: evento.riuscito && evento.interrotto !== true,
       ...(evento.interrotto === true ? { errore: "È stato interrotto." } : evento.errore === undefined ? {} : { errore: evento.errore }),
     });
+  }
+
+  /** Il lavoro in corso si è fermato per il limite del piano: aspetta che si azzeri, e intanto lascia libera la conversazione. */
+  #aspettaIlLimite(id: string, azzeraIl: string | undefined): void {
+    const voce = this.#inCorso.get(id);
+    const lavoro = this.#lavori.find((uno) => uno.id === id);
+    if (voce === undefined) return;
+    setImmediate(() => this.#inCorso.delete(id));
+    if (lavoro === undefined) return;
+    const adesso = this.#adesso();
+    const noto = azzeraIl ?? this.#limiteEsaurito(lavoro);
+    const quando = noto === undefined || Date.parse(noto) <= adesso ? adesso + LIMITE_SENZA_ORA_MS : Date.parse(noto) + MARGINE_DOPO_IL_LIMITE_MS;
+    lavoro.riprendeIl = new Date(quando).toISOString();
+    // Gli eventi che la richiesta portava tornano ad aspettare, davanti a quelli arrivati dopo.
+    if (voce.eventi.length > 0) lavoro.coda = [...voce.eventi, ...(lavoro.coda ?? [])];
+    this.#salva();
+  }
+
+  /** Se il limite del piano della conversazione in cui il lavoro gira è esaurito, quando si azzera. */
+  #limiteEsaurito(lavoro: Custodito): string | undefined {
+    const canale = lavoro.dove.tipo === "home" ? this.#o.home().canale : this.#o.progetti.canale(lavoro.dove.id);
+    const noto = canale?.ricordato("stato");
+    return noto?.tipo === "stato" ? quandoRiparte(noto.stato.limiti, new Date(this.#adesso())) : undefined;
   }
 
   #concludi(id: string, fine: { riuscito: boolean; errore?: string }): void {
@@ -578,6 +632,7 @@ export class LavoriProgrammati {
                 `- [${lavoro.id}] «${lavoro.titolo}»: ${pianificazioneInParole(lavoro.quando)}, ${lavoro.dove.tipo === "home" ? "nella Home" : `nel progetto ${lavoro.nomeProgetto ?? "(che non c'è più)"}`}` +
                 `${lavoro.attivo ? "" : ", in pausa"}; avvisa ${lavoro.avvisa === "sempre" ? "sempre" : "solo se serve"}` +
                 (lavoro.ultima === undefined ? "" : `; l'ultima volta: ${lavoro.ultima.esito}${lavoro.ultima.dettaglio === undefined ? "" : ` (${lavoro.ultima.dettaglio})`}`) +
+                (lavoro.riprendeIl === undefined ? "" : `; aspetta che il limite del piano si azzeri, e riparte da solo il ${lavoro.riprendeIl}`) +
                 `\n  Richiesta: ${lavoro.istruzione.replace(/\s+/g, " ").slice(0, 300)}`,
             )
             .join("\n"),

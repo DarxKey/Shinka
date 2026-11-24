@@ -6,6 +6,7 @@
  * Le azioni vengono prese dai messaggi completi, che portano l'ingresso per intero.
  */
 
+import { limiteNelMessaggio, type LimiteRaggiunto } from "../protocollo/limiti.ts";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { spiegaErroreHarness } from "../harness/errori.ts";
 import { eImmagine, type Immagine } from "../protocollo/allegati.ts";
@@ -23,6 +24,8 @@ export interface StatoTraduzione {
   idMessaggio: string;
   /** Blocchi di testo ancora aperti, per posizione nel messaggio. */
   testiAperti: Map<number, { idTesto: string; testo: string }>;
+  /** Se l'harness ha detto che il limite del piano è esaurito, e quando si azzera. */
+  limite?: LimiteRaggiunto;
 }
 
 export function nuovoStato(): StatoTraduzione {
@@ -94,6 +97,14 @@ export function traduci(messaggio: SDKMessage, stato: StatoTraduzione): EventoCo
       return eventi;
     }
 
+    // L'harness dice come sta il limite del piano: se lo ha superato, il turno si fermerà per quello.
+    case "rate_limit_event": {
+      const { status, resetsAt } = messaggio.rate_limit_info;
+      if (status === "rejected") stato.limite = typeof resetsAt === "number" ? { azzeraIl: new Date(resetsAt * 1000).toISOString() } : {};
+      else delete stato.limite;
+      return [];
+    }
+
     case "result": {
       if (risultatoDiUnaNota(messaggio)) return [];
       const eventi = chiudiTestiAperti(stato);
@@ -103,6 +114,8 @@ export function traduci(messaggio: SDKMessage, stato: StatoTraduzione): EventoCo
         : messaggio.subtype === "success"
           ? messaggio.result
           : messaggio.errors.join("; ") || messaggio.subtype;
+      // Un turno che non riesce per il limite del piano lo dice, con quando si azzera se si sa.
+      const limite = riuscito ? undefined : (stato.limite ?? limiteNelMessaggio(errore));
       const uso = messaggio.usage as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | undefined;
       const token =
         uso === undefined || typeof uso.input_tokens !== "number"
@@ -117,6 +130,7 @@ export function traduci(messaggio: SDKMessage, stato: StatoTraduzione): EventoCo
         durataMs: messaggio.duration_ms,
         ...(errore === undefined ? {} : { errore }),
         ...(token === undefined ? {} : { token }),
+        ...(limite === undefined ? {} : { limite }),
       });
       return eventi;
     }

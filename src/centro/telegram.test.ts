@@ -906,8 +906,8 @@ test("un lavoro programmato dice su Telegram com'è finito, una volta sola e con
 
   // Un errore arriva comunque.
   assert.equal(await banco.programmati.eseguiAdesso(seServe.id), undefined);
-  banco.home.emetti({ tipo: "turno-concluso", riuscito: false, durataMs: 1, errore: "Limite del piano raggiunto." });
-  assert.equal((await arrivano(2))[1]?.text, "<b>Lavoro programmato «Dischi» (Home): si è fermato</b>\n\nLimite del piano raggiunto.");
+  banco.home.emetti({ tipo: "turno-concluso", riuscito: false, durataMs: 1, errore: "Il server non ha risposto." });
+  assert.equal((await arrivano(2))[1]?.text, "<b>Lavoro programmato «Dischi» (Home): si è fermato</b>\n\nIl server non ha risposto.");
 });
 
 test("la proposta di un lavoro programmato si conferma anche da Telegram", async (t) => {

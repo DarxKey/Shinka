@@ -3,6 +3,7 @@
  * Sono dati semplici, serializzabili in JSON: nessuna funzione, nessun riferimento all'SDK.
  */
 
+import type { LimiteRaggiunto } from "./limiti.ts";
 import type { Allegato, Immagine } from "./allegati.ts";
 import type { EstensioniDegliAmbienti, SkillDiPartenza } from "./avvio-progetto.ts";
 import type { ContenutoPlugin, DefinizioneEstensione } from "./estensioni.ts";
@@ -197,6 +198,8 @@ export type EventoConversazione =
       interrotto?: boolean;
       /** I token del turno, come li conta l'harness: per la pagina Uso. Mancano nei turni di prima. */
       token?: TokenDelTurno;
+      /** Presente se il turno si è fermato perché il limite del piano è esaurito, con quando si azzera se si sa. */
+      limite?: LimiteRaggiunto;
     }
   /** Qualcosa è andato storto fuori dal normale corso del turno. */
   | { tipo: "errore"; messaggio: string }

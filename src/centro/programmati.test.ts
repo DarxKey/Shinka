@@ -177,8 +177,8 @@ test("in un progetto il lavoro arriva alla sua conversazione; con l'ambiente spe
   assert.equal(conversazione.inviati.length, 2);
   assert.match(conversazione.inviati[1] ?? "", /^Lavoro programmato: «Backup del NAS»/);
   assert.equal(banco.programmati.inCorsoIn(progetto.id), true);
-  conversazione.emetti({ tipo: "turno-concluso", riuscito: false, durataMs: 1, errore: "Limite del piano raggiunto." });
-  assert.deepEqual({ ...lavori()[0]?.ultima, quando: "" }, { quando: "", esito: "errore", dettaglio: "Limite del piano raggiunto." });
+  conversazione.emetti({ tipo: "turno-concluso", riuscito: false, durataMs: 1, errore: "Il server non ha risposto." });
+  assert.deepEqual({ ...lavori()[0]?.ultima, quando: "" }, { quando: "", esito: "errore", dettaglio: "Il server non ha risposto." });
 
   // Rimasto occupato per più di un'ora: per questa volta si salta, e lo dice.
   await new Promise((fatto) => setImmediate(fatto));
@@ -401,4 +401,100 @@ test("eventi: in pausa non si accolgono, troppi si rifiutano, l'indirizzo si cam
   const proposta = await banco.comuniDellaHome("programma_lavoro", { titolo: "Porta", istruzione: "x", quando: { tipo: "evento" } });
   assert.equal(proposta.errore, true);
   assert.match(proposta.testo, /lo crea il proprietario/);
+});
+
+test("fermato dal limite del piano, il lavoro aspetta che si azzeri e riparte una volta sola", async (t) => {
+  const { banco, orologio, chiedi, lavori } = await allestisciProva(t);
+  await chiedi("POST", "/api/programmati", { ...BACKUP, fuso: "Europe/Rome" });
+  orologio.ora = ALBA + 2 * ORA;
+  await banco.programmati.batti();
+  assert.equal(banco.home.inviati.length, 1);
+
+  // Il turno si ferma per il limite: non è un errore, e la conversazione torna libera.
+  const azzeraIl = new Date(ALBA + 5 * ORA).toISOString();
+  banco.home.emetti({ tipo: "turno-concluso", riuscito: false, durataMs: 1, errore: "You've hit your limit · resets 11am", limite: { azzeraIl } });
+  await new Promise((fatto) => setImmediate(fatto));
+  assert.equal(lavori()[0]?.ultima, undefined);
+  assert.equal(lavori()[0]?.inCorso, undefined);
+  assert.equal(lavori()[0]?.riprendeIl, new Date(ALBA + 5 * ORA + 60_000).toISOString());
+
+  // Prima dell'azzeramento non riparte.
+  orologio.ora = ALBA + 4 * ORA;
+  await banco.programmati.batti();
+  assert.equal(banco.home.inviati.length, 1);
+  // Dopo riparte, una volta, e la prossima volta resta quella di domani.
+  orologio.ora = ALBA + 5 * ORA + 2 * 60_000;
+  await banco.programmati.batti();
+  assert.equal(banco.home.inviati.length, 2);
+  assert.match(banco.home.inviati[1] ?? "", /^Lavoro programmato: «Backup del NAS»/);
+  assert.equal(lavori()[0]?.riprendeIl, undefined);
+  assert.equal(lavori()[0]?.prossima, "2026-11-22T06:30:00.000Z");
+  await banco.programmati.batti();
+  assert.equal(banco.home.inviati.length, 2);
+  risponde(banco.home, "Il backup è riuscito.");
+  assert.equal(lavori()[0]?.ultima?.esito, "fatto");
+});
+
+test("con il limite del piano già esaurito il lavoro non parte: aspetta, e se intanto toccava di nuovo parte una volta", async (t) => {
+  const { banco, orologio, chiedi, lavori } = await allestisciProva(t);
+  await chiedi("POST", "/api/programmati", { ...BACKUP, quando: { tipo: "ogni", minuti: 60 }, fuso: "Europe/Rome" });
+  const id = lavori()[0]?.id ?? "";
+  // L'harness ha detto che le cinque ore sono finite: si azzerano tra tre ore.
+  const azzeraIl = new Date(ALBA + 3 * ORA).toISOString();
+  banco.home.emetti({ tipo: "stato", stato: { limiti: { cinqueOre: { percento: 100, azzeraIl } } } });
+  orologio.ora = ALBA + ORA + 60_000;
+  await banco.programmati.batti();
+  assert.deepEqual(banco.home.inviati, []);
+  assert.equal(lavori()[0]?.riprendeIl, new Date(ALBA + 3 * ORA + 60_000).toISOString());
+  // «Esegui adesso» dice perché non parte.
+  const adesso = await chiedi("POST", `/api/programmati/${id}/esecuzione`);
+  assert.equal(adesso.stato, 400);
+  assert.match(String(adesso.dati.errore), /limite del piano è esaurito/);
+
+  // Intanto tocca altre due volte: non parte, e all'azzeramento parte una volta sola.
+  orologio.ora = ALBA + 2 * ORA + 30 * 60_000;
+  await banco.programmati.batti();
+  assert.deepEqual(banco.home.inviati, []);
+  banco.home.emetti({ tipo: "stato", stato: { limiti: { cinqueOre: { percento: 3, azzeraIl: new Date(ALBA + 8 * ORA).toISOString() } } } });
+  orologio.ora = ALBA + 3 * ORA + 2 * 60_000;
+  await banco.programmati.batti();
+  assert.equal(banco.home.inviati.length, 1);
+  assert.equal(lavori()[0]?.riprendeIl, undefined);
+  assert.ok(Date.parse(lavori()[0]?.prossima ?? "") > orologio.ora);
+  await banco.programmati.batti();
+  assert.equal(banco.home.inviati.length, 1);
+
+  // Messo in pausa mentre aspetta il limite, non riparte.
+  risponde(banco.home, "Fatto.");
+  await new Promise((fatto) => setImmediate(fatto));
+  banco.home.emetti({ tipo: "stato", stato: { limiti: { cinqueOre: { percento: 100, azzeraIl: new Date(ALBA + 6 * ORA).toISOString() } } } });
+  orologio.ora = ALBA + 4 * ORA + 2 * 60_000;
+  await banco.programmati.batti();
+  assert.ok(lavori()[0]?.riprendeIl !== undefined);
+  assert.equal((await chiedi("POST", `/api/programmati/${id}`, { attivo: false, fuso: "Europe/Rome" })).stato, 200);
+  assert.equal(lavori()[0]?.riprendeIl, undefined);
+  orologio.ora = ALBA + 7 * ORA;
+  await banco.programmati.batti();
+  assert.equal(banco.home.inviati.length, 1);
+});
+
+test("da un nodo di prima il limite si riconosce dal messaggio, e gli eventi tornano ad aspettare", async (t) => {
+  const { banco, orologio, chiedi, lavori } = await allestisciProva(t);
+  const progetto = await banco.lavori.crea("Laboratorio", "centro", "Tiene d'occhio il laboratorio.");
+  const conversazione = banco.conversazioniLocali[0];
+  assert.ok(conversazione !== undefined);
+  conversazione.emetti({ tipo: "turno-concluso", riuscito: true, durataMs: 1 });
+  await chiedi("POST", "/api/programmati", { ...BACKUP, quando: { tipo: "evento" }, dove: { tipo: "progetto", id: progetto.id }, fuso: "Europe/Rome" });
+  const chiave = new URL(lavori()[0]?.indirizzo ?? "", "http://x").searchParams.get("chiave") ?? "";
+  assert.equal(banco.programmati.ricevi(chiave, "Il disco è pieno."), "accolto");
+  await finche(() => conversazione.inviati.length === 2, "l'evento fa partire il lavoro");
+  const secondi = Math.floor((ALBA + 2 * ORA) / 1000);
+  conversazione.emetti({ tipo: "turno-concluso", riuscito: false, durataMs: 1, errore: `Claude AI usage limit reached|${secondi}` });
+  await new Promise((fatto) => setImmediate(fatto));
+  assert.equal(lavori()[0]?.riprendeIl, new Date(secondi * 1000 + 60_000).toISOString());
+  assert.equal(lavori()[0]?.eventiInAttesa, 1);
+  orologio.ora = ALBA + 2 * ORA + 2 * 60_000;
+  await banco.programmati.batti();
+  assert.equal(conversazione.inviati.length, 3);
+  assert.match(conversazione.inviati[2] ?? "", /Il disco è pieno\./);
 });

@@ -202,3 +202,22 @@ test("il ragionamento arriva con il messaggio completo; uno vuoto, come quelli n
     { tipo: "azione-iniziata", idAzione: "toolu_2", strumento: "Bash", ingresso: { command: "ls" } },
   ]);
 });
+
+test("un turno fermato dal limite del piano lo dice, con quando si azzera", () => {
+  // L'harness avvisa prima che il limite è superato, poi chiude il turno con un errore.
+  const eventi = traduciTutti([
+    messaggio({ type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt: 1_795_000_000, rateLimitType: "five_hour" } }),
+    messaggio({ type: "result", subtype: "success", is_error: true, duration_ms: 5, result: "You've hit your limit · resets 3pm" }),
+  ]);
+  assert.deepEqual(eventi, [
+    { tipo: "turno-concluso", riuscito: false, durataMs: 5, errore: "You've hit your limit · resets 3pm", limite: { azzeraIl: new Date(1_795_000_000_000).toISOString() } },
+  ]);
+  // Senza l'avviso, lo si riconosce dal messaggio; e un limite tornato libero non vale più.
+  const dalMessaggio = traduciTutti([
+    messaggio({ type: "rate_limit_event", rate_limit_info: { status: "rejected" } }),
+    messaggio({ type: "rate_limit_event", rate_limit_info: { status: "allowed" } }),
+    messaggio({ type: "result", subtype: "success", is_error: true, duration_ms: 5, result: "Claude AI usage limit reached|1795000000" }),
+    messaggio({ type: "result", subtype: "success", is_error: true, duration_ms: 5, result: "Non autenticato" }),
+  ]);
+  assert.deepEqual(dalMessaggio.map((evento) => (evento.tipo === "turno-concluso" ? evento.limite : "altro")), [{ azzeraIl: new Date(1_795_000_000_000).toISOString() }, undefined]);
+});

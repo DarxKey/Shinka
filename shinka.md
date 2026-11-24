@@ -2,7 +2,7 @@
 
 ## Specifica funzionale e architetturale
 
-**Versione:** 2.21 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
+**Versione:** 2.22 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
 
 Sostituisce la specifica "Atlas Agent 1.0", conservata in [archivio/atlas-agent-v1.md](archivio/atlas-agent-v1.md). I termini usati qui sono definiti in [GLOSSARY.md](GLOSSARY.md). Le decisioni di fondo sono motivate in [docs/adr/](docs/adr/). Lo stato dei lavori è in [STATO.md](STATO.md).
 
@@ -45,6 +45,8 @@ La versione 2.19 aggiunge la copia di sicurezza e il trasloco dei dati: una copi
 La versione 2.20 permette a un progetto di lavorare in più ambienti: vive nel suo, con il suo motore e la sua cartella, e il proprietario può collegargli cartelle di altri ambienti, in cui il progetto lavora con gli strumenti di Shinka seguendo il modo dei suoi permessi. Cambiano la sezione 4.4 e un'assunzione della sezione 11. La scelta è del proprietario, del 23 novembre 2026, per far lavorare il progetto Shinka anche sul codice di Shinka Desktop, che si costruisce sul PC; è motivata in [docs/adr/0050](docs/adr/0050-un-progetto-in-piu-ambienti.md).
 
 La versione 2.21 toglie la domanda a parte e aggiunge le chat parallele: nella Home e in un progetto il proprietario apre altre conversazioni in schede accanto alla principale, che lavorano anche mentre questa lavora. Nella Home ciascuna è un argomento aperto: gli argomenti aperti possono essere più d'uno. Cambiano le sezioni 4.2, 4.4 e 6; si aggiungono le prove A86 e A87. La scelta è del proprietario, del 24 novembre 2026, ed è motivata in [docs/adr/0052](docs/adr/0052-chat-parallele.md).
+
+La versione 2.22 dice che cosa fa un lavoro programmato che trova esaurito il limite del piano: non salta, aspetta che si azzeri e riparte da solo, una volta. Cambia la sezione 4.13; si aggiunge la prova A88. La scelta è del proprietario, del 24 novembre 2026.
 
 ## 1. Cos'è Shinka
 
@@ -253,6 +255,7 @@ Un'estensione è codice di terzi che dà strumenti in più alle conversazioni: u
 - Lavora con le impostazioni e il modo dei permessi che quella conversazione ha in quel momento. Ciò che chiede il consenso del proprietario lo aspetta, come sempre: un lavoro programmato non approva nulla al suo posto, e i divieti fissi valgono.
 - La risposta finale arriva al proprietario su Telegram, ogni volta oppure solo quando c'è qualcosa da segnalare, come lui ha scelto. Un errore arriva sempre.
 - Se la conversazione è occupata il lavoro aspetta, e dopo un'ora per quella volta rinuncia; se Shinka era spenta parte quando torna, se il ritardo è di poco. Ciò che è stato saltato resta scritto, con il motivo.
+- Se il limite del piano è esaurito, prima di partire o a metà del lavoro, il lavoro non rinuncia: aspetta che il limite si azzeri e riparte da solo, una volta sola, anche se nel frattempo sarebbe toccato di nuovo. Gli eventi che portava tornano ad aspettare. Nell'elenco si vede quando riparte; messo in pausa, non riparte.
 - Il proprietario vede l'elenco, con la prossima volta e com'è andata l'ultima, e da lì cambia un lavoro, lo mette in pausa, lo fa partire subito o lo toglie.
 - **Eventi in ingresso.** Un lavoro programmato può partire, invece che a un orario, quando un altro sistema manda un evento al suo indirizzo: il server, il firewall, un monitor dei servizi. L'indirizzo ha una chiave sua, lunga e casuale, e risponde senza la sessione del proprietario: chi lo conosce può solo far partire quel lavoro. Un lavoro così lo crea solo il proprietario, dalla pagina; una conversazione non ne propone, e la chiave non le viene detta. Il proprietario può cambiare l'indirizzo, e quello di prima smette di valere.
 - Che cosa fare quando arriva un evento lo dice la richiesta scritta dal proprietario. L'evento le viene accodato come materiale da leggere, in un riquadro che dice da dove viene: non è una richiesta del proprietario, e ciò che contiene non chiede e non autorizza nulla. Per il resto il lavoro è come gli altri: stessa conversazione, stessi permessi, stessa risposta su Telegram.
@@ -457,6 +460,7 @@ Ogni incremento deve essere usabile e dimostrabile prima di passare al successiv
 | A85 | Scarica la copia del vault dalla pagina del vault e la carica in un gateway senza vault, con la sua frase | Le credenziali ci sono e si usano; con un'altra frase non entra; con il gettone del centro la copia non si ottiene |
 | A86 | Mentre la Home lavora, il proprietario apre una chat parallela e chiede altro | Risponde subito, con gli strumenti, senza fermare la principale; chiusa la scheda, l'argomento è tra gli archiviati con il suo titolo |
 | A87 | In un progetto al lavoro il proprietario apre una chat parallela, le fa leggere un file, poi la chiude | La chat legge nella stessa cartella mentre la principale continua; chiusa, la sua storia non c'è più e la principale non ne ha risentito |
+| A88 | Un lavoro programmato parte con il limite del piano esaurito, oppure lo esaurisce a metà | Non parte, o si ferma senza errore; nell'elenco dice quando riparte; all'azzeramento riparte una volta sola |
 
 ## 10. Regole per chi implementa
 
