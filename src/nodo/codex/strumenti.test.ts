@@ -3,7 +3,10 @@ import { test } from "node:test";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { Conversazione } from "../conversazione.ts";
-import { StrumentiPerCodex } from "./strumenti.ts";
+import { improntaDegliStrumenti, StrumentiPerCodex, strumentiDelThread } from "./strumenti.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 let creati = 0;
 const creaStrumenti = () => {
@@ -42,4 +45,25 @@ test("la conversazione con Claude crea i suoi strumenti una volta sola", () => {
   });
   assert.equal(creati, 1);
   conversazione.chiudi();
+});
+
+test("l'impronta degli strumenti cambia con nomi e schemi, non con descrizioni e ordine; il file di una sessione dice i suoi", async (t) => {
+  const spazio = (strumenti: { name: string; description: string; inputSchema: unknown }[]) => [{ type: "namespace", name: "shinka", description: "x", tools: strumenti.map((voce) => ({ type: "function", ...voce })) }];
+  const a = { name: "ricorda", description: "Annota.", inputSchema: { type: "object", properties: { testo: { type: "string" } } } };
+  const b = { name: "dimentica", description: "Toglie.", inputSchema: { properties: { voce: { type: "string" } }, type: "object" } };
+  const base = improntaDegliStrumenti(spazio([a, b]));
+  assert.equal(improntaDegliStrumenti(spazio([b, { ...a, description: "Altro testo." }])), base);
+  assert.notEqual(improntaDegliStrumenti(spazio([a])), base);
+  assert.notEqual(improntaDegliStrumenti(spazio([a, { ...b, inputSchema: { type: "object", properties: { voce: { type: "number" } } } }])), base);
+
+  const cartella = mkdtempSync(join(tmpdir(), "shinka-sessione-codex-"));
+  t.after(() => rmSync(cartella, { recursive: true, force: true }));
+  const file = join(cartella, "rollout.jsonl");
+  writeFileSync(file, `${JSON.stringify({ type: "session_meta", payload: { id: "t1", base_instructions: "x".repeat(600_000), dynamic_tools: spazio([a, b]) } })}\n{"type":"event"}\n`);
+  assert.equal(improntaDegliStrumenti((await strumentiDelThread(file)) ?? []), base);
+  writeFileSync(file, `${JSON.stringify({ type: "session_meta", payload: { id: "t2" } })}\n`);
+  assert.deepEqual(await strumentiDelThread(file), []);
+  assert.equal(await strumentiDelThread(join(cartella, "non-esiste.jsonl")), undefined);
+  writeFileSync(file, "non è json\n");
+  assert.equal(await strumentiDelThread(file), undefined);
 });

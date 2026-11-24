@@ -28,6 +28,7 @@ import { leggiSessioni, scriviSessioni, type SessioniDeiMotori } from "../protoc
 import { ConversazioneCodex, motoreConfigurato } from "./codex/conversazione-codex.ts";
 import { Conversazione, type ConfigurazioneConversazione } from "./conversazione.ts";
 import { modelliDeiMotori, type ModelliDeiMotori } from "./sonde-motori.ts";
+import { ultimiScambi } from "./ultimi-scambi.ts";
 
 export { motoreConfigurato, type Motore };
 
@@ -60,10 +61,7 @@ function apriMotore(cfg: ConfigurazioneConversazione, motore: Motore): PortaConv
   return motore === "codex" ? new ConversazioneCodex(cfg) : new Conversazione(cfg);
 }
 
-/** Quanti caratteri della conversazione passano al motore nuovo, e quanti al massimo per messaggio. */
-const PASSAGGIO_MASSIMO = 24_000;
 const INIZIO_DELLA_NOTA = "[Shinka] Il proprietario ha passato questa conversazione";
-const MESSAGGIO_MASSIMO = 3_000;
 
 /**
  * La nota che il motore nuovo riceve con il primo messaggio: gli ultimi scambi, dal più vecchio,
@@ -71,23 +69,16 @@ const MESSAGGIO_MASSIMO = 3_000;
  */
 export function notaDelPassaggio(da: Motore, a: Motore, tutta: readonly ScambioDellaStoria[]): string | undefined {
   // La nota di un passaggio di prima è già nella storia dell'altro motore: non si ricopia.
-  const storia = tutta.filter((scambio) => !scambio.testo.startsWith(INIZIO_DELLA_NOTA));
-  const righe: string[] = [];
-  let lunghezza = 0;
-  for (let i = storia.length - 1; i >= 0; i--) {
-    const scambio = storia[i]!;
-    const testo = scambio.testo.length > MESSAGGIO_MASSIMO ? `${scambio.testo.slice(0, MESSAGGIO_MASSIMO)}… [tagliato]` : scambio.testo;
-    const riga = `${scambio.chi === "proprietario" ? "Proprietario" : NOMI_MOTORI[da]}: ${testo}`;
-    if (lunghezza + riga.length > PASSAGGIO_MASSIMO && righe.length > 0) break;
-    righe.unshift(riga);
-    lunghezza += riga.length;
-  }
-  if (righe.length === 0) return undefined;
-  const parziale = righe.length < storia.length ? " (gli ultimi; quelli prima non ci stanno)" : "";
+  const ultimi = ultimiScambi(
+    tutta.filter((scambio) => !scambio.testo.startsWith(INIZIO_DELLA_NOTA)),
+    NOMI_MOTORI[da],
+  );
+  if (ultimi === undefined) return undefined;
+  const parziale = ultimi.parziale ? " (gli ultimi; quelli prima non ci stanno)" : "";
   return [
     `${INIZIO_DELLA_NOTA} da ${NOMI_MOTORI[da]} a ${NOMI_MOTORI[a]}: fin qui ha risposto ${NOMI_MOTORI[da]}, in una sessione che tu non vedi. Questi sono i suoi scambi con il proprietario${parziale}, perché tu possa continuare da dove sono arrivati. Le azioni fatte allora non sono ripetute qui: i file sono come li hanno lasciati.`,
     "",
-    ...righe,
+    ...ultimi.righe,
   ].join("\n\n");
 }
 

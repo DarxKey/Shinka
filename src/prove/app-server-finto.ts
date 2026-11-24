@@ -14,6 +14,21 @@ import { createInterface } from "node:readline";
 
 /** Il file che dice se il Codex finto ha un accesso: c'è, oppure no. */
 const fileAccesso = process.env.FINTO_CODEX_ACCESSO;
+/**
+ * Con una cartella per le sessioni, come il Codex vero: ogni thread nato ha il suo file, la cui prima
+ * riga dice gli strumenti dinamici con cui è nato, e `thread/read` ne dice il percorso. I turni di un
+ * thread si leggono anche da `<id>.turni.json`, e ciò che si inietta finisce in `iniettati.json`.
+ */
+const cartellaSessioni = process.env.FINTO_SESSIONI;
+const fileDellaSessione = (id: string): string | undefined => (cartellaSessioni === undefined ? undefined : join(cartellaSessioni, `${id}.jsonl`));
+const conIlPercorso = (id: string): { path?: string } => {
+  const file = fileDellaSessione(id);
+  return file !== undefined && existsSync(file) ? { path: file } : {};
+};
+const turniSalvati = (id: string): unknown[] => {
+  if (cartellaSessioni === undefined || !existsSync(join(cartellaSessioni, `${id}.turni.json`))) return [];
+  return JSON.parse(readFileSync(join(cartellaSessioni, `${id}.turni.json`), "utf8")) as unknown[];
+};
 
 const scrivi = (messaggio: Record<string, unknown>): void => {
   process.stdout.write(`${JSON.stringify(messaggio)}\n`);
@@ -141,16 +156,28 @@ createInterface({ input: process.stdin }).on("line", (riga) => {
       return scrivi({ id, result: { userAgent: "finto", codexHome: "/tmp", platformFamily: "unix", platformOs: "linux" } });
     case "thread/start": {
       process.stderr.write(`thread/start ${JSON.stringify(params)}\n`);
-      const nuovo = params.ephemeral === true ? { id: `effimero-${++copie}` } : thread;
+      const nuovo = params.ephemeral === true ? { id: `effimero-${++copie}` } : cartellaSessioni === undefined ? thread : { id: `nato-${process.pid}-${++copie}` };
       if (typeof params.cwd === "string") cartelle.set(nuovo.id, params.cwd);
-      return scrivi({ id, result: { thread: nuovo } });
+      const file = params.ephemeral === true ? undefined : fileDellaSessione(nuovo.id);
+      if (file !== undefined) {
+        writeFileSync(file, `${JSON.stringify({ type: "session_meta", payload: { id: nuovo.id, dynamic_tools: params.dynamicTools ?? null } })}\n`);
+      }
+      return scrivi({ id, result: { thread: { ...nuovo, ...conIlPercorso(nuovo.id) } } });
     }
     case "thread/resume":
       if (params.threadId === "sparito") return scrivi({ id, error: { code: -1, message: "thread non trovato" } });
       if (typeof params.cwd === "string") cartelle.set(String(params.threadId), params.cwd);
       return scrivi({ id, result: { thread: { id: params.threadId } } });
     case "thread/read":
-      return scrivi({ id, result: { thread: { id: params.threadId, turns: storia.get(String(params.threadId)) ?? [] } } });
+      return scrivi({ id, result: { thread: { id: params.threadId, ...conIlPercorso(String(params.threadId)), turns: storia.get(String(params.threadId)) ?? turniSalvati(String(params.threadId)) } } });
+    case "thread/inject_items": {
+      if (cartellaSessioni !== undefined) {
+        const file = join(cartellaSessioni, "iniettati.json");
+        const prima = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as unknown[]) : [];
+        writeFileSync(file, JSON.stringify([...prima, params]));
+      }
+      return scrivi({ id, result: {} });
+    }
     case "thread/revert": {
       process.stderr.write(`thread/revert ${JSON.stringify(params)}\n`);
       const tutti = storia.get(String(params.threadId)) ?? [];

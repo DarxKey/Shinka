@@ -30,7 +30,8 @@ import { istruzioniDelloStile } from "../../protocollo/stili.ts";
 import type { ConfigurazioneConversazione } from "../conversazione.ts";
 import { ClienteAppServer, type RispostaAlServer } from "./cliente.ts";
 import { DomandeInSospeso } from "../domande.ts";
-import { StrumentiPerCodex } from "./strumenti.ts";
+import { improntaDegliStrumenti, StrumentiPerCodex, strumentiDelThread, type SpazioDiStrumenti } from "./strumenti.ts";
+import { ultimiScambi } from "../ultimi-scambi.ts";
 import type { Domanda, RispostaAlleDomande } from "../../protocollo/eventi.ts";
 import { limitiDi, TraduzioneCodex } from "./traduzione.ts";
 
@@ -176,6 +177,11 @@ export class ConversazioneCodex implements PortaConversazione {
   #inTurno = false;
   /** Le note per Claude che aspettano il prossimo messaggio: Codex non ha messaggi che non chiedano risposta. */
   readonly #note: string[] = [];
+  /**
+   * La nota per un thread nuovo, nato perché gli strumenti di Shinka erano cambiati (ADR 0061): gli
+   * ultimi scambi di quello di prima. Va con il primo messaggio del thread nuovo.
+   */
+  #notaDelThreadNuovo: string | undefined;
   readonly #permessi = new Map<string, PermessoInAttesa>();
   readonly #domande: DomandeInSospeso;
   /** Le domande in attesa si annullano quando il turno finisce. */
@@ -633,6 +639,21 @@ export class ConversazioneCodex implements PortaConversazione {
       ...(await this.#modello(cliente)),
     };
     let thread: { id?: unknown } | undefined;
+    let notaDaConsegnare: string | undefined;
+    // Codex tiene gli strumenti con cui il thread è nato, e riprendendolo non li cambia: se quelli di
+    // Shinka non sono più gli stessi, si continua in un thread nuovo con gli ultimi scambi (ADR 0061).
+    if (this.#idThread !== undefined && (await this.#strumentiCambiati(cliente, strumenti.spazi))) {
+      const scambi = await cliente
+        .richiedi("thread/read", { threadId: this.#idThread, includeTurns: true }, 30_000)
+        .then((letto) => scambiDiCodex((letto as { thread?: { turns?: unknown } }).thread?.turns))
+        .catch(() => []);
+      notaDaConsegnare = notaDelThreadNuovo(scambi);
+      this.#idThread = undefined;
+      this.#cfg.alEvento({
+        tipo: "nota",
+        testo: "Gli strumenti di Shinka sono cambiati, e Codex non li aggiorna in una conversazione che riprende: da qui continua in una nuova, che riceve gli ultimi scambi di questa.",
+      });
+    }
     if (this.#idThread !== undefined) {
       try {
         thread = ((await cliente.richiedi("thread/resume", { threadId: this.#idThread, excludeTurns: true, ...comune })) as { thread?: { id?: unknown } }).thread;
@@ -651,11 +672,38 @@ export class ConversazioneCodex implements PortaConversazione {
       this.#idThread = thread.id;
       this.#cfg.alIdSessione(thread.id);
     }
+    // Gli ultimi scambi entrano subito nella storia del thread nuovo, così non si perdono se la
+    // conversazione si chiude prima di un messaggio; se l'app-server non lo sa fare, vanno con il primo.
+    if (notaDaConsegnare !== undefined) {
+      const nota = notaDaConsegnare;
+      await cliente
+        .richiedi("thread/inject_items", { threadId: thread.id, items: [{ type: "message", role: "user", content: [{ type: "input_text", text: nota }] }] }, 30_000)
+        .catch(() => {
+          this.#notaDelThreadNuovo = nota;
+        });
+    }
     // Le skill si leggono prima del primo messaggio: così "/nome" chiama una skill fin da subito.
     this.#comandiLetti = await this.#leggiLeSkill(cliente).catch(() => undefined);
     this.#comandiDaRiferire = true;
     void this.#riferisciStato(cliente);
     return cliente;
+  }
+
+  /**
+   * Vero se il thread è nato con strumenti di Shinka diversi da quelli di adesso (nomi o schemi). Si
+   * leggono dal file della sessione, che l'app-server dice con `thread/read`. Se non si sa, si riprende.
+   */
+  async #strumentiCambiati(cliente: ClienteAppServer, spazi: readonly SpazioDiStrumenti[]): Promise<boolean> {
+    try {
+      const letto = (await cliente.richiedi("thread/read", { threadId: this.#idThread, includeTurns: false }, 30_000)) as { thread?: { path?: unknown } };
+      const percorso = letto.thread?.path;
+      if (typeof percorso !== "string" || percorso === "") return false;
+      const diAllora = await strumentiDelThread(percorso);
+      if (diAllora === undefined) return false;
+      return improntaDegliStrumenti(diAllora) !== improntaDegliStrumenti(spazi);
+    } catch {
+      return false;
+    }
   }
 
   /** Le istruzioni che Shinka aggiunge a quelle di Codex: le sue, e lo stile scelto. */
@@ -691,7 +739,11 @@ export class ConversazioneCodex implements PortaConversazione {
       if (threadId === undefined) return;
       const percorsoSkill = comando === undefined ? undefined : this.#skill.get(comando);
       // Codex riconosce una skill dal suo nome con il dollaro davanti, e dal percorso.
-      const scritti = percorsoSkill === undefined ? testi : testi.map((testo, posizione) => (posizione === testi.length - 1 ? `$${testo.slice(1)}` : testo));
+      const daScrivere = percorsoSkill === undefined ? testi : testi.map((testo, posizione) => (posizione === testi.length - 1 ? `$${testo.slice(1)}` : testo));
+      // Il primo messaggio di un thread nuovo porta gli ultimi scambi di quello di prima.
+      const nota = this.#notaDelThreadNuovo;
+      this.#notaDelThreadNuovo = undefined;
+      const scritti = nota === undefined ? daScrivere : [nota, ...daScrivere];
       const input = [
         ...scritti.map((text) => ({ type: "text", text, text_elements: [] })),
         ...immagini.map((path) => ({ type: "localImage", path })),
@@ -1010,6 +1062,20 @@ export function modelliDiCodex(risposta: unknown): ModelloDisponibile[] {
 }
 
 /** I messaggi del proprietario e le risposte di Codex nei turni di un thread. */
+/**
+ * La nota per il thread nuovo, quando quello di prima aveva strumenti di Shinka diversi: gli ultimi
+ * scambi, perché Codex continui da dove era arrivato. Undefined se non c'è nulla da passare.
+ */
+export function notaDelThreadNuovo(storia: readonly ScambioDellaStoria[]): string | undefined {
+  const ultimi = ultimiScambi(storia, "Codex");
+  if (ultimi === undefined) return undefined;
+  return [
+    `[Shinka] Questa conversazione continua in un thread nuovo di Codex, perché gli strumenti di Shinka sono cambiati e un thread ripreso tiene quelli con cui è nato. Questi sono gli ultimi scambi con il proprietario${ultimi.parziale ? " (gli ultimi; quelli prima non ci stanno)" : ""}, perché tu possa continuare da dove eri arrivato. Le azioni fatte allora non sono ripetute qui: i file sono come li hanno lasciati. Gli strumenti di Shinka che hai adesso sono quelli di oggi.`,
+    "",
+    ...ultimi.righe,
+  ].join("\n\n");
+}
+
 export function scambiDiCodex(turni: unknown): ScambioDellaStoria[] {
   if (!Array.isArray(turni)) return [];
   const scambi: ScambioDellaStoria[] = [];

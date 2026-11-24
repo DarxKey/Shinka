@@ -8,6 +8,7 @@
 import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { open } from "node:fs/promises";
 
 /** Uno spazio di strumenti dinamici, come lo vuole `thread/start`. */
 export interface SpazioDiStrumenti {
@@ -89,5 +90,70 @@ export class StrumentiPerCodex {
   chiudi(): void {
     for (const { client } of this.#server.values()) void client.close().catch(() => {});
     this.#server.clear();
+  }
+}
+
+/** Un valore in JSON con le chiavi in ordine: due schemi uguali danno lo stesso testo. */
+function stabile(valore: unknown): string {
+  return JSON.stringify(valore, (_chiave, dentro: unknown) =>
+    typeof dentro === "object" && dentro !== null && !Array.isArray(dentro)
+      ? Object.fromEntries(Object.entries(dentro).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : dentro,
+  );
+}
+
+/**
+ * L'impronta di un elenco di strumenti dinamici: gli spazi, e in ciascuno i nomi degli strumenti con
+ * i loro schemi, in ordine. Le descrizioni non contano: cambiarle non chiede un thread nuovo.
+ */
+export function improntaDegliStrumenti(spazi: readonly unknown[]): string {
+  const letti = spazi.flatMap((spazio) => {
+    if (typeof spazio !== "object" || spazio === null) return [];
+    const { name, tools } = spazio as { name?: unknown; tools?: unknown };
+    const strumenti = (Array.isArray(tools) ? tools : [])
+      .flatMap((voce: unknown) => (typeof voce === "object" && voce !== null ? [voce as { name?: unknown; inputSchema?: unknown }] : []))
+      .map((voce) => [String(voce.name), voce.inputSchema ?? null] as const)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return [[String(name), strumenti] as const];
+  });
+  return stabile(letti.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
+/** Quanto si legge al massimo della prima riga di una sessione di Codex: istruzioni e strumenti stanno lì. */
+const PRIMA_RIGA_MASSIMA = 16 * 1024 * 1024;
+
+/**
+ * Gli strumenti dinamici con cui è nato un thread di Codex, dal file della sessione: Codex li scrive
+ * nella sua prima riga (`session_meta`) e li tiene per tutta la vita del thread. Undefined se il file
+ * non si legge o non li dice; un elenco vuoto se il thread è nato senza.
+ */
+export async function strumentiDelThread(percorso: string): Promise<unknown[] | undefined> {
+  let file;
+  try {
+    file = await open(percorso, "r");
+  } catch {
+    return undefined;
+  }
+  try {
+    const pezzi: Buffer[] = [];
+    let letti = 0;
+    for (;;) {
+      const pezzo = Buffer.alloc(256 * 1024);
+      const { bytesRead } = await file.read(pezzo, 0, pezzo.length, letti);
+      if (bytesRead === 0) break;
+      const usato = pezzo.subarray(0, bytesRead);
+      const fine = usato.indexOf(10);
+      pezzi.push(fine < 0 ? usato : usato.subarray(0, fine));
+      letti += bytesRead;
+      if (fine >= 0 || letti >= PRIMA_RIGA_MASSIMA) break;
+    }
+    const riga = JSON.parse(Buffer.concat(pezzi).toString("utf8")) as { type?: unknown; payload?: { dynamic_tools?: unknown } };
+    if (riga.type !== "session_meta") return undefined;
+    const strumenti = riga.payload?.dynamic_tools;
+    return strumenti === undefined || strumenti === null ? [] : Array.isArray(strumenti) ? strumenti : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    await file.close();
   }
 }

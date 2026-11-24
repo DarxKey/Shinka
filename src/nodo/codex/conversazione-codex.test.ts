@@ -427,3 +427,74 @@ test("«/nome» chiama una skill di Codex con il suo nome e il suo percorso; ci�
   await finche(() => eventi.filter((evento) => evento.tipo === "turno-concluso").length === 2, "il secondo turno finisce");
   assert.deepEqual(eventi.flatMap((evento) => (evento.tipo === "testo-concluso" ? [evento.testo] : [])).at(-1), "Ciao, fatto.");
 });
+
+test("un thread ripreso con gli stessi strumenti si riprende; con strumenti cambiati continua in uno nuovo, con gli ultimi scambi (ADR 0061)", async (t) => {
+  const sessioniDiCodex = mkdtempSync(join(tmpdir(), "shinka-codex-sessioni-"));
+  t.after(() => rmSync(sessioniDiCodex, { recursive: true, force: true }));
+  const strumento = (nome: string) => tool(nome, `Lo strumento ${nome}.`, { per: z.string() }, async () => ({ content: [{ type: "text", text: "fatto" }] }));
+  const conversazioneCon = (nomi: string[], idSessione?: string) => {
+    const cartella = mkdtempSync(join(tmpdir(), "shinka-codex-"));
+    const eventi: EventoConversazione[] = [];
+    const sessioni: string[] = [];
+    const conversazione = new ConversazioneCodex(
+      {
+        cartella,
+        istruzioni: "claude-code",
+        strumenti: "claude-code",
+        strumentiSenzaRichiesta: [],
+        strumentiNostri: () => ({ shinka: createSdkMcpServer({ name: "shinka", version: "1.0.0", tools: nomi.map(strumento) }) }),
+        impostazioni: { permessi: "modifiche-libere" },
+        ...(idSessione === undefined ? {} : { idSessione }),
+        alEvento: (evento) => eventi.push(evento),
+        alIdSessione: (id) => sessioni.push(id),
+      },
+      { comando: FINTO, env: { ...process.env, FINTO_SESSIONI: sessioniDiCodex } },
+    );
+    t.after(async () => {
+      conversazione.chiudi();
+      await rm(cartella, { recursive: true, force: true });
+    });
+    return { conversazione, eventi, sessioni };
+  };
+  const strumentiNelFile = (id: string): string[] => {
+    const prima = JSON.parse(readFileSync(join(sessioniDiCodex, `${id}.jsonl`), "utf8").split("\n")[0] ?? "{}") as { payload: { dynamic_tools: { tools: { name: string }[] }[] } };
+    return prima.payload.dynamic_tools.flatMap((spazio) => spazio.tools.map((voce) => voce.name));
+  };
+
+  // Il thread nasce con uno strumento.
+  const prima = conversazioneCon(["segreto"]);
+  prima.conversazione.invia("Ciao");
+  await finche(() => prima.eventi.some((evento) => evento.tipo === "turno-concluso"), "il primo turno finisce");
+  const nato = prima.sessioni.at(-1) ?? "";
+  assert.deepEqual(strumentiNelFile(nato), ["segreto"]);
+  prima.conversazione.chiudi();
+  // La sua storia, come la dirà Codex a chi la rilegge.
+  writeFileSync(
+    join(sessioniDiCodex, `${nato}.turni.json`),
+    JSON.stringify([{ id: "turno-1", items: [{ type: "userMessage", id: "u1", content: [{ type: "text", text: "Ricordati la parola mela." }] }, { type: "agentMessage", id: "m1", text: "Ricordata." }] }]),
+  );
+
+  // Ripreso con gli stessi strumenti: è lo stesso thread.
+  const stessa = conversazioneCon(["segreto"], nato);
+  stessa.conversazione.invia("Ancora");
+  await finche(() => stessa.eventi.some((evento) => evento.tipo === "turno-concluso"), "il turno ripreso finisce");
+  assert.deepEqual(stessa.sessioni, []);
+  assert.equal(stessa.eventi.some((evento) => evento.tipo === "nota"), false);
+  stessa.conversazione.chiudi();
+
+  // Ripreso dopo che Shinka ha uno strumento in più: un thread nuovo, con lo strumento nuovo e gli ultimi scambi.
+  const dopo = conversazioneCon(["segreto", "proponi_estensione_interfaccia"], nato);
+  dopo.conversazione.prepara();
+  await finche(() => dopo.sessioni.length === 1, "nasce il thread nuovo");
+  const nuovo = dopo.sessioni[0] ?? "";
+  assert.notEqual(nuovo, nato);
+  assert.deepEqual(strumentiNelFile(nuovo), ["segreto", "proponi_estensione_interfaccia"]);
+  assert.ok(dopo.eventi.some((evento) => evento.tipo === "nota" && /strumenti di Shinka sono cambiati/.test(evento.testo)));
+  // Gli ultimi scambi sono già nella storia del thread nuovo: non si perdono se la conversazione si chiude.
+  await finche(() => existsSync(join(sessioniDiCodex, "iniettati.json")), "gli ultimi scambi entrano nel thread nuovo");
+  const iniettati = JSON.parse(readFileSync(join(sessioniDiCodex, "iniettati.json"), "utf8")) as { threadId: string; items: { content: { text: string }[] }[] }[];
+  assert.equal(iniettati[0]?.threadId, nuovo);
+  const nota = iniettati[0]?.items[0]?.content[0]?.text ?? "";
+  assert.match(nota, /thread nuovo di Codex, perché gli strumenti di Shinka sono cambiati/);
+  assert.match(nota, /Proprietario: Ricordati la parola mela\.[\s\S]*Codex: Ricordata\./);
+});
