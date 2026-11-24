@@ -48,6 +48,8 @@ export interface ImpostazioniConversazione {
    * le stesse regole del modo dei permessi, senza chiedere solo perché il file è fuori.
    */
   tuttoIlPc?: true;
+  /** Cartelle dell'ambiente, fuori da quella del progetto, in cui legge e scrive come nella sua. */
+  cartelleInPiu?: string[];
 }
 
 /**
@@ -61,6 +63,8 @@ export interface ModificaImpostazioni {
   permessi?: ModoPermessi;
   stile?: StileScelto | null;
   tuttoIlPc?: boolean | null;
+  /** L'elenco intero delle cartelle in più; null lo svuota. */
+  cartelleInPiu?: string[] | null;
 }
 
 /** La modifica come la manda l'interfaccia: lo stile per identificativo. */
@@ -75,6 +79,7 @@ export function applicaModifica(
   const impegno = modifica.impegno === undefined ? attuali.impegno : (modifica.impegno ?? undefined);
   const stile = modifica.stile === undefined ? attuali.stile : (modifica.stile ?? undefined);
   const tuttoIlPc = modifica.tuttoIlPc === undefined ? attuali.tuttoIlPc === true : modifica.tuttoIlPc === true;
+  const cartelle = modifica.cartelleInPiu === undefined ? (attuali.cartelleInPiu ?? []) : cartelleInPiuValide(modifica.cartelleInPiu ?? []);
   return {
     ...(motore === undefined ? {} : { motore }),
     ...(modello === undefined || modello.trim() === "" ? {} : { modello: modello.trim() }),
@@ -82,7 +87,21 @@ export function applicaModifica(
     permessi: modifica.permessi ?? attuali.permessi,
     ...(stile === undefined ? {} : { stile }),
     ...(tuttoIlPc ? { tuttoIlPc: true as const } : {}),
+    ...(cartelle.length === 0 ? {} : { cartelleInPiu: cartelle }),
   };
+}
+
+/** Quante cartelle in più, al massimo. */
+export const CARTELLE_IN_PIU_MASSIME = 20;
+
+/** Le cartelle in più che valgono: percorsi completi (Linux, macOS o Windows), senza doppioni. */
+export function cartelleInPiuValide(valore: unknown): string[] {
+  if (!Array.isArray(valore)) return [];
+  const valide = valore
+    .filter((voce): voce is string => typeof voce === "string")
+    .map((voce) => voce.trim())
+    .filter((voce) => voce.length > 1 && voce.length <= 500 && /^(\/|[A-Za-z]:[\\/])/.test(voce) && !voce.includes("\0"));
+  return [...new Set(valide)].slice(0, CARTELLE_IN_PIU_MASSIME);
 }
 
 /** Riconosce impostazioni arrivate da fuori, per esempio da un file o dal centro; nulla se non lo sono. */
@@ -101,6 +120,7 @@ export function leggiImpostazioni(valore: unknown): ImpostazioniConversazione | 
     permessi,
     ...(stile === undefined ? {} : { stile }),
     ...(campi.tuttoIlPc === true ? { tuttoIlPc: true as const } : {}),
+    ...(cartelleInPiuValide(campi.cartelleInPiu).length === 0 ? {} : { cartelleInPiu: cartelleInPiuValide(campi.cartelleInPiu) }),
   };
 }
 

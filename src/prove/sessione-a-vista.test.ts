@@ -104,6 +104,14 @@ for (const [nome, larghezza] of [["largo", 1400], ["telefono", 390]] as const) {
     // Le cartelle collegate di un progetto in altri ambienti: qui nessuna, e nessun altro ambiente acceso.
     await scheda.getByText("Cartelle collegate").waitFor();
     await scheda.getByText("Nessuna: il progetto lavora solo nel suo ambiente.").waitFor();
+    // Le cartelle in più: se ne aggiunge una con il percorso completo, arriva alla conversazione, e si toglie.
+    await scheda.getByText("Nessuna: fuori dalla sua cartella chiede il permesso per ogni file.").waitFor();
+    await scheda.getByLabel("Cartella in più").fill("/srv/dati");
+    await scheda.getByRole("button", { name: "Aggiungi" }).click();
+    await scheda.locator(".cartelle-in-piu code", { hasText: "/srv/dati" }).waitFor();
+    await finche(() => conversazione.impostazioni.at(-1)?.cartelleInPiu?.includes("/srv/dati") === true, "la conversazione riceve la cartella");
+    await scheda.getByRole("button", { name: "Togli /srv/dati" }).click();
+    await scheda.getByText("Nessuna: fuori dalla sua cartella chiede il permesso per ogni file.").waitFor();
     await scheda.getByText("Un file cambiato.").waitFor();
     await scheda.locator(".attivita.in-corso", { hasText: "Cerca dove si salta" }).getByText("ora: Grep").waitFor();
     await scheda.locator(".attivita", { hasText: "npm test" }).getByRole("button", { name: "Mostra l'uscita" }).click();

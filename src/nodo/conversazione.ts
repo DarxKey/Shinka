@@ -1092,8 +1092,10 @@ export function opzioniHarness(
     // solo quelli di Shinka e delle estensioni, come fa il profilo del proprietario con --strict-mcp-config.
     ...(locale === undefined ? {} : { strictMcpConfig: true }),
     ...(cfg.strumentiNostri === undefined ? {} : { mcpServers: cfg.strumentiNostri() }),
-    // Tutto il computer come la cartella del progetto, se il proprietario lo ha scelto.
-    ...(impostazioni.tuttoIlPc === true ? { additionalDirectories: radiciDiQuestaMacchina() } : {}),
+    // Tutto il computer come la cartella del progetto, o le cartelle in più, se il proprietario le ha scelte.
+    ...(impostazioni.tuttoIlPc === true || (impostazioni.cartelleInPiu ?? []).length > 0
+      ? { additionalDirectories: [...(impostazioni.tuttoIlPc === true ? radiciDiQuestaMacchina() : []), ...(impostazioni.cartelleInPiu ?? [])] }
+      : {}),
     ...(plugin.length === 0 ? {} : { plugins: plugin.map((path) => ({ type: "local" as const, path })) }),
     // Claude Code collega l'estensione del browser solo se glielo si chiede all'avvio, con --chrome.
     // Alcuni suoi strumenti l'harness li lascerebbe passare da sé, e in due modi dei permessi tutti:

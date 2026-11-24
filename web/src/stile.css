@@ -7319,3 +7319,30 @@ kbd {
   padding-left: 20px;
   font-size: 0.875rem;
 }
+
+/* Le cartelle in più di un progetto. */
+.cartelle-in-piu ul {
+  margin: 4px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cartelle-in-piu li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cartelle-in-piu code {
+  overflow-wrap: anywhere;
+}
+
+.cartelle-in-piu form {
+  display: flex;
+  gap: 6px;
+}
+
+.cartelle-in-piu input {
+  flex: 1 1 auto;
+  min-width: 0;
+}

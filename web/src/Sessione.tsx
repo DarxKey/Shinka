@@ -79,6 +79,7 @@ export function SchedaSessione({
             )}
           </dl>
           {idProgetto !== undefined && impostazioni !== undefined && <TuttoIlPc base={base} attivo={impostazioni.tuttoIlPc === true} />}
+          {idProgetto !== undefined && impostazioni !== undefined && impostazioni.tuttoIlPc !== true && <CartelleInPiu base={base} cartelle={impostazioni.cartelleInPiu ?? []} />}
           {idProgetto !== undefined && <ChiImplementa idProgetto={idProgetto} modelli={stato?.modelli} />}
           {idProgetto !== undefined && <EstensioniDelProgetto idProgetto={idProgetto} />}
           {idProgetto !== undefined && <CartelleCollegate idProgetto={idProgetto} />}
@@ -273,6 +274,61 @@ function TuttoIlPc({ base, attivo }: { base: string; attivo: boolean }): ReactNo
           ? "Legge e modifica file anche fuori dalla sua cartella, con le stesse regole dei permessi che valgono dentro."
           : "Fuori dalla sua cartella chiede il permesso per ogni file. «Approva sempre» lo salva per una regola sola."}
       </p>
+      {errore !== undefined && (
+        <p className="errore" role="alert">
+          {errore}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Le cartelle in più del progetto: fuori dalla sua cartella, nel suo ambiente, in cui legge e
+ * scrive come nella sua, con le stesse regole dei permessi, senza chiedere per ogni file.
+ */
+function CartelleInPiu({ base, cartelle }: { base: string; cartelle: readonly string[] }): ReactNode {
+  const [nuova, setNuova] = useState("");
+  const [lavoro, setLavoro] = useState(false);
+  const [errore, setErrore] = useState<string>();
+  const valida = /^(\/|[A-Za-z]:[\\/])/.test(nuova.trim());
+  const salva = (elenco: string[]): void => {
+    setLavoro(true);
+    setErrore(undefined);
+    void cambiaImpostazioni(base, { cartelleInPiu: elenco.length === 0 ? null : elenco })
+      .then(() => setNuova(""))
+      .catch((causa: unknown) => setErrore(causa instanceof Error ? causa.message : "Non è cambiato."))
+      .finally(() => setLavoro(false));
+  };
+  return (
+    <div className="cartelle-in-piu">
+      <div className="titolino">Cartelle in più</div>
+      {cartelle.length === 0 ? (
+        <p className="tenue">Nessuna: fuori dalla sua cartella chiede il permesso per ogni file.</p>
+      ) : (
+        <ul>
+          {cartelle.map((cartella) => (
+            <li key={cartella}>
+              <code>{cartella}</code>
+              <button type="button" className="discreto mini" disabled={lavoro} aria-label={`Togli ${cartella}`} onClick={() => salva(cartelle.filter((una) => una !== cartella))}>
+                Togli
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        onSubmit={(evento) => {
+          evento.preventDefault();
+          if (valida) salva([...cartelle, nuova.trim()]);
+        }}
+      >
+        <input type="text" value={nuova} placeholder={"C:\\Users\\nome\\AppData\\… oppure /home/…"} aria-label="Cartella in più" onChange={(evento) => setNuova(evento.target.value)} />
+        <button type="submit" className="mini" disabled={lavoro || !valida}>
+          Aggiungi
+        </button>
+      </form>
+      <p className="tenue">Il percorso completo, nell'ambiente del progetto: lì legge e scrive come nella sua cartella, con le stesse regole dei permessi.</p>
       {errore !== undefined && (
         <p className="errore" role="alert">
           {errore}

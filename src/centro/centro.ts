@@ -237,6 +237,7 @@ const CORPO_IMPOSTAZIONI = {
     permessi: { enum: [...MODI_PERMESSI] },
     stile: { type: ["string", "null"], maxLength: 100 },
     tuttoIlPc: { type: ["boolean", "null"] },
+    cartelleInPiu: { type: ["array", "null"], maxItems: 20, items: { type: "string", maxLength: 500 } },
   },
 } as const;
 

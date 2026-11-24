@@ -87,3 +87,11 @@ test("il motore si sceglie e torna al predefinito come il modello", () => {
   assert.deepEqual(leggiImpostazioni({ motore: "codex", permessi: "chiedi" }), { motore: "codex", permessi: "chiedi" });
   assert.deepEqual(leggiImpostazioni({ motore: "gemini", permessi: "chiedi" }), { permessi: "chiedi" });
 });
+
+test("le cartelle in più: si scrivono per intero, valgono solo i percorsi completi, null le toglie, e si rileggono", () => {
+  const con = applicaModifica({ permessi: "chiedi" }, { cartelleInPiu: ["C:\\Users\\mario\\AppData", "/srv/dati", "relativa", "/srv/dati", ""] });
+  assert.deepEqual(con.cartelleInPiu, ["C:\\Users\\mario\\AppData", "/srv/dati"]);
+  assert.deepEqual(applicaModifica(con, { impegno: "high" }).cartelleInPiu, ["C:\\Users\\mario\\AppData", "/srv/dati"]);
+  assert.equal(applicaModifica(con, { cartelleInPiu: null }).cartelleInPiu, undefined);
+  assert.deepEqual(leggiImpostazioni(JSON.parse(JSON.stringify(con)))?.cartelleInPiu, ["C:\\Users\\mario\\AppData", "/srv/dati"]);
+});

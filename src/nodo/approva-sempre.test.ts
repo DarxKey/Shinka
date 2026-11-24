@@ -75,6 +75,22 @@ test("approvato per sempre, l'harness riceve la regola da salvare; tutto il comp
   assert.equal(unaVolta?.behavior === "allow" ? unaVolta.updatedPermissions : "no", undefined);
 });
 
+test("le cartelle in più diventano cartelle del progetto per l'harness; con tutto il computer si aggiungono alle radici", (t) => {
+  const apri = (impostazioni: ConstructorParameters<typeof Conversazione>[0]["impostazioni"]): Options | undefined => {
+    let opzioni: Options | undefined;
+    const conversazione = new Conversazione(
+      { cartella: process.cwd(), istruzioni: "Rispondi in breve.", strumenti: "claude-code", strumentiSenzaRichiesta: [], impostazioni, alEvento: () => {}, alIdSessione: () => {} },
+      { avvia: ({ options }) => ((opzioni = options), harnessFinto()) },
+    );
+    t.after(() => conversazione.chiudi());
+    conversazione.prepara();
+    return opzioni;
+  };
+  assert.deepEqual(apri({ permessi: "modifiche-libere", cartelleInPiu: ["C:\\Users\\mario\\AppData", "/srv/dati"] })?.additionalDirectories, ["C:\\Users\\mario\\AppData", "/srv/dati"]);
+  assert.deepEqual(apri({ permessi: "modifiche-libere", tuttoIlPc: true, cartelleInPiu: ["/srv/dati"] })?.additionalDirectories, [...radiciDiQuestaMacchina(), "/srv/dati"]);
+  assert.equal(apri({ permessi: "modifiche-libere" })?.additionalDirectories, undefined);
+});
+
 test("dalla chat del progetto «Approva sempre» arriva alla conversazione, anche su un nodo", async (t) => {
   const { allestisci, avviaNodoAccettato, finche, ID_NODO } = await import("../prove/banco.ts");
   const { COOKIE_SESSIONE } = await import("../centro/centro.ts");
