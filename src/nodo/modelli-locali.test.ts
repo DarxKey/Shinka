@@ -75,14 +75,20 @@ test("il server si accende quando una conversazione prende il modello, e si speg
   await finche(() => prima.vramPiccoMb() === 21_000, "la scheda video viene misurata");
 
   // Una seconda conversazione con lo stesso impegno usa lo stesso server; con un altro aspetta.
-  const seconda = modelli.prendi("locale:qwen", "xhigh");
+  const seconda = modelli.prendi("locale:qwen", "xhigh", "/progetti/videogioco");
   assert.ok(!("motivo" in seconda));
   assert.match((modelli.prendi("locale:qwen", "medium") as { motivo: string }).motivo, /acceso con impegno xhigh e lo sta usando un'altra conversazione/);
+  // Il server è di tutto l'ambiente: la pagina dei processi sa quali progetti lo stanno usando.
+  const usi = [...modelli.usi()];
+  assert.equal(usi.length, 1);
+  assert.deepEqual(usi[0]?.[1], ["/progetti/videogioco"]);
+  assert.ok((usi[0]?.[0] ?? 0) > 0, "con il pid del suo processo");
   prima.lascia();
   prima.lascia();
   await new Promise((fatto) => setTimeout(fatto, 500));
   assert.notEqual(await risponde(porta), undefined, "una conversazione lo usa ancora");
   seconda.lascia();
+  assert.equal(modelli.usi().size, 0, "lasciato, nessun progetto lo usa");
   await finche(async () => (await risponde(porta)) === undefined, "il server si spegne dopo il tempo da fermo");
   assert.equal(modelli.acceso("qwen"), false);
 

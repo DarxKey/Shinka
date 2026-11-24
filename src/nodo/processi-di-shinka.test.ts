@@ -54,3 +54,18 @@ test("si vedono i processi accesi da qui, con la loro cartella, e si termina sol
   }
   assert.equal(vivo, false);
 });
+
+test("un processo condiviso, come il server di un modello locale, dice quali progetti lo usano", async () => {
+  const processi = new ProcessiDiShinka({
+    radice: 1,
+    piattaforma: "linux",
+    leggi: async () => [
+      { pid: 10, genitore: 1, nome: "llama-server", memoria: 8_000, secondi: 5, comando: "llama-server --port 8080" },
+      { pid: 11, genitore: 1, nome: "claude", memoria: 1_000, secondi: 1, cartella: "/progetti/videogioco" },
+    ],
+  });
+  processi.conGliUsi(() => new Map([[10, ["/progetti/videogioco", "/progetti/appunti"]]]));
+  const letti = await processi.leggi();
+  assert.deepEqual(letti.find((uno) => uno.pid === 10)?.usatoDa, ["/progetti/videogioco", "/progetti/appunti"]);
+  assert.equal(letti.find((uno) => uno.pid === 11)?.usatoDa, undefined);
+});

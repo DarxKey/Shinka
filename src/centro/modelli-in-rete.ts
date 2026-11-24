@@ -139,6 +139,6 @@ export function unisciModelli(qui: FonteModelliLocali, inRete: FonteModelliLocal
       const propri = qui.modelli();
       return [...propri, ...inRete.modelli().filter((voce) => !propri.some((una) => una.valore === voce.valore))];
     },
-    prendi: (modello, impegno) => (diQui(modello) ? qui.prendi(modello, impegno) : inRete.prendi(modello, impegno)),
+    prendi: (modello, impegno, chi) => (diQui(modello) ? qui.prendi(modello, impegno, chi) : inRete.prendi(modello, impegno)),
   };
 }

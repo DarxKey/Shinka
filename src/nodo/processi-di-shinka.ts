@@ -33,6 +33,8 @@ export interface OpzioniProcessiDiShinka {
   termina?: TerminaAlbero;
   adesso?: () => number;
   piattaforma?: NodeJS.Platform;
+  /** Chi usa i processi condivisi, come i server dei modelli locali: per pid, le cartelle dei progetti. */
+  usi?: () => ReadonlyMap<number, readonly string[]>;
 }
 
 /** Quanti processi dell'albero si dicono al massimo. */
@@ -149,8 +151,16 @@ export class ProcessiDiShinka {
   readonly #o: OpzioniProcessiDiShinka;
   #prima: { quando: number; secondi: Map<number, number> } | undefined;
 
+  #usi: (() => ReadonlyMap<number, readonly string[]>) | undefined;
+
   constructor(opzioni: OpzioniProcessiDiShinka = {}) {
     this.#o = opzioni;
+    this.#usi = opzioni.usi;
+  }
+
+  /** Da dove sapere chi usa i processi condivisi, quando lo si sa dopo la nascita (le estensioni nascono col collegamento). */
+  conGliUsi(usi: () => ReadonlyMap<number, readonly string[]>): void {
+    this.#usi = usi;
   }
 
   get #radice(): number {
@@ -172,6 +182,7 @@ export class ProcessiDiShinka {
     const passati = this.#prima === undefined ? 0 : (adesso - this.#prima.quando) / 1000;
     const secondi = new Map<number, number>();
     const piattaforma = this.#o.piattaforma ?? process.platform;
+    const usi = this.#usi?.() ?? new Map<number, readonly string[]>();
     const elenco = await Promise.all(
       suoi.map(async (pid): Promise<ProcessoDiShinka | undefined> => {
         const uno = perPid.get(pid);
@@ -193,6 +204,7 @@ export class ProcessiDiShinka {
           memoria: uno.memoria,
           ...(comando === undefined || comando === "" ? {} : { comando: comando.slice(0, 400) }),
           ...(cartella === undefined ? {} : { cartella }),
+          ...(usi.get(pid) === undefined ? {} : { usatoDa: [...(usi.get(pid) ?? [])] }),
         };
       }),
     );

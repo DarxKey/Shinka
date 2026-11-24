@@ -5,17 +5,36 @@ import type { StatoAnteprima } from "../../src/protocollo/anteprima.ts";
 import { Anteprima, type RichiestaAnteprima } from "./Anteprima.tsx";
 import { PannelloFile } from "./PannelloFile.tsx";
 import { PannelloModifiche, type TurnoModificato } from "./PannelloModifiche.tsx";
+import { PannelloProcessi } from "./PannelloProcessi.tsx";
 import type { FileDeiComandi } from "../../src/protocollo/modifiche.ts";
 
 // Il terminale porta con sé una libreria pesante: si carica solo quando lo si apre.
 const Terminale = lazy(() => import("./Terminale.tsx").then((modulo) => ({ default: modulo.TerminaliDelProgetto })));
 
 /** Le schede del pannello: le sue, e quelle delle pagine delle estensioni dell'interfaccia, come "estensione:id/pagina". */
-export type Scheda = "modifiche" | "file" | "terminale" | "anteprima" | `estensione:${string}`;
+export type Scheda = "modifiche" | "file" | "terminale" | "anteprima" | "processi" | `estensione:${string}`;
 
-type SchedaPropria = "modifiche" | "file" | "terminale" | "anteprima";
+type SchedaPropria = "modifiche" | "file" | "terminale" | "anteprima" | "processi";
 
-const NOMI_SCHEDE: Record<SchedaPropria, string> = { modifiche: "Modifiche", file: "File", terminale: "Terminale", anteprima: "Anteprima" };
+const NOMI_SCHEDE: Record<SchedaPropria, string> = { modifiche: "Modifiche", file: "File", terminale: "Terminale", anteprima: "Anteprima", processi: "Processi" };
+
+/** L'evento con cui una parte della pagina chiede di aprire il pannello di un progetto su una scheda. */
+const APRI_SCHEDA = "shinka:apri-scheda-del-pannello";
+
+/** Apre il pannello del progetto sulla scheda indicata, da qualunque parte della pagina. */
+export function apriSchedaDelPannello(idProgetto: string, scheda: Scheda): void {
+  window.dispatchEvent(new CustomEvent(APRI_SCHEDA, { detail: { idProgetto, scheda } }));
+}
+
+/** Ascolta le richieste di aprire il pannello: chi tiene il pannello lo apre. */
+export function ascoltaAperturaDelPannello(apri: (idProgetto: string, scheda: Scheda) => void): () => void {
+  const ascolta = (evento: Event): void => {
+    const { idProgetto, scheda } = (evento as CustomEvent<{ idProgetto: string; scheda: Scheda }>).detail;
+    apri(idProgetto, scheda);
+  };
+  window.addEventListener(APRI_SCHEDA, ascolta);
+  return () => window.removeEventListener(APRI_SCHEDA, ascolta);
+}
 
 /** I pulsanti in testata al progetto: aprono il pannello sulla scheda scelta, o lo chiudono. */
 export function PulsantiPannello({
@@ -85,8 +104,8 @@ export function PulsantiPannello({
 }
 
 /**
- * Il pannello accanto alla chat di un progetto: il suo terminale e l'anteprima della sua
- * applicazione, tutti e due nell'ambiente del progetto. Sugli schermi stretti copre la chat.
+ * Il pannello accanto alla chat di un progetto: le sue modifiche, i file, il terminale, l'anteprima
+ * della sua applicazione e i processi accesi, tutti nell'ambiente del progetto. Sugli schermi stretti copre la chat.
  */
 export function PannelloProgetto({
   idProgetto,
@@ -155,7 +174,7 @@ export function PannelloProgetto({
   }, []);
 
   return (
-    <aside className="affianco" ref={pannello} aria-label="Modifiche, file, terminale e anteprima del progetto">
+    <aside className="affianco" ref={pannello} aria-label="Modifiche, file, terminale, anteprima e processi del progetto">
       <header className="affianco-testata">
         <div className="schede" role="tablist">
           {(Object.keys(NOMI_SCHEDE) as SchedaPropria[])
@@ -206,6 +225,10 @@ export function PannelloProgetto({
         {viste.has("anteprima") && cambi.anteprima === undefined && (
           <Anteprima idProgetto={idProgetto} nomeAmbiente={nomeAmbiente} stato={anteprima} richiesta={richiesta} />
         )}
+      </div>
+      <div className="affianco-corpo scorre" role="tabpanel" hidden={scheda !== "processi"}>
+        {viste.has("processi") && cambi.processi !== undefined && sostituta("processi")}
+        {viste.has("processi") && cambi.processi === undefined && <PannelloProcessi idProgetto={idProgetto} inVista={scheda === "processi"} />}
       </div>
       {dellEstensioni.map((una) => {
         const chiave: Scheda = `estensione:${una.id}/${una.pagina}`;

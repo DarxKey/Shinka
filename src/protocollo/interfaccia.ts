@@ -83,6 +83,7 @@ export const PARTI = [
   "pannello-file",
   "pannello-terminale",
   "pannello-anteprima",
+  "pannello-processi",
   "ambiente-risorse",
   "pulsanti-estensioni",
 ] as const;
@@ -95,6 +96,7 @@ export const PARTI_IN_PAROLE: Record<Parte, string> = {
   "pannello-file": "la scheda File del pannello",
   "pannello-terminale": "la scheda Terminale del pannello",
   "pannello-anteprima": "la scheda Anteprima del pannello",
+  "pannello-processi": "la scheda Processi del pannello",
   "ambiente-risorse": "le risorse nella pagina di un ambiente",
   "pulsanti-estensioni": "i pulsanti delle estensioni sopra il campo",
 };

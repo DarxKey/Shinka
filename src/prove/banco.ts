@@ -514,6 +514,8 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
               : [
                   { pid: 4100, genitore: 0, nome: "claude", cpu: 2.5, memoria: 300_000_000, comando: "claude --output-format stream-json", cartella: primo.cartella },
                   { pid: 4101, genitore: 4100, nome: "node", cpu: 95, memoria: 120_000_000, comando: "node server.js", cartella: primo.cartella },
+                  // Il server di un modello locale è di tutto l'ambiente, e il primo progetto lo sta usando.
+                  { pid: 4300, genitore: 0, nome: "llama-server", cpu: 40, memoria: 6_000_000_000, comando: "llama-server --port 8080", usatoDa: [primo.cartella] },
                 ]),
             { pid: 4200, genitore: 0, nome: "bash", cpu: 0, memoria: 4_000_000, comando: "bash" },
           ].filter((uno) => !processiTerminati.includes(uno.pid)),

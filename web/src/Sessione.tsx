@@ -4,9 +4,8 @@
  * con la loro uscita) e quanti file sono stati cambiati.
  */
 
+import { apriSchedaDelPannello } from "./Pannello.tsx";
 import { progettoDellaConversazione } from "../../src/protocollo/incarichi.ts";
-import { useQuadroCorrente } from "./Quadro.tsx";
-import { frammentoDi } from "./vista.ts";
 import { CartelleCollegate } from "./Collegate.tsx";
 import { ChiImplementa } from "./ChiImplementa.tsx";
 import { EstensioniDelProgetto } from "./EstensioniDelProgetto.tsx";
@@ -338,14 +337,21 @@ function CartelleInPiu({ base, cartelle }: { base: string; cartelle: readonly st
   );
 }
 
-/** Dalla scheda di un progetto ai processi che vi ha acceso Shinka, nella pagina del suo ambiente. */
+/** Dalla scheda di un progetto ai processi che vi ha acceso Shinka, nel pannello del progetto. */
 function CollegamentoAiProcessi({ idProgetto }: { idProgetto: string }): ReactNode {
-  const quadro = useQuadroCorrente();
-  const idAmbiente = quadro.progetti?.progetti.find((progetto) => progetto.id === idProgetto)?.idAmbiente;
-  if (idAmbiente === undefined) return null;
   return (
     <p className="processi-del-progetto">
-      <a href={frammentoDi({ tipo: "ambiente", id: idAmbiente })}>Processi, risorse e termina…</a>
+      <button
+        type="button"
+        className="collegamento"
+        onClick={(evento) => {
+          // La scheda della sessione si chiude: i processi si aprono accanto alla chat.
+          evento.currentTarget.closest("details")?.removeAttribute("open");
+          apriSchedaDelPannello(idProgetto, "processi");
+        }}
+      >
+        Processi, risorse e termina…
+      </button>
     </p>
   );
 }

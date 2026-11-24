@@ -530,7 +530,7 @@ export class Conversazione implements PortaConversazione {
     const modello = this.#impostazioni.modello;
     if (estensioneDelModello(modello) === undefined || modello === undefined) return undefined;
     if (this.#cfg.modelliLocali === undefined) return { motivo: "in questo ambiente non ci sono modelli locali." };
-    return this.#cfg.modelliLocali.prendi(modello, this.#impostazioni.impegno);
+    return this.#cfg.modelliLocali.prendi(modello, this.#impostazioni.impegno, this.#cfg.cartella);
   }
 
   #assicuraAvviata(): Coda<SDKUserMessage> {

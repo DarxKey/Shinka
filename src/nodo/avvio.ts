@@ -132,8 +132,12 @@ try {
     ponte: new Ponte({ centro: impostazioni.centro }),
     // Le estensioni che il centro accende qui: i plugin stanno tra i dati del nodo, e nella
     // configurazione di Claude Code di questa macchina non si scrive nulla.
-    estensioni: (chiavi, alCambio) =>
-      new EstensioniInAmbiente({ cartella: join(dati, "estensioni"), radiceProgetti: impostazioni.progetti, chiavi, alCambio }),
+    estensioni: (chiavi, alCambio) => {
+      const inAmbiente = new EstensioniInAmbiente({ cartella: join(dati, "estensioni"), radiceProgetti: impostazioni.progetti, chiavi, alCambio });
+      // I server dei modelli locali sono di tutto l'ambiente: la pagina dei processi li mostra nei progetti che li usano.
+      processiDiShinka.conGliUsi(() => inAmbiente.modelliLocali.usi());
+      return inAmbiente;
+    },
     ...(browserDelPc ? { browserDelPc: true } : {}),
     riferisci: (messaggio) => collegamento.riferisci(messaggio),
     // Solo con il guardiano c'è chi scambia le cartelle e torna indietro se la versione nuova non parte.

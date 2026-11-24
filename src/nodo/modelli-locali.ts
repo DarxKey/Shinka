@@ -42,7 +42,8 @@ export interface PresaDelModello {
 /** Ciò che una conversazione vede dei modelli locali del suo ambiente: quelli del suo progetto. */
 export interface FonteModelliLocali {
   modelli(): ModelloDisponibile[];
-  prendi(modello: string, impegno?: Impegno): PresaDelModello | { motivo: string };
+  /** `chi` è la cartella del progetto che lo prende: la pagina dei processi mostra il server anche lì. */
+  prendi(modello: string, impegno?: Impegno, chi?: string): PresaDelModello | { motivo: string };
 }
 
 /**
@@ -57,8 +58,8 @@ export function soloIModelliScelti(fonte: FonteModelliLocali, scelte: () => read
   };
   return {
     modelli: () => fonte.modelli().filter((voce) => scelto(voce.valore)),
-    prendi: (modello, impegno) =>
-      scelto(modello) ? fonte.prendi(modello, impegno) : { motivo: `Il modello locale "${estensioneDelModello(modello) ?? modello}" non è tra le estensioni scelte per questo progetto.` },
+    prendi: (modello, impegno, chi) =>
+      scelto(modello) ? fonte.prendi(modello, impegno, chi) : { motivo: `Il modello locale "${estensioneDelModello(modello) ?? modello}" non è tra le estensioni scelte per questo progetto.` },
   };
 }
 
@@ -99,6 +100,8 @@ interface ServerAcceso {
   trovato?: true;
   pronto: Promise<void>;
   utenti: number;
+  /** Le cartelle dei progetti che lo stanno usando, una volta per ogni presa. */
+  chi: string[];
   spegnimento?: NodeJS.Timeout;
   misura?: NodeJS.Timeout;
   vramPicco?: number;
@@ -214,7 +217,7 @@ export class ModelliLocali implements FonteModelliLocali {
    * non si può: il modello non c'è qui, o il server è acceso con un altro impegno e un'altra
    * conversazione lo sta usando.
    */
-  prendi(modello: string, impegno?: Impegno): PresaDelModello | { motivo: string } {
+  prendi(modello: string, impegno?: Impegno, chi?: string): PresaDelModello | { motivo: string } {
     const nome = estensioneDelModello(modello);
     const acceso = this.#accese.find((una) => una.nome === nome);
     if (nome === undefined || acceso === undefined) {
@@ -246,6 +249,7 @@ export class ModelliLocali implements FonteModelliLocali {
     if (server === undefined) server = this.#accendi(nome, definizione, voluto, chiave);
     const preso = server;
     preso.utenti += 1;
+    if (chi !== undefined) preso.chi.push(chi);
     if (preso.spegnimento !== undefined) clearTimeout(preso.spegnimento);
     preso.spegnimento = undefined;
     let lasciato = false;
@@ -262,6 +266,7 @@ export class ModelliLocali implements FonteModelliLocali {
         if (lasciato) return;
         lasciato = true;
         preso.utenti -= 1;
+        if (chi !== undefined) preso.chi.splice(preso.chi.indexOf(chi), 1);
         if (preso.utenti > 0 || preso.spento) return;
         preso.spegnimento = setTimeout(() => {
           if (preso.utenti === 0 && this.#server.get(nome) === preso) this.#spegni(nome);
@@ -288,6 +293,21 @@ export class ModelliLocali implements FonteModelliLocali {
     }
   }
 
+  /**
+   * Chi sta usando i server accesi da Shinka: per il processo di ciascuno, le cartelle dei progetti
+   * che lo hanno preso. Un server è di tutto l'ambiente; così la pagina dei processi lo mostra anche
+   * nei progetti che lo usano.
+   */
+  usi(): Map<number, string[]> {
+    const usi = new Map<number, string[]>();
+    for (const server of this.#server.values()) {
+      const pid = server.processo?.pid;
+      if (pid === undefined || server.spento || server.chi.length === 0) continue;
+      usi.set(pid, [...new Set(server.chi)]);
+    }
+    return usi;
+  }
+
   /** Spegne tutti i server accesi da Shinka, per esempio quando il nodo si ferma. */
   chiudi(): void {
     for (const nome of [...this.#server.keys()]) this.#spegni(nome);
@@ -300,7 +320,7 @@ export class ModelliLocali implements FonteModelliLocali {
   }
 
   #accendi(nome: string, definizione: DefinizioneModelloLocale, impegno: Impegno, chiave?: string): ServerAcceso {
-    const server: ServerAcceso = { definizione, impegno, pronto: Promise.resolve(), utenti: 0, spento: false, ...(chiave === undefined ? {} : { chiave }) };
+    const server: ServerAcceso = { definizione, impegno, pronto: Promise.resolve(), utenti: 0, chi: [], spento: false, ...(chiave === undefined ? {} : { chiave }) };
     const prima = this.#chiusure.get(definizione.porta);
     server.pronto = (async () => {
       // Il server di prima va lasciato uscire: finché risponde, quello nuovo lo scambierebbe per uno

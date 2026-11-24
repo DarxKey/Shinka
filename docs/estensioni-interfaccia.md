@@ -42,7 +42,7 @@ Ogni pagina ha un elenco di posti: `{ posto, ambito?, client? }`.
 |---|---|
 | `home-vuota` | il benvenuto della Home quando la conversazione è vuota |
 | `stato-progetto` | il riquadro «Stato del progetto» in cima alla chat di un progetto |
-| `pannello-modifiche`, `pannello-file`, `pannello-terminale`, `pannello-anteprima` | le schede del pannello di un progetto |
+| `pannello-modifiche`, `pannello-file`, `pannello-terminale`, `pannello-anteprima`, `pannello-processi` | le schede del pannello di un progetto |
 | `ambiente-risorse` | processore, memoria, disco, GPU e grafici nella pagina di un ambiente |
 | `pulsanti-estensioni` | la riga dei pulsanti delle estensioni sopra il campo di scrittura |
 

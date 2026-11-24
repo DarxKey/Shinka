@@ -81,6 +81,38 @@ export function processiPerProgetto(processi: readonly ProcessoDiShinka[], proge
   return [...gruppi.values()].sort((a, b) => (a.progetto === undefined ? 1 : b.progetto === undefined ? -1 : a.progetto.nome.localeCompare(b.progetto.nome, "it")));
 }
 
+/** Vero se il processo condiviso è usato dal progetto adesso: il server di un modello locale preso dalla sua conversazione. */
+export function usatoDal(processo: ProcessoDiShinka, progetto: ProgettoDiUnProcesso): boolean {
+  const sua = pulito(progetto.cartella);
+  return (processo.usatoDa ?? []).some((cartella) => pulito(cartella) === sua);
+}
+
+/** I progetti che usano un processo condiviso, tra quelli dell'ambiente. */
+export function progettiCheLoUsano(processo: ProcessoDiShinka, progetti: readonly ProgettoDiUnProcesso[]): ProgettoDiUnProcesso[] {
+  return progetti.filter((progetto) => usatoDal(processo, progetto));
+}
+
+/** I processi di un progetto per il suo pannello: i suoi, con chi li ha avviati, e quelli dell'ambiente che sta usando. */
+export interface ProcessiDelProgetto {
+  righe: RigaProcesso[];
+  condivisi: ProcessoDiShinka[];
+  cpu: number;
+  memoria: number;
+}
+
+export function processiDelProgetto(processi: readonly ProcessoDiShinka[], progetto: ProgettoDiUnProcesso, progetti: readonly ProgettoDiUnProcesso[]): ProcessiDelProgetto {
+  const gruppo = processiPerProgetto(processi, progetti).find((uno) => uno.progetto?.id === progetto.id);
+  const righe = gruppo?.righe ?? [];
+  const propri = new Set(righe.map((riga) => riga.processo.pid));
+  const condivisi = processi.filter((processo) => !propri.has(processo.pid) && usatoDal(processo, progetto));
+  return {
+    righe,
+    condivisi,
+    cpu: (gruppo?.cpu ?? 0) + condivisi.reduce((somma, uno) => somma + uno.cpu, 0),
+    memoria: (gruppo?.memoria ?? 0) + condivisi.reduce((somma, uno) => somma + uno.memoria, 0),
+  };
+}
+
 /** Che cos'è un processo, in parole, quando lo si riconosce. */
 export function cheCosE(processo: ProcessoDiShinka): string | undefined {
   const testo = `${processo.nome} ${processo.comando ?? ""}`.toLowerCase();

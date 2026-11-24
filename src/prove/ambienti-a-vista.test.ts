@@ -100,6 +100,59 @@ test("nella pagina dell'ambiente i processi di Shinka stanno con il loro progett
   void progetto;
 });
 
+test("nel pannello di un progetto i suoi processi, il modello locale che usa, e uno si termina", { skip: salta, timeout: 120_000 }, async (t) => {
+  const banco = await allestisci(t, { cartellaWeb });
+  const progetto = await banco.lavori.crea("Blog", "centro", "Un blog.");
+  await banco.centro.listen({ host: "127.0.0.1", port: 0 });
+  const indirizzo = `http://127.0.0.1:${(banco.centro.server.address() as AddressInfo).port}`;
+  const browser = await chromium.launch({
+    chromiumSandbox: disponibile?.recinto !== false,
+    ...(disponibile?.canale === undefined ? {} : { channel: disponibile.canale }),
+    ...(disponibile?.eseguibile === undefined ? {} : { executablePath: disponibile.eseguibile }),
+  });
+  t.after(() => browser.close());
+  const pagina = await browser.newPage({ viewport: { width: 1300, height: 900 } });
+  await pagina.goto(`${indirizzo}/`);
+  await pagina.fill("#password", PASSWORD);
+  await pagina.click('button[type="submit"]');
+  await pagina.locator("form.scrittura textarea").waitFor();
+  await pagina.goto(`${indirizzo}/#/progetti/${progetto.id}`);
+  await pagina.locator("form.scrittura textarea").waitFor();
+
+  // Dalla scheda della sessione si apre la scheda Processi del pannello, accanto alla chat.
+  await pagina.locator(".menu-sessione > summary").click();
+  await pagina.getByRole("button", { name: "Processi, risorse e termina…" }).click();
+  const pannello = pagina.locator(".pannello-processi");
+  await pannello.locator(".riga-processo").first().waitFor();
+  assert.equal(await pagina.getByRole("tab", { name: "Processi" }).getAttribute("aria-selected"), "true");
+  assert.equal(await pagina.locator(".menu-sessione").getAttribute("open"), null, "la scheda della sessione si chiude");
+  // I suoi, con chi li ha avviati; il server del modello locale tra quelli dell'ambiente, con chi lo usa.
+  const suoi = pannello.locator(".gruppo-processi", { hasText: "Del progetto" });
+  assert.deepEqual(await suoi.locator(".riga-processo .nome").allTextContents(), ["claude · conversazione", "node"]);
+  const condivisi = pannello.locator(".gruppo-processi", { hasText: "Dell'ambiente, in uso dal progetto" });
+  assert.deepEqual(await condivisi.locator(".riga-processo .nome").allTextContents(), ["llama-server · modello locale"]);
+  assert.match((await condivisi.textContent()) ?? "", /In uso da Blog/);
+  // Il processo della shell di Shinka non è del progetto e non compare.
+  assert.equal(await pannello.locator(".riga-processo", { hasText: "bash" }).count(), 0);
+  // Il totale tiene conto di tutto ciò che il progetto usa: 2,5 + 95 + 40.
+  assert.match((await pannello.locator(".riassunto-processi").textContent()) ?? "", /138%/);
+  await pannello.locator(".linea-processore").waitFor();
+  // Con SHINKA_PROVA_IMMAGINI resta una foto del pannello, da guardare.
+  const cartellaImmagini = process.env.SHINKA_PROVA_IMMAGINI;
+  if (cartellaImmagini !== undefined) await pagina.screenshot({ path: join(cartellaImmagini, "processi-del-progetto.png") });
+
+  const server = suoi.locator("li", { hasText: "node server.js" });
+  await server.getByRole("button", { name: "Termina…" }).click();
+  await server.getByRole("button", { name: "Termina", exact: true }).click();
+  await suoi.locator("li", { hasText: "node server.js" }).waitFor({ state: "detached" });
+
+  // Nella pagina dell'ambiente il server condiviso dice chi lo usa.
+  await pagina.goto(`${indirizzo}/#/ambienti/centro`);
+  const shinka = pagina.locator(".processi-di-shinka .gruppo-processi", { hasText: "llama-server" });
+  await shinka.waitFor();
+  assert.match((await shinka.textContent()) ?? "", /In uso da Blog/);
+});
+
 test("un ambiente fa da ponte per un'altra macchina: si accende dalla pagina, dice il suo indirizzo, si spegne", { skip: salta, timeout: 120_000 }, async (t) => {
   const banco = await allestisci(t, { cartellaWeb });
   await banco.centro.listen({ host: "127.0.0.1", port: 0 });

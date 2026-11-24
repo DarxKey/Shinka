@@ -254,7 +254,8 @@ const registroAccessi = new RegistroAccessi({ file: join(dati, "accessi.jsonl") 
 // Le risorse degli ambienti, per la loro pagina: quelle di questa macchina le legge il centro, le
 // altre i nodi; i container degli host per gli stack li legge il gateway.
 // I processi che il centro accende nel suo ambiente (conversazioni, comandi, terminali, applicazioni).
-const processiDelCentro = new ProcessiDiShinka();
+// I server dei modelli locali sono di tutto l'ambiente: la pagina dei processi li mostra nei progetti che li usano.
+const processiDelCentro = new ProcessiDiShinka({ usi: () => estensioniDelCentro.modelliLocali.usi() });
 const risorse = new RisorseDegliAmbienti({
   ambienti,
   locale: new CampionatoreRisorse({ radiceProgetti, etichettaDiShinka: ETICHETTA_STACK, processiDiShinka: processiDelCentro }),

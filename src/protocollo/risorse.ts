@@ -68,6 +68,11 @@ export interface ProcessoDiShinka {
   comando?: string;
   /** La cartella in cui lavora, dove il sistema la dice (non su Windows). */
   cartella?: string;
+  /**
+   * Per un processo di tutto l'ambiente, come il server di un modello locale: le cartelle dei
+   * progetti che lo stanno usando adesso.
+   */
+  usatoDa?: string[];
 }
 
 export interface ContenitoreDocker {
@@ -311,6 +316,9 @@ export function leggiRisorse(valore: unknown): RisorseDellAmbiente | undefined {
                 memoria: numero(uno.memoria) ?? 0,
                 ...(typeof uno.comando === "string" && uno.comando !== "" ? { comando: uno.comando.slice(0, 400) } : {}),
                 ...(typeof uno.cartella === "string" && uno.cartella !== "" ? { cartella: uno.cartella.slice(0, 1000) } : {}),
+                ...(Array.isArray(uno.usatoDa)
+                  ? { usatoDa: (uno.usatoDa as unknown[]).filter((una): una is string => typeof una === "string" && una !== "").slice(0, 50).map((una) => una.slice(0, 1000)) }
+                  : {}),
               },
             ];
           }),

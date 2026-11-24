@@ -8,8 +8,9 @@ import { Parte, PostoEstensioni } from "./Interfaccia.tsx";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { CampioneRisorse, ContenitoreDocker, DettaglioDellAmbiente, DockerLetto, ProcessoAttivo, ProcessoDiShinka } from "../../src/protocollo/risorse.ts";
 import type { Ambiente } from "../../src/protocollo/nodi.ts";
-import { leggiRisorseAmbiente, terminaProcesso } from "./api.ts";
-import { cheCosE, processiPerProgetto } from "./processi.ts";
+import { leggiRisorseAmbiente } from "./api.ts";
+import { processiPerProgetto, progettiCheLoUsano } from "./processi.ts";
+import { percento, RigheProcessi } from "./ElencoProcessi.tsx";
 import { useQuadroCorrente } from "./Quadro.tsx";
 import { grandezzaInBreve as pesoInBreve, sottotitoloAmbiente, versioneAmbiente } from "./descrivi.ts";
 import { frammentoDi } from "./vista.ts";
@@ -20,7 +21,6 @@ const FINESTRA_MS = 5 * 60_000;
 
 type Risorse = Exclude<DettaglioDellAmbiente, { motivo: string }>;
 
-const percento = (valore: number): string => `${valore.toLocaleString("it-IT", { maximumFractionDigits: valore < 10 ? 1 : 0 })}%`;
 
 function durata(secondi: number): string {
   const giorni = Math.floor(secondi / 86_400);
@@ -381,15 +381,7 @@ function ProcessiDiShinka({ idAmbiente, processi }: { idAmbiente: string; proces
   const quadro = useQuadroCorrente();
   const progetti = (quadro.progetti?.progetti ?? []).filter((progetto) => progetto.idAmbiente === idAmbiente);
   const gruppi = processiPerProgetto(processi, progetti);
-  const [daTerminare, setDaTerminare] = useState<number>();
-  const [esito, setEsito] = useState<{ pid: number; errore?: string }>();
-  const termina = (pid: number): void => {
-    setDaTerminare(undefined);
-    setEsito({ pid });
-    terminaProcesso(idAmbiente, pid)
-      .then(() => setEsito(undefined))
-      .catch((causa: unknown) => setEsito({ pid, errore: causa instanceof Error ? causa.message : "Non si è terminato." }));
-  };
+  const usatoDa = (processo: ProcessoDiShinka): string[] => progettiCheLoUsano(processo, progetti).map((progetto) => progetto.nome);
   return (
     <section className="processi-di-shinka">
       <h2 className="titolo-sezione">Processi di Shinka</h2>
@@ -403,39 +395,7 @@ function ProcessiDiShinka({ idAmbiente, processi }: { idAmbiente: string; proces
               · {percento(gruppo.cpu)} · {pesoInBreve(gruppo.memoria)}
             </span>
           </h3>
-          <ul>
-            {gruppo.righe.map(({ processo, livello }) => {
-              const tipo = cheCosE(processo);
-              return (
-                <li key={processo.pid} style={{ paddingLeft: `${livello * 16}px` }}>
-                  <div className="riga-processo">
-                    <span className="nome">
-                      {processo.nome}
-                      {tipo !== undefined && <span className="tenue"> · {tipo}</span>}
-                    </span>
-                    <span className="numero">{percento(processo.cpu)}</span>
-                    <span className="numero">{pesoInBreve(processo.memoria)}</span>
-                    {daTerminare === processo.pid ? (
-                      <span className="pulsanti">
-                        <button type="button" className="mini pericolo" onClick={() => termina(processo.pid)}>
-                          Termina
-                        </button>
-                        <button type="button" className="mini discreto" onClick={() => setDaTerminare(undefined)}>
-                          No
-                        </button>
-                      </span>
-                    ) : (
-                      <button type="button" className="mini discreto" disabled={esito?.pid === processo.pid && esito.errore === undefined} onClick={() => setDaTerminare(processo.pid)}>
-                        {esito?.pid === processo.pid && esito.errore === undefined ? "Termino…" : "Termina…"}
-                      </button>
-                    )}
-                  </div>
-                  {processo.comando !== undefined && <div className="tenue comando-processo">{processo.comando}</div>}
-                  {esito?.pid === processo.pid && esito.errore !== undefined && <p className="errore">{esito.errore}</p>}
-                </li>
-              );
-            })}
-          </ul>
+          <RigheProcessi idAmbiente={idAmbiente} righe={gruppo.righe} usatoDa={usatoDa} />
         </div>
       ))}
       <p className="tenue">Terminare un processo ferma anche ciò che ha avviato. Una conversazione terminata riparte al prossimo messaggio.</p>

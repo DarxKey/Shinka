@@ -21,7 +21,7 @@ import { Chat, type ComandoChat, type ProprietaChat } from "./Chat.tsx";
 import { condizioneInParole, giornoInBreve, skillNonViste } from "./descrivi.ts";
 import type { RichiestaAnteprima } from "./Anteprima.tsx";
 import { Laterale } from "./Laterale.tsx";
-import { PannelloProgetto, PulsantiPannello, type Scheda } from "./Pannello.tsx";
+import { ascoltaAperturaDelPannello, PannelloProgetto, PulsantiPannello, type Scheda } from "./Pannello.tsx";
 import type { TurnoModificato } from "./PannelloModifiche.tsx";
 import type { FileDeiComandi } from "../../src/protocollo/modifiche.ts";
 import { PaginaElaborati } from "./Elaborati.tsx";
@@ -114,6 +114,8 @@ export function Guscio({ allUscita }: { allUscita: () => void }): ReactNode {
   // Il pannello accanto alla chat di un progetto, con terminale e anteprima: vale per il progetto
   // in cui è stato aperto, e passando a un altro si chiude.
   const [affianco, setAffianco] = useState<{ idProgetto: string; scheda: Scheda; turno?: string }>();
+  // Una parte della pagina, come la scheda della sessione, può aprire il pannello su una scheda.
+  useEffect(() => ascoltaAperturaDelPannello((idProgetto, scheda) => setAffianco({ idProgetto, scheda })), []);
   // La conversazione affiancata, sugli schermi larghi: la scelta resta nel browser.
   const [affiancata, setAffiancataQui] = useState<Affiancata | undefined>(leggiAffiancata);
   const setAffiancata = useCallback((scelta: Affiancata | undefined) => {
