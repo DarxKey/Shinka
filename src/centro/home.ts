@@ -1,9 +1,12 @@
 /**
- * La Home vista dal centro: una conversazione fatta di argomenti, di cui uno solo è aperto.
+ * La Home vista dal centro: una conversazione fatta di argomenti. Uno è aperto nella chat
+ * principale; ogni chat parallela (ADR 0052) ne tiene aperto un altro.
  *
  * Ogni argomento ha il suo archivio, la sua cartella di lavoro e la sua conversazione con
  * l'harness, che parte a contesto pulito. Quando si passa da un argomento a un altro, quello
  * che si chiude viene archiviato con titolo e riassunto e chi guarda la Home vede quello nuovo.
+ * La Home principale tiene le sue chat parallele: ciascuna è una Home con il suo numero, che
+ * cambia argomento allo stesso modo e, quando il proprietario la chiude, archivia il suo.
  */
 
 import { mkdirSync } from "node:fs";
@@ -21,10 +24,10 @@ import type {
   IndiceArchivio,
   OrigineMessaggio,
   PortaConversazione,
-  RispostaAParte,
   UscitaAttivita,
 } from "../protocollo/eventi.ts";
 import type { ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
+import { CHAT_PRINCIPALE } from "../protocollo/chat-parallele.ts";
 import type { Argomento, Ramo, RegistroArgomenti } from "./argomenti.ts";
 import { Canale } from "./canale.ts";
 import { fileDellaVersione, indiceSenzaAprire } from "./indice-archivio.ts";
@@ -36,6 +39,8 @@ export const CUSTODIA_HOME = "home";
 
 /** Ciò che serve per aprire la conversazione di un argomento. */
 export interface AperturaArgomento {
+  /** La chat in cui l'argomento è aperto: 1 è la principale. */
+  numero: number;
   cartella: string;
   idSessione: string | undefined;
   alEvento(evento: EventoConversazione): void;
@@ -64,6 +69,16 @@ export interface OpzioniHome {
 const ISTRUZIONE_ARCHIVIA =
   "[Shinka] Il proprietario passa a un altro argomento. Chiama `cambia_argomento` con il titolo e il " +
   "riassunto di questo argomento, senza indicare `riprendi` e senza scrivere altro.";
+
+/** Ciò che la Home chiede a Claude quando il proprietario chiude una chat parallela. */
+const ISTRUZIONE_CHIUDI =
+  "[Shinka] Il proprietario chiude questa chat. Chiama `cambia_argomento` con il titolo e il " +
+  "riassunto di questo argomento, senza indicare `riprendi` e senza scrivere altro.";
+
+/** Ciò che una chat parallela deve sapere quando comincia. */
+const NOTA_CHAT_PARALLELA =
+  "[Shinka] Questa è una chat parallela della Home: il proprietario l'ha aperta in una scheda accanto alla principale, " +
+  "che intanto può lavorare su altro. I messaggi da Telegram e i lavori programmati arrivano nella principale, non qui.";
 
 /**
  * Quanto si aspetta, dopo che Claude ha chiesto il cambio, prima di fermare il turno:
@@ -105,6 +120,8 @@ interface Passaggio {
   riassunto?: string;
   /** Vero se l'argomento che si chiude non conteneva nulla da conservare. */
   daDimenticare: boolean;
+  /** Vero se si chiude la chat parallela: non si apre nessun argomento al posto di quello archiviato. */
+  chiudi?: true;
   /** Il messaggio che ha fatto cambiare argomento: avrà risposta in quello nuovo. */
   ripeti?: Messaggio;
   /**
@@ -128,12 +145,30 @@ export type RifiutoPassaggio = "occupata" | "non-trovato";
 /** La condizione della Home, con le stesse parole dei progetti. */
 export type CondizioneDellaHome = "al-lavoro" | "aspetta-te" | "fermo";
 
+/** Ciò che la Home principale e le sue chat parallele hanno in comune. */
+interface Comune {
+  /** Gli archivi aperti in memoria, di tutti gli argomenti: ne vale uno per argomento. */
+  canali: Map<string, Canale>;
+  /** Chi vuole sapere che in una chat qualunque è successo qualcosa: la condizione può essere cambiata. */
+  suiCambi: Set<() => void>;
+  /** Chi vuole sapere quando un passaggio di argomento è finito, in una chat qualunque, con gli archivi a posto. */
+  dopoIPassaggi: Set<() => void>;
+}
+
+function segnala(comune: Comune): void {
+  for (const ascoltatore of comune.suiCambi) ascoltatore();
+}
+
 export class Home implements PortaConversazione {
   readonly #o: OpzioniHome;
-  readonly #canali = new Map<string, Canale>();
+  /** Il numero di questa chat: 1 è la principale. */
+  readonly #numero: number;
+  readonly #comune: Comune;
+  /** Nella principale, le chat parallele aperte. */
+  readonly #parallele = new Map<number, Home>();
+  /** In una chat parallela, ciò che la principale fa quando si chiude. */
+  #allaChiusura: (() => void) | undefined;
   readonly #seguaci = new Set<Seguace>();
-  /** Chi vuole sapere quando un passaggio di argomento è finito, con gli archivi a posto. */
-  readonly #dopoIPassaggi = new Set<() => void>();
   #canale: Canale;
   #porta: PortaConversazione;
   #passaggio: Passaggio | undefined;
@@ -151,18 +186,109 @@ export class Home implements PortaConversazione {
   readonly #ascoltatori = new Set<(archiviato: EventoArchiviato) => void>();
   #scollegaAscolto: () => void = () => {};
 
-  private constructor(opzioni: OpzioniHome, canale: Canale) {
+  private constructor(opzioni: OpzioniHome, canale: Canale, numero: number, comune: Comune) {
     this.#o = opzioni;
     this.#canale = canale;
+    this.#numero = numero;
+    this.#comune = comune;
     this.#ascoltaIlCanale(canale);
-    this.#porta = this.#apriPorta(opzioni.argomenti.aperto, canale);
+    this.#porta = this.#apriPorta(this.#aperto(), canale);
+  }
+
+  /** L'argomento aperto in questa chat. */
+  #aperto(): Argomento {
+    return this.#o.argomenti.apertoIn(this.#numero);
   }
 
   #ascoltaIlCanale(canale: Canale): void {
     this.#scollegaAscolto();
     this.#scollegaAscolto = canale.ascolta((archiviato) => {
       for (const ascoltatore of this.#ascoltatori) ascoltatore(archiviato);
+      segnala(this.#comune);
     });
+  }
+
+  /** Il numero di questa chat: 1 è la principale. */
+  get numero(): number {
+    return this.#numero;
+  }
+
+  /** Una chat della Home: 1 è questa, la principale; le altre sono le chat parallele aperte. */
+  chat(numero: number): Home | undefined {
+    return numero === this.#numero ? this : this.#parallele.get(numero);
+  }
+
+  /** Le chat parallele aperte, ciascuna con la sua condizione. */
+  condizioniDelleChat(): { numero: number; condizione: CondizioneDellaHome }[] {
+    return [...this.#parallele.values()].sort((a, b) => a.#numero - b.#numero).map((chat) => ({ numero: chat.#numero, condizione: chat.condizione }));
+  }
+
+  /** La condizione della Home con le sue chat parallele: se una aspetta il proprietario, la Home aspetta te. */
+  get condizioneComplessiva(): CondizioneDellaHome {
+    const condizioni = [this.condizione, ...this.condizioniDelleChat().map((chat) => chat.condizione)];
+    return condizioni.includes("aspetta-te") ? "aspetta-te" : condizioni.includes("al-lavoro") ? "al-lavoro" : "fermo";
+  }
+
+  /** Chiamata quando in una chat qualunque succede qualcosa, o quando se ne apre o se ne chiude una. */
+  suiCambi(ascoltatore: () => void): () => void {
+    this.#comune.suiCambi.add(ascoltatore);
+    return () => this.#comune.suiCambi.delete(ascoltatore);
+  }
+
+  /**
+   * Il proprietario apre una chat parallela, con un argomento nuovo. Il suo numero, o nulla se sono
+   * già tutte aperte. Solo dalla principale.
+   */
+  async apriChat(): Promise<number | undefined> {
+    if (this.#numero !== CHAT_PRINCIPALE) return undefined;
+    const aperta = await this.#o.argomenti.apriChat();
+    if (aperta === undefined) return undefined;
+    const chat = await this.#apriParallela(aperta.numero);
+    chat.annota(NOTA_CHAT_PARALLELA);
+    segnala(this.#comune);
+    return aperta.numero;
+  }
+
+  /**
+   * Il proprietario chiude una chat parallela: Claude scrive titolo e riassunto e il suo argomento va
+   * tra gli archiviati, alla fine del turno; se è vuoto non lascia nulla.
+   */
+  async chiudiChat(numero: number): Promise<RifiutoPassaggio | undefined> {
+    const chat = this.#numero === CHAT_PRINCIPALE ? this.#parallele.get(numero) : undefined;
+    if (chat === undefined) return "non-trovato";
+    return chat.#chiudiQuesta();
+  }
+
+  async #apriParallela(numero: number): Promise<Home> {
+    const argomento = this.#o.argomenti.apertoIn(numero);
+    const canale = await this.canaleDi(argomento.id);
+    if (canale === undefined) throw new Error("L'argomento della chat parallela non c'è.");
+    const chat = new Home(this.#o, canale, numero, this.#comune);
+    chat.#allaChiusura = () => {
+      this.#parallele.delete(numero);
+      segnala(this.#comune);
+    };
+    this.#parallele.set(numero, chat);
+    canale.pubblica({ tipo: "impostazioni", impostazioni: this.#o.impostazioni() });
+    return chat;
+  }
+
+  async #chiudiQuesta(): Promise<RifiutoPassaggio | undefined> {
+    if (this.#passaggio !== undefined || this.#inPassaggio || this.#canale.sospesi.turni > 0) return "occupata";
+    if (messaggiDelProprietario(this.#canale.archiviati) === 0) {
+      await this.#compi({ verso: "nuovo", daDimenticare: true, chiudi: true });
+      return undefined;
+    }
+    // Titolo e riassunto li scrive Claude, che conosce l'argomento: la chat si chiude a fine turno.
+    this.#passaggio = { verso: "nuovo", daDimenticare: false, chiudi: true };
+    try {
+      this.#porta.istruisci(ISTRUZIONE_CHIUDI);
+    } catch {
+      const passaggio = this.#passaggio;
+      this.#passaggio = undefined;
+      await this.#compi(passaggio);
+    }
+    return undefined;
   }
 
   /**
@@ -199,10 +325,12 @@ export class Home implements PortaConversazione {
   static async apri(opzioni: OpzioniHome): Promise<Home> {
     const aperto = opzioni.argomenti.aperto;
     const canale = await Canale.apri(archivioDi(opzioni, aperto));
-    const home = new Home(opzioni, canale);
-    home.#canali.set(aperto.id, canale);
+    const comune: Comune = { canali: new Map([[aperto.id, canale]]), suiCambi: new Set(), dopoIPassaggi: new Set() };
+    const home = new Home(opzioni, canale, CHAT_PRINCIPALE, comune);
     // Chi apre la Home deve sapere subito come è impostata.
     canale.pubblica({ tipo: "impostazioni", impostazioni: opzioni.impostazioni() });
+    // Le chat parallele aperte prima che il centro ripartisse.
+    for (const chat of opzioni.argomenti.chatParallele()) await home.#apriParallela(chat.numero);
     return home;
   }
 
@@ -212,12 +340,12 @@ export class Home implements PortaConversazione {
   }
 
   get idArgomentoAperto(): string {
-    return this.#o.argomenti.aperto.id;
+    return this.#aperto().id;
   }
 
   /** La cartella di lavoro dell'argomento aperto, nell'ambiente del centro. */
   get cartellaAperta(): string {
-    return cartellaDi(this.#o, this.#o.argomenti.aperto);
+    return cartellaDi(this.#o, this.#aperto());
   }
 
   /** La cartella di lavoro di un argomento qualunque, aperto o archiviato, nell'ambiente del centro. */
@@ -261,15 +389,15 @@ export class Home implements PortaConversazione {
 
   /** L'archivio di un argomento qualunque, aperto o archiviato. Nulla se non esiste. */
   async canaleDi(idArgomento: string): Promise<Canale | undefined> {
-    const esistente = this.#canali.get(idArgomento);
+    const esistente = this.#comune.canali.get(idArgomento);
     if (esistente !== undefined) return esistente;
     const argomento = this.#o.argomenti.trova(idArgomento);
     if (argomento === undefined) return undefined;
     const canale = await Canale.apri(archivioDi(this.#o, argomento));
     // Nel frattempo può averlo aperto qualcun altro: ne vale uno solo.
-    const giaAperto = this.#canali.get(idArgomento);
+    const giaAperto = this.#comune.canali.get(idArgomento);
     if (giaAperto !== undefined) return giaAperto;
-    this.#canali.set(idArgomento, canale);
+    this.#comune.canali.set(idArgomento, canale);
     return canale;
   }
 
@@ -278,7 +406,7 @@ export class Home implements PortaConversazione {
    * che non è aperto in memoria lo dice il file della versione, senza leggere l'archivio.
    */
   indiceDi(idArgomento: string): IndiceArchivio | undefined {
-    const aperto = this.#canali.get(idArgomento);
+    const aperto = this.#comune.canali.get(idArgomento);
     if (aperto !== undefined) return aperto.indice;
     const argomento = this.#o.argomenti.trova(idArgomento);
     return argomento === undefined ? undefined : indiceSenzaAprire(archivioDi(this.#o, argomento));
@@ -299,8 +427,8 @@ export class Home implements PortaConversazione {
 
   /** Avvisa quando un passaggio di argomento è finito: gli archivi dei due argomenti sono com'erano da restare. */
   dopoIPassaggi(ascoltatore: () => void): () => void {
-    this.#dopoIPassaggi.add(ascoltatore);
-    return () => this.#dopoIPassaggi.delete(ascoltatore);
+    this.#comune.dopoIPassaggi.add(ascoltatore);
+    return () => this.#comune.dopoIPassaggi.delete(ascoltatore);
   }
 
   /** Dove sta l'archivio di un argomento, aperto o archiviato. */
@@ -320,7 +448,7 @@ export class Home implements PortaConversazione {
     const archivio = archivioDi(this.#o, argomento);
     const cartella = cartellaDi(this.#o, argomento);
     if (!(await this.#o.argomenti.togli(idArgomento))) return "Argomento non trovato tra quelli archiviati.";
-    this.#canali.delete(idArgomento);
+    this.#comune.canali.delete(idArgomento);
     await rm(archivio, { force: true });
     await rm(fileDellaVersione(archivio), { force: true });
     // Solo la cartella che è sua: quella della Home di prima degli argomenti ha un posto suo, e resta.
@@ -366,14 +494,16 @@ export class Home implements PortaConversazione {
     }
   }
 
-  /** Le skill di Shinka sono cambiate: la conversazione dell'argomento aperto le rilegge. */
+  /** Le skill di Shinka sono cambiate: la conversazione dell'argomento aperto le rilegge, anche nelle chat parallele. */
   ricaricaSkill(): void {
     this.#porta.ricaricaSkill?.();
+    for (const chat of this.#parallele.values()) chat.ricaricaSkill();
   }
 
-  /** Le estensioni accese nell'ambiente del centro sono cambiate: la conversazione dell'argomento aperto riparte con quelle nuove. */
+  /** Le estensioni accese nell'ambiente del centro sono cambiate: le conversazioni aperte ripartono con quelle nuove. */
   ricaricaEstensioni(): void {
     this.#porta.ricaricaEstensioni?.();
+    for (const chat of this.#parallele.values()) chat.ricaricaEstensioni();
   }
 
   annota(testo: string): void {
@@ -438,15 +568,11 @@ export class Home implements PortaConversazione {
     return this.#porta.uscitaAttivita?.(idAttivita) ?? { motivo: "Questa conversazione non tiene le attività." };
   }
 
-  /** Una domanda a parte sull'argomento aperto: non vi resta. */
-  async chiediAParte(domanda: string): Promise<RispostaAParte> {
-    if (this.#porta.chiediAParte === undefined) return { motivo: "Questa conversazione non sa rispondere a una domanda a parte." };
-    return this.#porta.chiediAParte(domanda);
-  }
-
+  /** Le impostazioni della Home sono cambiate: valgono per la principale e per le chat parallele. */
   imposta(impostazioni: ImpostazioniConversazione): void {
     this.#porta.imposta(impostazioni);
     this.#canale.pubblica({ tipo: "impostazioni", impostazioni });
+    for (const chat of this.#parallele.values()) chat.imposta(impostazioni);
   }
 
   interrompi(): Promise<void> {
@@ -455,6 +581,7 @@ export class Home implements PortaConversazione {
 
   chiudi(): void {
     this.#porta.chiudi();
+    for (const chat of this.#parallele.values()) chat.chiudi();
   }
 
   /**
@@ -583,10 +710,14 @@ export class Home implements PortaConversazione {
   }
 
   async #compi(passaggio: Passaggio): Promise<void> {
+    if (passaggio.chiudi === true) {
+      await this.#compiLaChiusura(passaggio);
+      return;
+    }
     this.#inPassaggio = true;
     this.#fermato = false;
     let riuscito = false;
-    const vecchio = this.#o.argomenti.aperto;
+    const vecchio = this.#aperto();
     const canaleVecchio = this.#canale;
     const portaVecchia = this.#porta;
     try {
@@ -596,10 +727,10 @@ export class Home implements PortaConversazione {
             titolo: passaggio.titolo ?? titoloDiRipiego(canaleVecchio),
             riassunto: passaggio.riassunto ?? "",
           };
-      const prossimo = await this.#o.argomenti.passa(chiuso, passaggio.verso);
+      const prossimo = await this.#o.argomenti.passa(chiuso, passaggio.verso, Date.now(), this.#numero);
       portaVecchia.chiudi();
       if (chiuso === "da-dimenticare") {
-        this.#canali.delete(vecchio.id);
+        this.#comune.canali.delete(vecchio.id);
         if (vecchio.archivio === undefined) {
           await rm(archivioDi(this.#o, vecchio), { force: true });
           await rm(fileDellaVersione(archivioDi(this.#o, vecchio)), { force: true });
@@ -656,7 +787,7 @@ export class Home implements PortaConversazione {
       });
     } finally {
       this.#inPassaggio = false;
-      for (const ascoltatore of this.#dopoIPassaggi) ascoltatore();
+      for (const ascoltatore of this.#comune.dopoIPassaggi) ascoltatore();
     }
     // Se il passaggio non è riuscito il messaggio che lo aveva chiesto non va riproposto: lo richiederebbe di nuovo.
     const daMandare = [
@@ -666,10 +797,49 @@ export class Home implements PortaConversazione {
     for (const messaggio of daMandare) this.invia(messaggio.testo, messaggio.allegati, messaggio.origine);
   }
 
+  /**
+   * La chat parallela si chiude: il suo argomento va tra gli archiviati, o viene dimenticato se è
+   * vuoto, la sua conversazione si chiude e la principale smette di tenerla.
+   */
+  async #compiLaChiusura(passaggio: Passaggio): Promise<void> {
+    this.#inPassaggio = true;
+    this.#fermato = false;
+    const vecchio = this.#aperto();
+    try {
+      const chiuso = passaggio.daDimenticare
+        ? "da-dimenticare"
+        : { titolo: passaggio.titolo ?? titoloDiRipiego(this.#canale), riassunto: passaggio.riassunto ?? "" };
+      this.#porta.chiudi();
+      await this.#o.argomenti.chiudiChat(this.#numero, chiuso);
+      if (chiuso === "da-dimenticare") {
+        this.#comune.canali.delete(vecchio.id);
+        await rm(archivioDi(this.#o, vecchio), { force: true });
+        await rm(fileDellaVersione(archivioDi(this.#o, vecchio)), { force: true });
+      } else {
+        this.#canale.pubblica({ tipo: "argomento-archiviato", titolo: chiuso.titolo, proseguito: false });
+      }
+    } catch (errore) {
+      this.#canale.pubblica({
+        tipo: "errore",
+        messaggio: `Non sono riuscito a chiudere la chat: ${errore instanceof Error ? errore.message : String(errore)}`,
+      });
+      this.#inPassaggio = false;
+      return;
+    }
+    this.#scollegaAscolto();
+    for (const seguace of this.#seguaci) seguace.scollega();
+    this.#seguaci.clear();
+    this.#inPassaggio = false;
+    this.#inCoda.splice(0);
+    for (const ascoltatore of this.#comune.dopoIPassaggi) ascoltatore();
+    this.#allaChiusura?.();
+  }
+
   #apriPorta(argomento: Argomento, canale: Canale): PortaConversazione {
     const cartella = cartellaDi(this.#o, argomento);
     mkdirSync(cartella, { recursive: true });
     const porta: PortaConversazione = this.#o.apri({
+      numero: this.#numero,
       cartella,
       idSessione: argomento.idSessione,
       alEvento: (evento) => this.#alEvento(() => porta, canale, evento),

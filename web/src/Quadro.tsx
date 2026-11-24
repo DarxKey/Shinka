@@ -23,8 +23,15 @@ export interface Quadro {
   vault: VaultInBreve | undefined;
   /** Quale anteprima è aperta, e da quale porta del centro la si vede. */
   anteprima: StatoAnteprima | undefined;
-  /** Se la Home lavora o aspetta il proprietario. */
-  home: { condizione: CondizioneProgetto } | undefined;
+  /** Se la Home lavora o aspetta il proprietario, con le sue chat parallele (ADR 0052). */
+  home: VistaHome | undefined;
+}
+
+/** La Home nel quadro: la condizione della principale, quella con le chat parallele, e le chat aperte. */
+export interface VistaHome {
+  condizione: CondizioneProgetto;
+  complessiva?: CondizioneProgetto;
+  chat?: { numero: number; condizione: CondizioneProgetto }[];
 }
 
 const QUADRO_VUOTO: Quadro = {
@@ -76,7 +83,7 @@ export function useQuadro(): Quadro {
       setQuadro((prima) => ({ ...prima, vault }));
     });
     sorgente.addEventListener("home", (messaggio: MessageEvent<string>) => {
-      const home = JSON.parse(messaggio.data) as { condizione: CondizioneProgetto };
+      const home = JSON.parse(messaggio.data) as VistaHome;
       setQuadro((prima) => ({ ...prima, home }));
     });
     sorgente.addEventListener("anteprima", (messaggio: MessageEvent<string>) => {

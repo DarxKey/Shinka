@@ -107,44 +107,6 @@ test("la storia di un ramo chiude il turno in cui il messaggio era entrato, e la
   ]);
 });
 
-test("una domanda a parte arriva alla conversazione della Home o del progetto, e la risposta torna a chi l'ha fatta", async (t) => {
-  const banco = await allestisci(t);
-  const nellaHome = await chiedi(banco, "/api/home/a-parte", { domanda: "  Che ore sono?  " });
-  assert.equal(nellaHome.stato, 200);
-  assert.deepEqual(nellaHome.dati, { testo: "Risposta **a parte**." });
-  assert.deepEqual(banco.home.domandeAParte, ["Che ore sono?"]);
-  // Nella conversazione non resta nulla.
-  assert.deepEqual(banco.canale.archiviati, []);
-  assert.equal((await chiedi(banco, "/api/home/a-parte", { domanda: "" })).stato, 400);
-
-  const idProgetto = (await banco.lavori.crea("Videogioco", "centro", "Un gioco di piattaforme.")).id;
-  await finche(() => banco.conversazioniLocali.length === 1, "il progetto apre la sua conversazione");
-  const progetto = banco.conversazioniLocali[0];
-  assert.ok(progetto !== undefined);
-  progetto.rispostaAParte = { motivo: "Claude non ha risposto." };
-  const nelProgetto = await chiedi(banco, `/api/progetti/${idProgetto}/a-parte`, { domanda: "A che punto sei?" });
-  assert.deepEqual(nelProgetto.dati, { motivo: "Claude non ha risposto." });
-  assert.deepEqual(progetto.domandeAParte, ["A che punto sei?"]);
-  assert.deepEqual((await chiedi(banco, "/api/progetti/inesistente/a-parte", { domanda: "?" })).dati, { motivo: "Progetto non trovato." });
-});
-
-test("una domanda a parte su un progetto di un altro ambiente passa dal suo nodo, con lo stile scelto", async (t) => {
-  const banco = await allestisci(t);
-  const nodo = await avviaNodoAccettato(t, banco);
-  const idProgetto = (await banco.lavori.crea("Videogioco", ID_NODO, "Un gioco di piattaforme.")).id;
-  await finche(() => nodo.conversazioni.length === 1, "la conversazione nasce sul nodo");
-
-  const risposta = await chiedi(banco, `/api/progetti/${idProgetto}/a-parte`, { domanda: "Quale file stai cambiando?" });
-  assert.deepEqual(risposta.dati, { testo: "Risposta **a parte**." });
-  assert.deepEqual(nodo.conversazioni[0]?.domandeAParte, ["Quale file stai cambiando?"]);
-
-  // Lo stile arriva al nodo intero: lì non ci sono gli stili del centro.
-  await chiedi(banco, `/api/progetti/${idProgetto}/impostazioni`, { stile: "conciso" });
-  await finche(() => nodo.conversazioni[0]?.impostazioni.length === 1, "il nodo riceve lo stile");
-  assert.equal(nodo.conversazioni[0]?.impostazioni[0]?.stile?.nome, "Conciso");
-  assert.match(nodo.conversazioni[0]?.impostazioni[0]?.stile?.istruzioni ?? "", /breve/);
-});
-
 test("l'uscita di un'attività si legge dalla Home e da un progetto, anche su un nodo", async (t) => {
   const banco = await allestisci(t);
   banco.home.uscite.set("c1", "USCITA");

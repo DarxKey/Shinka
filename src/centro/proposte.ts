@@ -54,8 +54,11 @@ interface PropostaInAttesa extends Proposta {
 export interface OpzioniProposte {
   /** L'archivio dell'argomento aperto nella Home, chiesto nel momento in cui serve. */
   canaleHome(): Canale;
-  /** Aggiunge un'informazione al contesto della Home, senza farla rispondere. */
-  annotaHome(testo: string): void;
+  /**
+   * Aggiunge un'informazione al contesto della Home, senza farla rispondere: nella chat il cui
+   * archivio è indicato, o nella principale.
+   */
+  annotaHome(testo: string, canale?: Canale): void;
   /** L'argomento aperto nella Home: da lì vengono i file che un progetto può portare con sé. */
   argomentoAperto(): OrigineFile;
   lavori: LavoriDeiProgetti;
@@ -76,8 +79,7 @@ export class Proposte {
    * I file che l'argomento aperto ha in ciascun ambiente attivo; nulla se non ne ha.
    * Un ambiente che non risponde conta come senza file: la proposta non deve aspettarlo.
    */
-  async fileDellArgomento(): Promise<DaPortare | undefined> {
-    const origine = this.#o.argomentoAperto();
+  async fileDellArgomento(origine: OrigineFile = this.#o.argomentoAperto()): Promise<DaPortare | undefined> {
     const attivi = this.#o.ambienti.stato().ambienti.filter((ambiente) => ambiente.attivo);
     const elenchi = await Promise.allSettled(
       attivi.map((ambiente) => this.#o.lavori.elencaFile(ambiente.id, origine)),
@@ -134,10 +136,9 @@ export class Proposte {
     return progetto;
   }
 
-  /** La Home propone un progetto: compare la scheda, e nient'altro. */
-  proponi(proposta: Proposta): string {
+  /** La Home propone un progetto: compare la scheda, nella chat indicata o nella principale, e nient'altro. */
+  proponi(proposta: Proposta, canale: Canale = this.#o.canaleHome()): string {
     const idProposta = randomUUID();
-    const canale = this.#o.canaleHome();
     this.#inAttesa.set(idProposta, { ...proposta, canale });
     canale.pubblica({
       tipo: "proposta-progetto",
@@ -211,6 +212,7 @@ export class Proposte {
           : ` Lavora nella cartella che esisteva già, ${progetto.cartella}, senza che Shinka l'abbia toccata` +
             (progetto.adottata.git ? "." : ": non è un repository Git, e Shinka non l'ha inizializzato.")) +
         (avvio.skillDiPartenza === undefined ? "" : ` Il suo primo messaggio comincia con la skill ${avvio.skillDiPartenza}.`),
+      proposta.canale,
     );
     return progetto;
   }
@@ -259,6 +261,7 @@ export class Proposte {
     proposta.canale.pubblica({ tipo: "proposta-decisa", idProposta, esito: "annullata" });
     this.#o.annotaHome(
       `[Shinka] Il proprietario ha annullato la proposta del progetto "${proposta.nome}": non è stato creato nulla.`,
+      proposta.canale,
     );
     return true;
   }

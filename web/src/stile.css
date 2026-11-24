@@ -363,6 +363,86 @@ pre {
   grid-template-rows: auto auto 1fr auto;
 }
 
+/* Con le chat parallele c'è la riga delle schede sotto la testata (ADR 0052). */
+.app.con-schede {
+  grid-template-rows: auto auto 1fr auto;
+}
+
+.app.con-schede.con-stato {
+  grid-template-rows: auto auto auto 1fr auto;
+}
+
+.schede-chat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--bordo);
+  background: var(--superficie);
+}
+
+.scheda-chat {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  border-radius: 8px;
+}
+
+.scheda-chat[aria-current="true"] {
+  background: var(--codice);
+}
+
+.scheda-chat > button {
+  min-height: 32px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 0.875rem;
+}
+
+.scheda-chat > button.nome-scheda {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tenue);
+}
+
+.scheda-chat[aria-current="true"] > button.nome-scheda {
+  color: var(--testo);
+  font-weight: 600;
+}
+
+.scheda-chat > button.chiudi-scheda {
+  padding: 0 8px;
+  color: var(--tenue);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.scheda-chat .pallino-scheda {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.pallino-scheda.al-lavoro {
+  background: var(--accento);
+}
+
+.pallino-scheda.aspetta-te {
+  background: var(--attesa);
+}
+
+.conferma-chiusura-chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 0.8125rem;
+}
+
 .colonna {
   width: 100%;
   max-width: var(--lettura);
@@ -4629,59 +4709,6 @@ button.torna-giu.aspetta {
   }
 }
 
-/* La domanda a parte: sopra il campo, con la sua risposta; nella conversazione non resta. */
-.a-parte {
-  display: grid;
-  gap: var(--s-1);
-  margin-bottom: var(--s-2);
-  padding: var(--s-2) var(--s-3);
-  border: 1px dashed var(--accento);
-  border-radius: 12px;
-  background: var(--superficie);
-  font-size: var(--t-ui);
-  max-height: 45vh;
-  overflow-y: auto;
-}
-
-.a-parte header {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s-2);
-}
-
-.a-parte .titolo-a-parte {
-  font-weight: 600;
-  color: var(--accento);
-}
-
-.a-parte .chiudi-a-parte {
-  margin-left: auto;
-  padding: 0 var(--s-1);
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.a-parte p {
-  margin: 0;
-}
-
-.domanda-a-parte {
-  font-style: italic;
-  white-space: pre-wrap;
-}
-
-.risposta-a-parte {
-  font-size: var(--t-testo);
-}
-
-.risposta-a-parte > :first-child {
-  margin-top: 0;
-}
-
-.risposta-a-parte > :last-child {
-  margin-bottom: 0;
-}
-
 /* Gli stili di risposta: uno nuovo da una descrizione, e quelli del proprietario. */
 .gestione-stili {
   display: grid;
@@ -4739,7 +4766,6 @@ button.torna-giu.aspetta {
 }
 
 @media print {
-  .a-parte,
   .gestione-stili {
     display: none;
   }

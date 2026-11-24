@@ -34,6 +34,7 @@ import { AGGIORNA_MASSIMO, percorsoDiElaboratoValido } from "../protocollo/elabo
 import { AmbienteSpento } from "./esecutori.ts";
 import type { LavoriDeiProgetti } from "./lavori.ts";
 import type { Proposte } from "./proposte.ts";
+import type { Canale } from "./canale.ts";
 import type { SviluppoDiShinka } from "./sviluppo.ts";
 import {
   cerca,
@@ -51,6 +52,10 @@ export const GRUPPO_STRUMENTI_HOME = GRUPPO_STRUMENTI;
 /** Ciò che gli strumenti chiedono alla Home. */
 export interface CasaDegliStrumenti {
   readonly idArgomentoAperto: string;
+  /** La cartella dell'argomento aperto, nell'ambiente del centro. */
+  readonly cartellaAperta: string;
+  /** L'archivio dell'argomento aperto: lì compaiono le schede che gli strumenti propongono. */
+  readonly canale: Canale;
   pubblica(evento: EventoConversazione): void;
   richiediCambio(richiesta: { titolo: string; riassunto: string; riprendi?: string }): string | { rifiuto: string };
   archiviati(): VoceArgomento[];
@@ -285,18 +290,21 @@ export function azioniDellaHome(opzioni: OpzioniStrumentiHome) {
               "controlla il percorso con il proprietario, oppure proponi il progetto senza cartella esistente.",
           );
         }
-        proposte.proponi({
-          nome,
-          brief,
-          idAmbiente: ambiente.id,
-          cartellaEsistente: cartella.percorso,
-          ...(cartella.git
-            ? {}
-            : {
-                avvisoCartella:
-                  "Non è un repository Git: Shinka non lo inizializza. Se serve, il progetto te lo proporrà.",
-              }),
-        });
+        proposte.proponi(
+          {
+            nome,
+            brief,
+            idAmbiente: ambiente.id,
+            cartellaEsistente: cartella.percorso,
+            ...(cartella.git
+              ? {}
+              : {
+                  avvisoCartella:
+                    "Non è un repository Git: Shinka non lo inizializza. Se serve, il progetto te lo proporrà.",
+                }),
+          },
+          opzioni.home().canale,
+        );
         return risposta(
           `Proposta mostrata al proprietario: progetto "${nome}" nell'ambiente "${ambiente.nome}", nella cartella che esiste già ` +
             `${cartella.percorso}${cartella.git ? ", che è un repository Git" : ", che non è un repository Git"}. ` +
@@ -305,8 +313,9 @@ export function azioniDellaHome(opzioni: OpzioniStrumentiHome) {
         );
       }
       // Se l'argomento ha già prodotto file, il progetto può nascere con quelli del suo ambiente.
-      const daPortare = await proposte.fileDellArgomento();
-      proposte.proponi({ nome, brief, idAmbiente: ambiente.id, ...(daPortare === undefined ? {} : { daPortare }) });
+      const casa = opzioni.home();
+      const daPortare = await proposte.fileDellArgomento({ idArgomento: casa.idArgomentoAperto, cartellaAlCentro: casa.cartellaAperta });
+      proposte.proponi({ nome, brief, idAmbiente: ambiente.id, ...(daPortare === undefined ? {} : { daPortare }) }, casa.canale);
       const li = daPortare?.file.find((voce) => voce.idAmbiente === ambiente.id);
       const altrove = (daPortare?.file ?? [])
         .filter((voce) => voce.idAmbiente !== ambiente.id)
@@ -335,7 +344,7 @@ export function azioniDellaHome(opzioni: OpzioniStrumentiHome) {
       if (titolo === "" || richiesta === "") {
         return nonRiuscito("Servono un titolo e la richiesta: la proposta non è stata mostrata.");
       }
-      opzioni.sviluppo.proponi({ titolo, richiesta });
+      opzioni.sviluppo.proponi({ titolo, richiesta }, opzioni.home().canale);
       return risposta(
         `Proposta mostrata al proprietario: sviluppare in Shinka "${titolo}". Non è partito nulla: il lavoro comincia nel progetto Shinka solo se lui conferma la scheda. Rispondi con una frase sola e aspetta la sua decisione.`,
       );
@@ -389,7 +398,7 @@ export function azioniDellaHome(opzioni: OpzioniStrumentiHome) {
         idAmbiente: ambiente.id,
         ...(definizione === undefined ? {} : { definizione }),
         chiavi: argomenti.chiavi ?? [],
-      });
+      }, opzioni.home().canale);
       if ("motivo" in esito) return nonRiuscito(`${esito.motivo} La scheda non è stata mostrata.`);
       return risposta(
         `Scheda mostrata al proprietario: estensione "${argomenti.nome.trim()}" nell'ambiente "${ambiente.nome}". Non è stato installato né avviato nulla: ` +

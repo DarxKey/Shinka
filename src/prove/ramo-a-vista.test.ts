@@ -1,7 +1,7 @@
 /**
  * Prova a vista della seconda parte del gruppo B, in un browser vero davanti a un centro con
- * conversazioni finte: un messaggio della Home mandato in un argomento nuovo, la domanda a parte
- * con "/btw", e lo stile delle risposte, scelto e creato da una descrizione. Si salta dove manca il
+ * conversazioni finte: un messaggio della Home mandato in un argomento nuovo, il menu "/"
+ * senza la domanda a parte (ADR 0052), e lo stile delle risposte, scelto e creato da una descrizione. Si salta dove manca il
  * browser o l'interfaccia costruita. Con SHINKA_PROVA_IMMAGINI, in quella cartella restano le immagini.
  */
 
@@ -25,7 +25,7 @@ const salta =
       : false;
 
 for (const [nome, larghezza] of [["largo", 1280], ["telefono", 390]] as const) {
-  test(`argomento nuovo da un messaggio, domanda a parte e stile delle risposte (${nome})`, { skip: salta, timeout: 120_000 }, async (t) => {
+  test(`argomento nuovo da un messaggio e stile delle risposte (${nome})`, { skip: salta, timeout: 120_000 }, async (t) => {
     const banco = await allestisci(t, { cartellaWeb });
     await banco.centro.listen({ host: "127.0.0.1", port: 0 });
     const indirizzo = `http://127.0.0.1:${(banco.centro.server.address() as AddressInfo).port}`;
@@ -67,20 +67,10 @@ for (const [nome, larghezza] of [["largo", 1280], ["telefono", 390]] as const) {
       rispondi(`t${i}`, `Risposta ${i + 1}: Micio, Fufi, Tom.`);
     }
 
-    // La domanda a parte: il menu la propone, la risposta compare sopra il campo e nella conversazione non resta.
+    // La domanda a parte non c'è più (ADR 0052): il menu "/" non la propone.
     await campo.fill("/bt");
-    await pagina.locator(".menu-comandi li", { hasText: "/btw" }).waitFor();
-    await campo.fill("/btw quanti nomi mi hai dato finora?");
-    await manda();
-    const aParte = pagina.locator(".a-parte");
-    await aParte.getByText("a parte", { exact: true }).waitFor();
-    await aParte.locator("strong", { hasText: "a parte" }).waitFor();
-    assert.deepEqual(banco.home.domandeAParte, ["quanti nomi mi hai dato finora?"]);
-    assert.equal(banco.home.inviati.length, 2);
-    assert.equal(await campo.inputValue(), "");
-    await fotografa("a-parte");
-    await aParte.getByRole("button", { name: "Chiudi la domanda a parte" }).click();
-    assert.equal(await aParte.count(), 0);
+    assert.equal(await pagina.locator(".menu-comandi li", { hasText: "/btw" }).count(), 0);
+    await campo.fill("");
 
     // Lo stile: sul telefono le scelte si aprono dal riassunto.
     if (larghezza < 860) await pagina.locator("button.apri-scelte").click();

@@ -78,7 +78,10 @@ export type CondizioneProgetto = "al-lavoro" | "aspetta-te" | "fermo" | "ambient
 /** Un progetto nell'elenco del quadro, con l'indice del suo archivio (ADR 0046). */
 export interface VoceProgetto extends Progetto, Partial<IndiceArchivio> {
   nomeAmbiente: string;
+  /** La condizione del progetto, con quella delle sue chat parallele. */
   condizione: CondizioneProgetto;
+  /** Le chat parallele aperte (ADR 0052), con la condizione di ciascuna. */
+  chat?: { numero: number; condizione: CondizioneProgetto }[];
 }
 
 /** I progetti. L'elenco è sempre completo: un progetto che non c'è è stato eliminato (ADR 0046). */

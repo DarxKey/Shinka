@@ -8,7 +8,8 @@ import { leggiImpostazioni, type ImpostazioniConversazione } from "../protocollo
 import { leggiAvvio, type AvvioApplicazione } from "../protocollo/applicazioni.ts";
 import { leggiEstensioniScelte } from "../protocollo/avvio-progetto.ts";
 import type { CartellaCollegata, Progetto } from "../protocollo/progetti.ts";
-import { leggiChiImplementa, type ChiImplementa } from "../protocollo/incarichi.ts";
+import { leggiChiImplementa, progettoDellaConversazione, type ChiImplementa } from "../protocollo/incarichi.ts";
+import { eNumeroDiChatParallela, numeroDellaChat, primoNumeroLibero, CHAT_PRINCIPALE } from "../protocollo/chat-parallele.ts";
 
 interface ProgettoSalvato extends Progetto {
   /** Identificativo da cui l'harness riprende la conversazione del progetto. */
@@ -23,6 +24,13 @@ interface ProgettoSalvato extends Progetto {
   collegate?: CartellaCollegata[];
   /** Chi implementa gli incarichi del progetto, se il proprietario lo ha scelto (ADR 0051). */
   chiImplementa?: ChiImplementa;
+  /** Le chat parallele aperte (ADR 0052), ciascuna con il punto da cui riprende la sua conversazione. */
+  chat?: ChatSalvata[];
+}
+
+interface ChatSalvata {
+  numero: number;
+  idSessione?: string;
 }
 
 /** L'applicazione di un progetto per come la ricorda il registro. */
@@ -51,6 +59,14 @@ export class RegistroProgetti {
   private constructor(file: string, progetti: ProgettoSalvato[]) {
     this.#file = file;
     this.#progetti = new Map(progetti.map((progetto) => [progetto.id, progetto]));
+    // Delle chat parallele restano quelle con un numero valido, una per numero.
+    for (const progetto of this.#progetti.values()) {
+      if (progetto.chat === undefined) continue;
+      const valide = Array.isArray(progetto.chat) ? progetto.chat.filter((chat) => eNumeroDiChatParallela(chat?.numero)) : [];
+      const uniche = valide.filter((chat, posto) => valide.findIndex((altra) => altra.numero === chat.numero) === posto);
+      if (uniche.length === 0) delete progetto.chat;
+      else progetto.chat = uniche;
+    }
   }
 
   static async apri(file: string): Promise<RegistroProgetti> {
@@ -87,17 +103,53 @@ export class RegistroProgetti {
     return soloProgetto(progetto);
   }
 
-  idSessione(idProgetto: string): string | undefined {
-    return this.#progetti.get(idProgetto)?.idSessione;
+  /** Da dove riprende una conversazione del progetto: la principale o una chat parallela. */
+  idSessione(idConversazione: string): string | undefined {
+    const progetto = this.#progetti.get(progettoDellaConversazione(idConversazione));
+    const numero = numeroDellaChat(idConversazione);
+    if (numero === CHAT_PRINCIPALE) return progetto?.idSessione;
+    return progetto?.chat?.find((chat) => chat.numero === numero)?.idSessione;
   }
 
-  /** Ricorda da dove riprendere la conversazione; una stringa vuota lo fa dimenticare. */
-  async ricordaSessione(idProgetto: string, idSessione: string): Promise<void> {
-    const progetto = this.#progetti.get(idProgetto);
+  /** Ricorda da dove riprendere una conversazione del progetto; una stringa vuota lo fa dimenticare. */
+  async ricordaSessione(idConversazione: string, idSessione: string): Promise<void> {
+    const progetto = this.#progetti.get(progettoDellaConversazione(idConversazione));
     if (progetto === undefined) return;
-    if (idSessione === "") delete progetto.idSessione;
-    else progetto.idSessione = idSessione;
+    const numero = numeroDellaChat(idConversazione);
+    const dove: { idSessione?: string } | undefined =
+      numero === CHAT_PRINCIPALE ? progetto : progetto.chat?.find((chat) => chat.numero === numero);
+    if (dove === undefined) return;
+    if (idSessione === "") delete dove.idSessione;
+    else dove.idSessione = idSessione;
     await this.#salva();
+  }
+
+  /** I numeri delle chat parallele aperte nel progetto, in ordine. */
+  chatParallele(idProgetto: string): number[] {
+    return (this.#progetti.get(idProgetto)?.chat ?? []).map((chat) => chat.numero).sort((a, b) => a - b);
+  }
+
+  /** Apre una chat parallela e ne restituisce il numero; nulla se il progetto non c'è o le chat sono già tutte aperte. */
+  async apriChat(idProgetto: string): Promise<number | undefined> {
+    const progetto = this.#progetti.get(idProgetto);
+    if (progetto === undefined) return undefined;
+    const numero = primoNumeroLibero(this.chatParallele(idProgetto));
+    if (numero === undefined) return undefined;
+    progetto.chat = [...(progetto.chat ?? []), { numero }];
+    await this.#salva();
+    this.#avvisa();
+    return numero;
+  }
+
+  /** Dimentica una chat parallela. Falso se non c'era. */
+  async chiudiChat(idProgetto: string, numero: number): Promise<boolean> {
+    const progetto = this.#progetti.get(idProgetto);
+    if (progetto?.chat?.some((chat) => chat.numero === numero) !== true) return false;
+    progetto.chat = progetto.chat.filter((chat) => chat.numero !== numero);
+    if (progetto.chat.length === 0) delete progetto.chat;
+    await this.#salva();
+    this.#avvisa();
+    return true;
   }
 
   /** Le estensioni scelte per il progetto; nulla se ha tutte quelle accese nel suo ambiente. */

@@ -147,7 +147,7 @@ La decisione della Home tra fare da sé, proporre un progetto e, nel dubbio, chi
 _Avoid_: routing, triage
 
 **Argomento**:
-Un tratto della conversazione della Home su una sola questione, che la Home archivia con titolo e riassunto quando il proprietario passa ad altro, e in cui poi ricerca.
+Un tratto della conversazione della Home su una sola questione, che la Home archivia con titolo e riassunto quando il proprietario passa ad altro, e in cui poi ricerca. Di solito uno solo è aperto; ogni chat parallela della Home ne tiene aperto un altro.
 _Avoid_: sessione, thread, chat
 
 **Elaborato**:
@@ -218,9 +218,9 @@ _Avoid_: todo, task list
 Un argomento nuovo della Home che nasce da un messaggio modificato di quello aperto: ne ha la storia fino a lì, nella stessa cartella, e da lì prende un'altra strada; quello di prima resta com'è, archiviato.
 _Avoid_: fork, biforcazione, branch
 
-**Domanda a parte**:
-Una domanda che il proprietario fa con "/btw" su una conversazione, anche mentre Claude lavora: Claude risponde con ciò che sa già, senza strumenti, e nella conversazione non resta nulla.
-_Avoid_: side chat, btw, chat laterale
+**Chat parallela**:
+Un'altra conversazione aperta in una scheda accanto alla principale, nella Home o in un progetto, che lavora anche mentre la principale lavora. Nella Home è un argomento aperto, archiviato quando la scheda si chiude; in un progetto lavora nella sua cartella, e chiusa si cancella.
+_Avoid_: side chat, btw, domanda a parte, thread
 
 **Stile delle risposte**:
 Come Claude scrive in una conversazione, scelto dal proprietario accanto a modello ed effort: uno di quelli di Shinka, oppure uno suo, le cui istruzioni Claude scrive a partire da una descrizione.

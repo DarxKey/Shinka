@@ -85,6 +85,8 @@ import { Estensioni } from "./estensioni.ts";
 import { EstensioniNegliAmbienti } from "./estensioni-negli-ambienti.ts";
 import { apriGateway, GatewayAssente } from "./gateway.ts";
 import { Home } from "./home.ts";
+import type { Canale } from "./canale.ts";
+import { eIncarico, progettoDellaConversazione } from "../protocollo/incarichi.ts";
 import { CustodiaImmagini } from "./immagini.ts";
 import {
   IMPOSTAZIONI_HOME,
@@ -257,7 +259,7 @@ const notifiche = new NotificheApp({ file: join(dati, "notifiche.json") });
 const avvisaLApp = (avviso: { titolo: string; corpo: string; conversazione: string; urgente: boolean }): void => {
   if (!notifiche.attive) return;
   // Il numero sull'icona: quante conversazioni aspettano il proprietario.
-  const aspettano = lavori.stato().progetti.filter((progetto) => progetto.condizione === "aspetta-te").length + (laHome().condizione === "aspetta-te" ? 1 : 0);
+  const aspettano = lavori.stato().progetti.filter((progetto) => progetto.condizione === "aspetta-te").length + (laHome().condizioneComplessiva === "aspetta-te" ? 1 : 0);
   void notifiche.manda({
     titolo: avviso.titolo,
     corpo: avviso.corpo,
@@ -344,7 +346,8 @@ const estensioniNegliAmbienti = new EstensioniNegliAmbienti({
 const locale = new EsecutoreLocale(radiceProgetti, undefined, {
   strumento: strumentoDiProgetto,
   cartellaSkill: skill.cartella,
-  diShinka: (idProgetto) => progetti.trova(idProgetto)?.diShinka === true,
+  // Le chat parallele del progetto Shinka sono del progetto Shinka; gli incarichi no.
+  diShinka: (idConversazione) => !eIncarico(idConversazione) && progetti.trova(progettoDellaConversazione(idConversazione))?.diShinka === true,
   estensioni: estensioniDelCentro,
   modelliLocali: estensioniDelCentro.modelliLocali,
   cartellaModifiche: join(dati, "modifiche"),
@@ -405,6 +408,12 @@ const laHome = (): Home => {
   if (home === undefined) throw new Error("La Home non è ancora pronta.");
   return home;
 };
+// Una nota alla chat della Home che ha l'archivio indicato, o alla principale (ADR 0052).
+const annotaLaHome = (testo: string, canale?: Canale): void => {
+  if (home === undefined) return;
+  const chat = canale === undefined ? undefined : [home, ...home.condizioniDelleChat().map(({ numero }) => home?.chat(numero))].find((una) => una?.canale === canale);
+  (chat ?? home).annota(testo);
+};
 // La versione in funzione si propone anche al gateway: il sì, però, lo chiede lui al proprietario.
 const gatewayAllaVersione = new GatewayAllaVersione({ gateway, installata, riferisci: (testo) => sviluppo?.annota(testo) });
 // Il progetto Shinka: la sua cartella è una copia di lavoro del repository di Shinka.
@@ -417,7 +426,7 @@ if (repository !== undefined) {
     guardiano: colGuardiano,
     lavori,
     canaleHome: () => laHome().canale,
-    annotaHome: (testo) => home?.annota(testo),
+    annotaHome: annotaLaHome,
     riavvia: () => void spegni(CODICE_RIAVVIO),
     nodi: () => aggiornamenti.daAggiornare(),
     propaga: (idNodi) => aggiornamenti.propaga(idNodi),
@@ -426,7 +435,7 @@ if (repository !== undefined) {
 }
 const proposte = new Proposte({
   canaleHome: () => laHome().canale,
-  annotaHome: (testo) => home?.annota(testo),
+  annotaHome: annotaLaHome,
   argomentoAperto: () => ({ idArgomento: laHome().idArgomentoAperto, cartellaAlCentro: laHome().cartellaAperta }),
   lavori,
   ambienti,
@@ -438,7 +447,7 @@ estensioni = await Estensioni.apri({
   ambienti: () => ambienti.stato().ambienti,
   inAmbiente: (idAmbiente) => estensioniNegliAmbienti.per(idAmbiente),
   canaleHome: () => laHome().canale,
-  annotaHome: (testo) => home?.annota(testo),
+  annotaHome: annotaLaHome,
 });
 const agisciInAmbiente = (idAmbiente: string, idArgomento: string, azione: Parameters<typeof locale.agisci>[1]) =>
   (idAmbiente === ID_AMBIENTE_DEL_CENTRO ? locale : remoti.per(idAmbiente)).agisci(idArgomento, azione);
@@ -446,7 +455,11 @@ const elaborati = new Elaborati({
   ambienti: () => ambienti.stato().ambienti,
   storia: async (idArgomento) => (await laHome().canaleDi(idArgomento))?.archiviati,
   cartellaAlCentro: (idArgomento) => laHome().cartellaDellArgomento(idArgomento),
-  argomenti: () => [{ id: argomenti.aperto.id }, ...argomenti.archiviati().map((voce) => ({ id: voce.id, titolo: voce.titolo }))],
+  argomenti: () => [
+    { id: argomenti.aperto.id },
+    ...argomenti.chatParallele().map((chat) => ({ id: chat.idAperto })),
+    ...argomenti.archiviati().map((voce) => ({ id: voce.id, titolo: voce.titolo })),
+  ],
   agisci: agisciInAmbiente,
 });
 // Il ponte con Telegram nasce dopo la Home; i suoi strumenti lo chiedono quando servono.
@@ -469,6 +482,16 @@ const opzioniStrumenti = {
   agisci: agisciInAmbiente,
   ...(sviluppo === undefined ? {} : { sviluppo }),
 };
+// Gli strumenti di una chat della Home: lavorano con la sua Home, e la principale se quella non c'è più.
+const strumentiDellaChat = (numero: number): typeof opzioniStrumenti => {
+  const casa = (): Home => laHome().chat(numero) ?? laHome();
+  return {
+    ...opzioniStrumenti,
+    home: casa,
+    comuni: (nome: Parameters<typeof comuni.esegui>[1], argomenti: unknown) =>
+      comuni.esegui({ chiave: chiaveDellaHome(casa().idArgomentoAperto), origine: "Home" }, nome, argomenti),
+  };
+};
 const conSviluppo = sviluppo !== undefined;
 home = await Home.apri({
   argomenti,
@@ -485,8 +508,9 @@ home = await Home.apri({
       strumenti: STRUMENTI_HOME,
       strumentiSenzaRichiesta: STRUMENTI_HOME_SENZA_RICHIESTA,
       consenteDaSe: consensoDellaHome(ambienti),
-      // Ogni argomento ha la sua conversazione, e ogni motore della conversazione i suoi strumenti.
-      strumentiNostri: () => ({ [GRUPPO_STRUMENTI_HOME]: creaStrumentiHome(opzioniStrumenti) }),
+      // Ogni argomento ha la sua conversazione, e ogni motore della conversazione i suoi strumenti:
+      // quelli di una chat parallela agiscono nel suo argomento (ADR 0052).
+      strumentiNostri: () => ({ [GRUPPO_STRUMENTI_HOME]: creaStrumentiHome(strumentiDellaChat(apertura.numero)) }),
       cartellaSkill: skill.cartella,
       estensioni: estensioniDelCentro,
       ...(apertura.idSessione === undefined ? {} : { idSessione: apertura.idSessione }),

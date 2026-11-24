@@ -37,8 +37,7 @@ import {
   type MessaggioNodo,
 } from "../protocollo/nodi.ts";
 import { IMPEGNI, MODI_PERMESSI, MOTORI, type ModificaImpostazioni, type Motore, type SceltaDelProprietario } from "../protocollo/impostazioni.ts";
-import { leggiChiImplementa, type StatoChiImplementa } from "../protocollo/incarichi.ts";
-import { DOMANDA_A_PARTE_MASSIMA } from "../protocollo/eventi.ts";
+import { leggiChiImplementa, progettoDellaConversazione, type StatoChiImplementa } from "../protocollo/incarichi.ts";
 import { DESCRIZIONE_MASSIMA, NOME_MASSIMO, sceltoDa, STILI_DI_SHINKA } from "../protocollo/stili.ts";
 import { BRIEF_MASSIMO, NOME_PROGETTO_MASSIMO, type NuovoProgettoAMano } from "../protocollo/progetti.ts";
 import type { Archiviazione, SpazioDiUnaVoce, Uso } from "../protocollo/uso.ts";
@@ -337,6 +336,8 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
   const app = fastify({
     bodyLimit: 256 * 1024,
     forceCloseConnections: true,
+    // Le chat parallele della Home (ADR 0052) usano le rotte della Home, con il numero della chat.
+    rewriteUrl: (richiesta) => indirizzoDellaChat(richiesta.url ?? "/"),
     // Con l'HTTPS la stessa porta parla anche HTTP: nodi, gateway e guardiano restano come sono.
     // Il certificato dei nodi c'è anche senza HTTPS: il loro collegamento è cifrato comunque.
     ...(certificati === undefined && perINodi === undefined
@@ -620,13 +621,22 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     return { autenticato: false };
   });
 
+  /** La chat della Home a cui va la richiesta: la principale, o la chat parallela indicata (ADR 0052). */
+  const homeDi = (richiesta: FastifyRequest): Home | undefined => {
+    const numero = numeroDellaChatNellIndirizzo(richiesta.url);
+    return numero === undefined ? home : home.chat(numero);
+  };
+  const CHAT_NON_APERTA = { errore: "Questa chat non è aperta." };
+
   app.post<{ Body: CorpoMessaggio }>(
     "/api/home/messaggi",
     { bodyLimit: CORPO_MASSIMO_MESSAGGIO, schema: { body: CORPO_MESSAGGIO } },
     async (richiesta, risposta) => {
       const messaggio = leggiMessaggio(richiesta.body);
       if (typeof messaggio === "string") return risposta.code(400).send({ errore: messaggio });
-      home.invia(messaggio.testo, messaggio.allegati);
+      const casa = homeDi(richiesta);
+      if (casa === undefined) return risposta.code(404).send(CHAT_NON_APERTA);
+      casa.invia(messaggio.testo, messaggio.allegati);
       return risposta.code(202).send({ accettato: true });
     },
   );
@@ -654,7 +664,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       if (opzioni.posizione === undefined) return risposta.code(404).send({ errore: "In questa installazione la posizione non si può mandare." });
       if (posizione === undefined) return risposta.code(400).send({ errore: "La posizione non è valida." });
       opzioni.posizione.registra(posizione);
-      home.invia(messaggioDellaPosizione(posizione));
+      (homeDi(richiesta) ?? home).invia(messaggioDellaPosizione(posizione));
       return risposta.code(202).send({ accettato: true });
     },
   );
@@ -716,21 +726,19 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     return { rimosso: true };
   });
 
-  // Una domanda a parte, nella Home o in un progetto: Claude risponde, e nella conversazione non resta nulla.
-  const corpoAParte = {
-    schema: {
-      body: {
-        type: "object",
-        required: ["domanda"],
-        additionalProperties: false,
-        properties: { domanda: { type: "string", minLength: 1, maxLength: DOMANDA_A_PARTE_MASSIMA } },
-      },
-    },
-  } as const;
-  app.post<{ Body: { domanda: string } }>("/api/home/a-parte", corpoAParte, async (richiesta) => home.chiediAParte(richiesta.body.domanda.trim()));
-  app.post<{ Params: { id: string }; Body: { domanda: string } }>("/api/progetti/:id/a-parte", corpoAParte, async (richiesta) =>
-    lavori.chiediAParte(richiesta.params.id, richiesta.body.domanda.trim()),
-  );
+  // Le chat parallele di un progetto (ADR 0052): si aprono e si chiudono qui; per il resto usano le
+  // rotte del progetto, con l'identificativo della loro conversazione al posto di quello del progetto.
+  app.post<{ Params: { id: string } }>("/api/progetti/:id/chat", async (richiesta, risposta) => {
+    const esito = await lavori.apriChat(richiesta.params.id);
+    if ("motivo" in esito) return risposta.code(409).send({ errore: esito.motivo });
+    return esito;
+  });
+  app.delete<{ Params: { id: string; numero: string } }>("/api/progetti/:id/chat/:numero", async (richiesta, risposta) => {
+    if (!(await lavori.chiudiChat(richiesta.params.id, Number(richiesta.params.numero)))) {
+      return risposta.code(404).send({ errore: "Questa chat non è aperta." });
+    }
+    return { chiusa: true };
+  });
 
   // Un'immagine scritta nel testo di una risposta: la chiede il centro al suo sito, con le sue regole
   // (ADR 0043). Arriva con una politica che non lascia girare nulla, nel caso il browser la apra da sola.
@@ -755,7 +763,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
   app.post<{ Params: { id: string }; Body: { risposta?: unknown } }>("/api/home/domande/:id", async (richiesta, risposta) => {
     const letta = leggiRispostaAlleDomande(richiesta.body?.risposta);
     if (letta === undefined) return risposta.code(400).send({ errore: "Risposta alle domande non valida." });
-    if (!home.rispondiDomande(richiesta.params.id, letta)) {
+    if (homeDi(richiesta)?.rispondiDomande(richiesta.params.id, letta) !== true) {
       return risposta.code(404).send({ errore: "Queste domande non aspettano più una risposta." });
     }
     return { risposto: true };
@@ -774,8 +782,10 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       },
     },
     async (richiesta, risposta) => {
-      consensoDato(opzioni.approvazioni, chiaveDellaHome(home.idArgomentoAperto), home.canale, richiesta.params.id, richiesta.body.decisione);
-      const trovato = home.decidiPermesso(richiesta.params.id, richiesta.body.decisione);
+      const casa = homeDi(richiesta);
+      if (casa === undefined) return risposta.code(404).send(CHAT_NON_APERTA);
+      consensoDato(opzioni.approvazioni, chiaveDellaHome(casa.idArgomentoAperto), casa.canale, richiesta.params.id, richiesta.body.decisione);
+      const trovato = casa.decidiPermesso(richiesta.params.id, richiesta.body.decisione);
       if (!trovato) {
         return risposta.code(404).send({ errore: "Questo permesso non è più in attesa." });
       }
@@ -935,9 +945,23 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     }
   });
 
-  app.post("/api/home/interrompi", async () => {
-    await home.interrompi();
+  app.post("/api/home/interrompi", async (richiesta) => {
+    await homeDi(richiesta)?.interrompi();
     return { interrotto: true };
+  });
+
+  // Le chat parallele della Home (ADR 0052): se ne apre una con un argomento nuovo, e chiuderla
+  // archivia il suo argomento, con titolo e riassunto, alla fine del turno.
+  app.post("/api/home/chat", async (_richiesta, risposta) => {
+    const numero = await home.apriChat();
+    if (numero === undefined) return risposta.code(409).send({ errore: "Le chat della Home sono già tutte aperte: chiudine una." });
+    return { numero };
+  });
+  app.delete<{ Params: { numero: string } }>("/api/home/chat/:numero", async (richiesta, risposta) => {
+    const rifiuto = await home.chiudiChat(Number(richiesta.params.numero));
+    if (rifiuto === "non-trovato") return risposta.code(404).send(CHAT_NON_APERTA);
+    if (rifiuto !== undefined) return risposta.code(409).send({ errore: "Claude sta lavorando in questa chat: aspetta che finisca, o fermalo." });
+    return risposta.code(202).send({ accettato: true });
   });
 
   // Flusso in tempo reale: prima tutta la storia dell'argomento aperto, poi gli eventi nuovi.
@@ -945,9 +969,14 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
   // storia arriva "storia": l'interfaccia la mostra tutta insieme, senza scorrerla davanti al proprietario.
   // Con `dopo` e `versione` chi ha già una copia della storia riprende da lì (ADR 0046).
   app.get<{ Querystring: RichiestaDiStoria }>("/api/home/eventi", (richiesta, risposta) => {
+    const casa = homeDi(richiesta);
+    if (casa === undefined) {
+      void risposta.code(404).send(CHAT_NON_APERTA);
+      return;
+    }
     const flusso = apriFlusso(richiesta, risposta);
     flusso.allaChiusura(
-      home.segui(
+      casa.segui(
         flusso.manda,
         () => flusso.manda({}, "azzera"),
         (indice) => flusso.manda(indice, FINE_STORIA),
@@ -955,7 +984,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       ),
     );
     // Il proprietario ha aperto la Home: avviamo l'harness prima che scriva.
-    home.prepara();
+    casa.prepara();
   });
 
   // La ricerca nel testo di tutte le conversazioni: Home, argomenti archiviati e progetti.
@@ -979,7 +1008,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       .type("text/markdown; charset=utf-8")
       .header("Content-Disposition", `attachment; filename="${nomeDellEsportazione(titolo)}"`)
       .send(esportaInMarkdown(titolo, storia));
-  app.get("/api/home/esporta", async (_richiesta, risposta) => esporta(risposta, "Home", home.canale.archiviati));
+  app.get("/api/home/esporta", async (richiesta, risposta) => esporta(risposta, "Home", (homeDi(richiesta) ?? home).canale.archiviati));
   app.get<{ Params: { id: string } }>("/api/argomenti/:id/esporta", async (richiesta, risposta) => {
     const canale = await home.canaleDi(richiesta.params.id);
     const titolo = home.archiviati().find((voce) => voce.id === richiesta.params.id)?.titolo ?? "Argomento";
@@ -1002,17 +1031,21 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       },
     },
   } as const;
-  app.get<{ Params: { id: string } }>("/api/home/messaggi/:id/riavvolgimento", async (richiesta) => home.anteprimaRiavvolgimento(richiesta.params.id));
+  app.get<{ Params: { id: string } }>("/api/home/messaggi/:id/riavvolgimento", async (richiesta) =>
+    (homeDi(richiesta) ?? home).anteprimaRiavvolgimento(richiesta.params.id),
+  );
   app.post<{ Params: { id: string }; Body: { testo: string; file: boolean } }>("/api/home/messaggi/:id/modifica", corpoModifica, async (richiesta, risposta) => {
     const testo = richiesta.body.testo.trim();
     if (testo === "") return risposta.code(400).send({ errore: "Il messaggio è vuoto." });
-    const motivo = await home.modifica(richiesta.params.id, testo, { file: richiesta.body.file });
+    const casa = homeDi(richiesta);
+    if (casa === undefined) return risposta.code(404).send(CHAT_NON_APERTA);
+    const motivo = await casa.modifica(richiesta.params.id, testo, { file: richiesta.body.file });
     if (motivo !== undefined) return risposta.code(409).send({ errore: motivo });
     return risposta.code(202).send({ accettato: true });
   });
   // La scheda della sessione: la parte finale dell'uscita di un'attività, nella Home o in un progetto.
   app.get<{ Params: { idAttivita: string } }>("/api/home/attivita/:idAttivita/uscita", async (richiesta, risposta) => {
-    const esito = await home.uscitaAttivita(richiesta.params.idAttivita);
+    const esito = await (homeDi(richiesta) ?? home).uscitaAttivita(richiesta.params.idAttivita);
     return "motivo" in esito ? risposta.code(409).send({ errore: esito.motivo }) : esito;
   });
   app.get<{ Params: { id: string; idAttivita: string } }>("/api/progetti/:id/attivita/:idAttivita/uscita", async (richiesta, risposta) => {
@@ -1064,7 +1097,9 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     async (richiesta, risposta) => {
       const testo = richiesta.body.testo.trim();
       if (testo === "") return risposta.code(400).send({ errore: "Il messaggio è vuoto." });
-      const motivo = await home.ramoDa(richiesta.params.id, testo);
+      const casa = homeDi(richiesta);
+      if (casa === undefined) return risposta.code(404).send(CHAT_NON_APERTA);
+      const motivo = await casa.ramoDa(richiesta.params.id, testo);
       if (motivo !== undefined) return risposta.code(409).send({ errore: motivo });
       return risposta.code(202).send({ accettato: true });
     },
@@ -1086,13 +1121,15 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
 
   // Un'azione per intero: nella storia l'interfaccia ne ha solo un riassunto, e la chiede quando il proprietario la apre.
   app.get<{ Params: { idAzione: string } }>("/api/home/azioni/:idAzione", async (richiesta, risposta) => {
-    const intera = azioneIntera(home.canale.archiviati, richiesta.params.idAzione);
+    const intera = azioneIntera((homeDi(richiesta) ?? home).canale.archiviati, richiesta.params.idAzione);
     return intera ?? risposta.code(404).send({ errore: "Azione non trovata." });
   });
 
   // Il proprietario chiude l'argomento aperto e ne comincia uno nuovo.
-  app.post("/api/home/argomento-nuovo", async (_richiesta, risposta) => {
-    const rifiuto = await home.nuovoArgomento();
+  app.post("/api/home/argomento-nuovo", async (richiesta, risposta) => {
+    const casa = homeDi(richiesta);
+    if (casa === undefined) return risposta.code(404).send(CHAT_NON_APERTA);
+    const rifiuto = await casa.nuovoArgomento();
     if (rifiuto !== undefined) return risposta.code(409).send({ errore: ERRORI_PASSAGGIO[rifiuto] });
     return risposta.code(202).send({ accettato: true });
   });
@@ -1280,10 +1317,25 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     flusso.allaChiusura(lavori.iscrivi((stato) => flusso.manda(stato, "progetti")));
     // Gli argomenti e la Home con l'indice dei loro archivi (ADR 0046).
     const mandaArgomenti = (): void => flusso.manda(home.conIndici(argomenti.stato()), "argomenti");
-    const mandaHome = (): void => flusso.manda({ condizione: home.condizione, argomento: { id: home.idArgomentoAperto, ...home.canale.indice } }, "home");
+    // La condizione della Home e quella delle sue chat parallele: si rimanda solo quando cambia.
+    let ultimaHome = "";
+    const mandaHome = (): void => {
+      const chat = home.condizioniDelleChat();
+      const vista = {
+        condizione: home.condizione,
+        complessiva: home.condizioneComplessiva,
+        argomento: { id: home.idArgomentoAperto, ...home.canale.indice },
+        ...(chat.length === 0 ? {} : { chat }),
+      };
+      const testo = JSON.stringify(vista);
+      if (testo === ultimaHome) return;
+      ultimaHome = testo;
+      flusso.manda(vista, "home");
+    };
     flusso.allaChiusura(argomenti.iscrivi(mandaArgomenti));
     // Anche la Home dice se lavora o se aspetta il proprietario, come i progetti nella barra laterale.
     flusso.allaChiusura(home.iscriviCondizione(mandaHome));
+    flusso.allaChiusura(home.suiCambi(mandaHome));
     // Un passaggio di argomento cambia gli archivi dopo che l'elenco è già partito: si rimanda.
     flusso.allaChiusura(
       home.dopoIPassaggi(() => {
@@ -2059,7 +2111,8 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
   app.get<{ Params: { id: string; idImmagine: string } }>(
     "/api/progetti/:id/immagini/:idImmagine",
     (richiesta, risposta) =>
-      mandaImmagine(risposta, immagini.trova(richiesta.params.id, richiesta.params.idImmagine)),
+      // Le immagini di una chat parallela stanno con quelle del suo progetto.
+      mandaImmagine(risposta, immagini.trova(progettoDellaConversazione(richiesta.params.id), richiesta.params.idImmagine)),
   );
 
   app.post<{ Params: { id: string }; Body: CorpoMessaggio }>(
@@ -2108,7 +2161,8 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       } },
     async (richiesta, risposta) => {
       const { id, idPermesso } = richiesta.params;
-      consensoDato(opzioni.approvazioni, id, lavori.canale(id), idPermesso, richiesta.body.decisione);
+      // Le approvazioni sono del progetto, anche quando il permesso viene da una sua chat parallela.
+      consensoDato(opzioni.approvazioni, progettoDellaConversazione(id), lavori.canale(id), idPermesso, richiesta.body.decisione);
       if (!lavori.decidiPermesso(id, idPermesso, richiesta.body.decisione, richiesta.body.sempre === true)) {
         return risposta.code(404).send({ errore: "Questo permesso non è più in attesa." });
       }
@@ -2857,4 +2911,25 @@ function seguiDaDove(
   if (da !== undefined && !riprende) flusso.manda({}, "azzera");
   flusso.allaChiusura(canale.iscrivi(flusso.manda, riprende ? da.dopo : 0));
   flusso.manda(canale.indice, FINE_STORIA);
+}
+
+/**
+ * Le rotte di una chat parallela della Home (ADR 0052): `/api/home/chat/N/…` diventa `/api/home/…`
+ * con `chat=N` tra i parametri. Gli altri indirizzi restano come sono.
+ */
+export function indirizzoDellaChat(indirizzo: string): string {
+  const trovato = /^\/api\/home\/chat\/(\d+)(\/[^?]*)(\?.*)?$/.exec(indirizzo);
+  if (trovato === null) return indirizzo;
+  const [, numero, resto, parametri] = trovato;
+  return `/api/home${resto}${parametri === undefined ? "?" : `${parametri}&`}chat=${numero}`;
+}
+
+/** Il numero della chat parallela indicato in un indirizzo della Home; nulla per la principale. */
+export function numeroDellaChatNellIndirizzo(indirizzo: string): number | undefined {
+  const domanda = indirizzo.indexOf("?");
+  if (domanda < 0) return undefined;
+  const valore = new URLSearchParams(indirizzo.slice(domanda + 1)).get("chat");
+  if (valore === null) return undefined;
+  const numero = Number(valore);
+  return Number.isInteger(numero) ? numero : -1;
 }

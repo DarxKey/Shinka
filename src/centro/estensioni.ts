@@ -71,8 +71,8 @@ export interface OpzioniEstensioni {
   inAmbiente(idAmbiente: string): PortaEstensioni;
   /** L'archivio dell'argomento aperto nella Home, chiesto nel momento in cui serve. */
   canaleHome(): Canale;
-  /** Aggiunge un'informazione al contesto della Home, senza farla rispondere. */
-  annotaHome(testo: string): void;
+  /** Aggiunge un'informazione al contesto della Home, senza farla rispondere: nella chat del canale indicato, o nella principale. */
+  annotaHome(testo: string, canale?: Canale): void;
   /** Come si guarda un plugin prima di proporlo. Nei test se ne mette uno finto. */
   esamina?(repository: string, riferimento: string | undefined, cartella: string | undefined): Promise<Esame>;
   /** Quali repository si accettano: di suo solo quelli raggiunti in https. */
@@ -233,7 +233,7 @@ export class Estensioni {
    * La Home propone un'estensione: se la richiesta sta in piedi compare la scheda, e nient'altro.
    * Di un plugin viene letto prima il contenuto, perché la scheda lo dica; non viene eseguito nulla.
    */
-  async proponi(richiesta: RichiestaEstensione): Promise<{ idProposta: string } | { motivo: string }> {
+  async proponi(richiesta: RichiestaEstensione, canaleDellaChat?: Canale): Promise<{ idProposta: string } | { motivo: string }> {
     const nome = richiesta.nome.trim();
     const difetto = difettoDelNome(nome);
     if (difetto !== undefined) return { motivo: difetto };
@@ -293,7 +293,7 @@ export class Estensioni {
     }
 
     const idProposta = randomUUID();
-    const canale = this.#o.canaleHome();
+    const canale = canaleDellaChat ?? this.#o.canaleHome();
     this.#proposte.set(idProposta, { nome, descrizione, definizione, chiavi, ...(contenuto === undefined ? {} : { contenuto }), idAmbiente: ambiente.id, canale, inProva: false });
     canale.pubblica({
       tipo: "estensione-proposta",
@@ -414,6 +414,7 @@ export class Estensioni {
       this.#o.annotaHome(
         `[Shinka] Il proprietario ha confermato l'estensione "${proposta.nome}", ma nell'ambiente "${ambiente}" non è partita, e quindi non è stata accesa. ` +
           `Il motivo: ${esito.motivo} Se sai come correggerla, riproponila corretta; altrimenti di' al proprietario che cosa manca.`,
+        proposta.canale,
       );
       return { stato: "non-partita", motivo: esito.motivo };
     }
@@ -428,6 +429,7 @@ export class Estensioni {
           ? "Le sue skill valgono nelle conversazioni che partono da adesso."
           : `Offre questi strumenti: ${esito.strumenti.join(", ") || "nessuno"}. Valgono nelle conversazioni che partono da adesso` +
             `${proposta.idAmbiente === ID_AMBIENTE_DEL_CENTRO ? ", questa compresa dal prossimo messaggio" : ""}.`),
+      proposta.canale,
     );
     return { stato: "accesa", estensione, strumenti: esito.strumenti };
   }
@@ -438,7 +440,7 @@ export class Estensioni {
     if (proposta === undefined || proposta.inProva) return false;
     this.#proposte.delete(idProposta);
     proposta.canale.pubblica({ tipo: "estensione-decisa", idProposta, esito: "annullata" });
-    this.#o.annotaHome(`[Shinka] Il proprietario ha annullato la proposta dell'estensione "${proposta.nome}": non è stato installato né avviato nulla.`);
+    this.#o.annotaHome(`[Shinka] Il proprietario ha annullato la proposta dell'estensione "${proposta.nome}": non è stato installato né avviato nulla.`, proposta.canale);
     return true;
   }
 

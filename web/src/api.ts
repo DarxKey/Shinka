@@ -11,7 +11,7 @@ import type { NuovoProgrammato, StatoProgrammati } from "../../src/protocollo/pr
 import type { AccessiDiUnAmbiente, EsitoAccessi, ImpostazioniViste, RichiestaAccessi } from "../../src/protocollo/accessi.ts";
 import type { Allegato } from "../../src/protocollo/allegati.ts";
 import type { ElaboratoConsegnato } from "../../src/protocollo/elaborati.ts";
-import type { AnteprimaRiavvolgimento, DecisionePermesso, RispostaAParte, RispostaAlleDomande, UscitaAttivita } from "../../src/protocollo/eventi.ts";
+import type { AnteprimaRiavvolgimento, DecisionePermesso, RispostaAlleDomande, UscitaAttivita } from "../../src/protocollo/eventi.ts";
 import type { StileDiRisposta } from "../../src/protocollo/stili.ts";
 import type { ElencoCartella, FileTrovati } from "../../src/protocollo/file-progetto.ts";
 import type { Archiviazione, Uso } from "../../src/protocollo/uso.ts";
@@ -55,6 +55,27 @@ export function baseDellArgomento(idArgomento: string): string {
 /** Indirizzo di base delle chiamate che riguardano la conversazione di un progetto. */
 export function baseDelProgetto(idProgetto: string): string {
   return `/api/progetti/${encodeURIComponent(idProgetto)}`;
+}
+
+/** L'indirizzo di base di una chat della Home: la principale, o una chat parallela (ADR 0052). */
+export function baseDellaChatDellaHome(numero: number): string {
+  return numero === 1 ? BASE_HOME : `${BASE_HOME}/chat/${numero}`;
+}
+
+/** Vero se l'indirizzo è quello di una chat della Home, principale o parallela. */
+export function eDellaHome(base: string): boolean {
+  return base === BASE_HOME || base.startsWith(`${BASE_HOME}/chat/`);
+}
+
+/** Apre una chat parallela nella Home, o con un progetto in quel progetto. Restituisce il suo numero. */
+export async function apriChatParallela(idProgetto?: string): Promise<number> {
+  const dati = (await chiama("POST", idProgetto === undefined ? `${BASE_HOME}/chat` : `${baseDelProgetto(idProgetto)}/chat`)) as { numero: number };
+  return dati.numero;
+}
+
+/** Chiude una chat parallela della Home, o con un progetto di quel progetto. */
+export async function chiudiChatParallela(numero: number, idProgetto?: string): Promise<void> {
+  await chiama("DELETE", idProgetto === undefined ? `${BASE_HOME}/chat/${numero}` : `${baseDelProgetto(idProgetto)}/chat/${numero}`);
 }
 
 async function chiama(metodo: "GET" | "POST" | "PUT" | "DELETE", percorso: string, corpo?: unknown): Promise<unknown> {
@@ -178,18 +199,13 @@ export async function leggiArchiviazione(): Promise<Archiviazione> {
 }
 
 /** Il messaggio modificato parte in un argomento nuovo della Home, con la storia fino a lì. */
-export async function mandaInUnRamo(idMessaggio: string, testo: string): Promise<void> {
-  await chiama("POST", `${BASE_HOME}/messaggi/${encodeURIComponent(idMessaggio)}/ramo`, { testo });
+export async function mandaInUnRamo(base: string, idMessaggio: string, testo: string): Promise<void> {
+  await chiama("POST", `${base}/messaggi/${encodeURIComponent(idMessaggio)}/ramo`, { testo });
 }
 
 /** La parte finale dell'uscita di un'attività della conversazione. */
 export async function leggiUscitaAttivita(base: string, idAttivita: string): Promise<UscitaAttivita> {
   return (await chiama("GET", `${base}/attivita/${encodeURIComponent(idAttivita)}/uscita`)) as UscitaAttivita;
-}
-
-/** Una domanda a parte: Claude risponde, e nella conversazione non resta nulla. */
-export async function chiediAParte(base: string, domanda: string): Promise<RispostaAParte> {
-  return (await chiama("POST", `${base}/a-parte`, { domanda })) as RispostaAParte;
 }
 
 /** Gli stili di risposta tra cui scegliere; `siCreano` dice se se ne possono aggiungere. */
@@ -319,9 +335,9 @@ export async function interrompi(base: string): Promise<void> {
   await chiama("POST", `${base}/interrompi`);
 }
 
-/** Chiude l'argomento aperto nella Home e ne comincia uno nuovo. */
-export async function nuovoArgomento(): Promise<void> {
-  await chiama("POST", `${BASE_HOME}/argomento-nuovo`);
+/** Chiude l'argomento aperto in una chat della Home, di suo la principale, e ne comincia uno nuovo. */
+export async function nuovoArgomento(base: string = BASE_HOME): Promise<void> {
+  await chiama("POST", `${base}/argomento-nuovo`);
 }
 
 /** Riprende un argomento archiviato: quello aperto viene archiviato al suo posto. */

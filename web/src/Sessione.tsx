@@ -4,6 +4,7 @@
  * con la loro uscita) e quanti file sono stati cambiati.
  */
 
+import { progettoDellaConversazione } from "../../src/protocollo/incarichi.ts";
 import { useQuadroCorrente } from "./Quadro.tsx";
 import { frammentoDi } from "./vista.ts";
 import { CartelleCollegate } from "./Collegate.tsx";
@@ -41,7 +42,8 @@ export function SchedaSessione({
   const inCorso = attivita.filter((voce) => voce.stato === "in-corso").length;
   // Un progetto può avere cartelle collegate in altri ambienti; la Home no.
   const codificato = /^\/api\/progetti\/([^/]+)$/.exec(base)?.[1];
-  const idProgetto = codificato === undefined ? undefined : decodeURIComponent(codificato);
+  // In una chat parallela (ADR 0052) le scelte sono quelle del suo progetto.
+  const idProgetto = codificato === undefined ? undefined : progettoDellaConversazione(decodeURIComponent(codificato));
   const contesto = stato?.contesto;
   const etichetta = inCorso > 0 ? `Sessione: ${inCorso === 1 ? "un'attività in corso" : `${inCorso} attività in corso`}` : "Sessione";
   return (

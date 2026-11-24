@@ -49,7 +49,7 @@ export interface OpzioniSviluppo {
   /** L'archivio dell'argomento aperto nella Home, chiesto nel momento in cui serve. */
   canaleHome(): Canale;
   /** Aggiunge un'informazione al contesto della Home, senza farla rispondere. */
-  annotaHome(testo: string): void;
+  annotaHome(testo: string, canale?: Canale): void;
   /** Spegne il centro perché il guardiano lo riaccenda con la versione nuova. */
   riavvia(): void;
   /** I nodi collegati che sanno aggiornarsi: dopo l'installazione passano anche loro alla versione nuova. */
@@ -159,9 +159,8 @@ export class SviluppoDiShinka {
   }
 
   /** La Home propone di sviluppare un pezzo nuovo: compare la scheda, e nient'altro. */
-  proponi(proposta: { titolo: string; richiesta: string }): string {
+  proponi(proposta: { titolo: string; richiesta: string }, canale: Canale = this.#o.canaleHome()): string {
     const idProposta = randomUUID();
-    const canale = this.#o.canaleHome();
     this.#proposte.set(idProposta, { ...proposta, canale });
     // La scheda dice con che cosa lavorerebbe il progetto Shinka, e tra quali modelli si può scegliere.
     const modelli = modelliDa(this.#o.lavori.canale(this.#progetto.id)) ?? modelliDa(canale);
@@ -205,6 +204,7 @@ export class SviluppoDiShinka {
     this.#o.annotaHome(
       `[Shinka] Il proprietario ha confermato la proposta di sviluppo "${proposta.titolo}": la richiesta è passata al progetto ` +
         `"${this.#progetto.nome}", e il lavoro prosegue lì, non qui.`,
+      proposta.canale,
     );
     return this.#progetto.id;
   }
@@ -215,7 +215,7 @@ export class SviluppoDiShinka {
     if (proposta === undefined) return false;
     this.#proposte.delete(idProposta);
     proposta.canale.pubblica({ tipo: "sviluppo-deciso", idProposta, esito: "annullata" });
-    this.#o.annotaHome(`[Shinka] Il proprietario ha annullato la proposta di sviluppo "${proposta.titolo}": non è partito nulla.`);
+    this.#o.annotaHome(`[Shinka] Il proprietario ha annullato la proposta di sviluppo "${proposta.titolo}": non è partito nulla.`, proposta.canale);
     return true;
   }
 

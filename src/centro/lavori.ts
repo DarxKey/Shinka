@@ -14,7 +14,6 @@ import type {
   DecisionePermesso,
   EventoArchiviato,
   PortaConversazione,
-  RispostaAParte,
   RispostaAlleDomande,
   UscitaAttivita,
 } from "../protocollo/eventi.ts";
@@ -44,7 +43,8 @@ import type { CustodiaImmagini } from "./immagini.ts";
 import type { NuovoProgetto, RegistroProgetti } from "./progetti.ts";
 import { Incarichi } from "./incarichi.ts";
 import type { Attivita } from "../protocollo/attivita.ts";
-import { descriviChiImplementa, type ChiImplementa } from "../protocollo/incarichi.ts";
+import { descriviChiImplementa, progettoDellaConversazione, type ChiImplementa } from "../protocollo/incarichi.ts";
+import { CHAT_PRINCIPALE, conversazioneDellaChat, numeroDellaChat } from "../protocollo/chat-parallele.ts";
 import type { EsitoStrumento } from "../protocollo/strumenti.ts";
 
 /** Un progetto appena nato. `filePortati` c'è se doveva portare con sé i file di un argomento. */
@@ -97,6 +97,12 @@ export interface OpzioniLavori {
   durataIncaricoMs?: number;
 }
 
+/** Ciò che una chat parallela di un progetto deve sapere quando comincia (ADR 0052). */
+const NOTA_CHAT_PARALLELA =
+  "[Shinka] Questa è una chat parallela del progetto: un'altra conversazione nella stessa cartella, che il proprietario ha aperto " +
+  "in una scheda accanto alla principale, che intanto può lavorare su altro. Non cambiare i file su cui sta lavorando l'altra " +
+  "senza che il proprietario lo chieda; lo stato del progetto lo tieni aggiornato come nella principale.";
+
 export class LavoriDeiProgetti {
   /** Le impostazioni scelte per un lavoro solo, finché quel lavoro non finisce. */
   readonly #perQuestoLavoro = new Map<string, ImpostazioniConversazione>();
@@ -128,7 +134,9 @@ export class LavoriDeiProgetti {
 
   static async apri(opzioni: OpzioniLavori): Promise<LavoriDeiProgetti> {
     const lavori = new LavoriDeiProgetti(opzioni);
-    for (const progetto of opzioni.progetti.elenco()) await lavori.#apriCanale(progetto.id);
+    for (const progetto of opzioni.progetti.elenco()) {
+      for (const idConversazione of lavori.#conversazioniDi(progetto.id)) await lavori.#apriCanale(idConversazione);
+    }
     opzioni.progetti.iscrivi(() => lavori.#avvisa());
     opzioni.ambienti.iscrivi(() => lavori.#avvisa());
     opzioni.ambienti.iscriviScollegamenti((idAmbiente) => lavori.#ambienteScollegato(idAmbiente));
@@ -316,21 +324,84 @@ export class LavoriDeiProgetti {
     return this.#esecutore(idAmbiente).elencaFile(origine);
   }
 
-  canale(idProgetto: string): Canale | undefined {
-    return this.#canali.get(idProgetto);
+  /** L'archivio di una conversazione di un progetto: la principale, con l'identificativo del progetto, o una chat parallela. */
+  canale(idConversazione: string): Canale | undefined {
+    return this.#canali.get(idConversazione);
   }
 
-  /** Il proprietario ha aperto il progetto: prepara la conversazione, se il suo ambiente è attivo. */
-  prepara(idProgetto: string): void {
-    const progetto = this.#o.progetti.trova(idProgetto);
+  /** Le conversazioni del progetto: la principale e le chat parallele aperte (ADR 0052). */
+  #conversazioniDi(idProgetto: string): string[] {
+    return [idProgetto, ...this.#o.progetti.chatParallele(idProgetto).map((numero) => conversazioneDellaChat(idProgetto, numero))];
+  }
+
+  /** Il progetto di una conversazione aperta, principale o parallela; nulla se non c'è. */
+  #progettoDi(idConversazione: string): Progetto | undefined {
+    if (!this.#canali.has(idConversazione)) return undefined;
+    return this.#o.progetti.trova(progettoDellaConversazione(idConversazione));
+  }
+
+  /**
+   * Il proprietario apre una chat parallela nel progetto (ADR 0052): un'altra conversazione nella
+   * stessa cartella, con le stesse impostazioni. Il suo identificativo, o il motivo se non si può.
+   */
+  async apriChat(idProgetto: string): Promise<{ idConversazione: string; numero: number } | { motivo: string }> {
+    if (this.#o.progetti.trova(idProgetto) === undefined) return { motivo: "Progetto non trovato." };
+    const numero = await this.#o.progetti.apriChat(idProgetto);
+    if (numero === undefined) return { motivo: "Le chat del progetto sono già tutte aperte: chiudine una." };
+    const idConversazione = conversazioneDellaChat(idProgetto, numero);
+    // Un archivio rimasto da una chat di prima con lo stesso numero non le appartiene.
+    await this.#togliArchivio(idConversazione);
+    await this.#apriCanale(idConversazione);
+    // La chat lo viene a sapere con il primo messaggio.
+    this.#daDire.set(idConversazione, [NOTA_CHAT_PARALLELA]);
+    this.#avvisa();
+    return { idConversazione, numero };
+  }
+
+  /**
+   * Il proprietario chiude una chat parallela: se lavora si ferma, la sua conversazione si chiude e
+   * la sua storia si cancella. Ciò che ha fatto resta nei file. Falso se non c'era.
+   */
+  async chiudiChat(idProgetto: string, numero: number): Promise<boolean> {
+    const idConversazione = conversazioneDellaChat(idProgetto, numero);
+    if (numero === CHAT_PRINCIPALE || !this.#canali.has(idConversazione)) return false;
+    if ((this.#canali.get(idConversazione)?.sospesi.turni ?? 0) > 0) await this.#porte.get(idConversazione)?.interrompi().catch(() => {});
+    this.#chiudiConversazione(idConversazione);
+    await this.#o.progetti.chiudiChat(idProgetto, numero);
+    await this.#togliArchivio(idConversazione);
+    this.#avvisa();
+    return true;
+  }
+
+  /** Chiude la conversazione e dimentica il suo archivio in memoria. */
+  #chiudiConversazione(idConversazione: string): void {
+    this.#porte.get(idConversazione)?.chiudi();
+    this.#porte.delete(idConversazione);
+    this.#canali.delete(idConversazione);
+    this.#attivitaDellaConversazione.delete(idConversazione);
+    this.#daRiaprire.delete(idConversazione);
+  }
+
+  async #togliArchivio(idConversazione: string): Promise<void> {
+    const archivio = join(this.#o.cartellaConversazioni, `${idConversazione}.jsonl`);
+    await rm(archivio, { force: true });
+    await rm(fileDellaVersione(archivio), { force: true });
+  }
+
+  /** Il proprietario ha aperto una conversazione del progetto: la prepara, se il suo ambiente è attivo. */
+  prepara(idConversazione: string): void {
+    const progetto = this.#progettoDi(idConversazione);
     if (progetto !== undefined && this.#o.ambienti.attivo(progetto.idAmbiente)) {
-      this.#porta(progetto).prepara();
+      this.#porta(progetto, idConversazione).prepara();
     }
   }
 
-  /** Manda un messaggio alla conversazione del progetto. Lancia `AmbienteSpento` se non può. */
+  /**
+   * Manda un messaggio a una conversazione del progetto: la principale, con l'identificativo del
+   * progetto, o una chat parallela. Lancia `AmbienteSpento` se non può.
+   */
   invia(
-    idProgetto: string,
+    idConversazione: string,
     testo: string,
     allegati: Allegato[] = [],
     /**
@@ -339,20 +410,21 @@ export class LavoriDeiProgetti {
      */
     perQuestoLavoro?: ModificaImpostazioni,
   ): void {
-    const progetto = this.#o.progetti.trova(idProgetto);
+    const progetto = this.#progettoDi(idConversazione);
     if (progetto === undefined) throw new Error("Progetto non trovato.");
     if (!this.#o.ambienti.attivo(progetto.idAmbiente)) throw new AmbienteSpento();
-    const porta = this.#porta(progetto);
-    if (perQuestoLavoro !== undefined) {
-      const temporanee = applicaModifica(this.impostazioni(idProgetto), perQuestoLavoro);
-      this.#perQuestoLavoro.set(idProgetto, temporanee);
+    const porta = this.#porta(progetto, idConversazione);
+    // Le impostazioni per un lavoro solo valgono nella principale: è lì che partono i lavori programmati.
+    if (perQuestoLavoro !== undefined && idConversazione === progetto.id) {
+      const temporanee = applicaModifica(this.impostazioni(progetto.id), perQuestoLavoro);
+      this.#perQuestoLavoro.set(progetto.id, temporanee);
       porta.imposta(temporanee);
-      this.#canali.get(idProgetto)?.pubblica({ tipo: "impostazioni", impostazioni: temporanee });
+      this.#canali.get(progetto.id)?.pubblica({ tipo: "impostazioni", impostazioni: temporanee });
     }
-    const nota = this.#o.notaPrimaDelMessaggio?.(progetto.id);
+    const nota = this.#o.notaPrimaDelMessaggio?.(idConversazione);
     if (nota !== undefined) porta.annota(nota);
-    for (const daDire of this.#daDire.get(idProgetto) ?? []) porta.annota(daDire);
-    this.#daDire.delete(idProgetto);
+    for (const daDire of this.#daDire.get(idConversazione) ?? []) porta.annota(daDire);
+    this.#daDire.delete(idConversazione);
     porta.invia(testo, allegati);
   }
 
@@ -368,12 +440,12 @@ export class LavoriDeiProgetti {
 
   /** Le impostazioni salvate di un progetto: quelle con cui lavora quando non c'è una scelta per un lavoro solo. */
   impostazioni(idProgetto: string): ImpostazioniConversazione {
-    return this.#o.progetti.impostazioni(idProgetto) ?? IMPOSTAZIONI_DI_PROGETTO;
+    return this.#o.progetti.impostazioni(progettoDellaConversazione(idProgetto)) ?? IMPOSTAZIONI_DI_PROGETTO;
   }
 
-  /** Le impostazioni con cui il progetto lavora adesso: quelle di un lavoro solo, se ce ne sono. */
-  impostazioniInUso(idProgetto: string): ImpostazioniConversazione {
-    return this.#perQuestoLavoro.get(idProgetto) ?? this.impostazioni(idProgetto);
+  /** Le impostazioni con cui una conversazione del progetto lavora adesso: nella principale, quelle di un lavoro solo, se ce ne sono. */
+  impostazioniInUso(idConversazione: string): ImpostazioniConversazione {
+    return this.#perQuestoLavoro.get(idConversazione) ?? this.impostazioni(idConversazione);
   }
 
   /** Finito il lavoro, tornano le impostazioni salvate. */
@@ -389,25 +461,29 @@ export class LavoriDeiProgetti {
    * e vale dal messaggio successivo. Nulla se il progetto non esiste.
    */
   async cambiaImpostazioni(
-    idProgetto: string,
+    idConversazione: string,
     modifica: ModificaImpostazioni,
   ): Promise<ImpostazioniConversazione | undefined> {
-    const canale = this.#canali.get(idProgetto);
-    if (canale === undefined || this.#o.progetti.trova(idProgetto) === undefined) return undefined;
+    // Le impostazioni sono del progetto: valgono per la principale e per le chat parallele.
+    const progetto = this.#progettoDi(idConversazione);
+    if (progetto === undefined) return undefined;
+    const idProgetto = progetto.id;
     // Una scelta fatta a mano vale come scelta di sempre, anche durante un lavoro con impostazioni sue.
     this.#perQuestoLavoro.delete(idProgetto);
     const nuove = applicaModifica(this.impostazioni(idProgetto), modifica);
     await this.#o.progetti.ricordaImpostazioni(idProgetto, nuove);
-    this.#porte.get(idProgetto)?.imposta(nuove);
-    canale.pubblica({ tipo: "impostazioni", impostazioni: nuove });
+    for (const id of this.#conversazioniDi(idProgetto)) {
+      this.#porte.get(id)?.imposta(nuove);
+      this.#canali.get(id)?.pubblica({ tipo: "impostazioni", impostazioni: nuove });
+    }
     return nuove;
   }
 
-  decidiPermesso(idProgetto: string, idPermesso: string, decisione: DecisionePermesso, sempre?: boolean): boolean {
+  decidiPermesso(idConversazione: string, idPermesso: string, decisione: DecisionePermesso, sempre?: boolean): boolean {
     // Il permesso può essere di chi svolge un incarico del progetto.
     return (
-      (this.#porte.get(idProgetto)?.decidiPermesso(idPermesso, decisione, sempre) ?? false) ||
-      this.#incarichi.decidiPermesso(idProgetto, idPermesso, decisione, sempre)
+      (this.#porte.get(idConversazione)?.decidiPermesso(idPermesso, decisione, sempre) ?? false) ||
+      this.#incarichi.decidiPermesso(progettoDellaConversazione(idConversazione), idPermesso, decisione, sempre)
     );
   }
 
@@ -428,22 +504,22 @@ export class LavoriDeiProgetti {
    */
   async cambiaEstensioni(idProgetto: string, scelte: readonly string[] | undefined): Promise<boolean> {
     if (!(await this.#o.progetti.ricordaEstensioni(idProgetto, scelte))) return false;
-    // Ferma, la conversazione si chiude subito e la nota arriva con il prossimo messaggio; al lavoro, dopo il turno.
-    if ((this.#canali.get(idProgetto)?.sospesi.turni ?? 0) > 0) this.#daRiaprire.add(idProgetto);
-    else this.#riapri(idProgetto);
-    this.#annotaOPoi(
-      idProgetto,
-      `[Shinka] Il proprietario ha cambiato le estensioni di questo progetto: ${scelte === undefined ? "ora ha tutte quelle accese nel suo ambiente" : scelte.length === 0 ? "ora non ne ha nessuna" : `ora ha ${scelte.join(", ")}`}. Gli strumenti e i modelli locali sono quelli nuovi.`,
-    );
+    const nota = `[Shinka] Il proprietario ha cambiato le estensioni di questo progetto: ${scelte === undefined ? "ora ha tutte quelle accese nel suo ambiente" : scelte.length === 0 ? "ora non ne ha nessuna" : `ora ha ${scelte.join(", ")}`}. Gli strumenti e i modelli locali sono quelli nuovi.`;
+    for (const idConversazione of this.#conversazioniDi(idProgetto)) {
+      // Ferma, la conversazione si chiude subito e la nota arriva con il prossimo messaggio; al lavoro, dopo il turno.
+      if ((this.#canali.get(idConversazione)?.sospesi.turni ?? 0) > 0) this.#daRiaprire.add(idConversazione);
+      else this.#riapri(idConversazione);
+      this.#annotaOPoi(idConversazione, nota);
+    }
     return true;
   }
 
-  /** Chiude la conversazione del progetto: alla prossima richiesta riparte, dalla stessa sessione, con le scelte di adesso. */
-  #riapri(idProgetto: string): void {
-    this.#daRiaprire.delete(idProgetto);
-    const porta = this.#porte.get(idProgetto);
+  /** Chiude una conversazione del progetto: alla prossima richiesta riparte, dalla stessa sessione, con le scelte di adesso. */
+  #riapri(idConversazione: string): void {
+    this.#daRiaprire.delete(idConversazione);
+    const porta = this.#porte.get(idConversazione);
     if (porta === undefined) return;
-    this.#porte.delete(idProgetto);
+    this.#porte.delete(idConversazione);
     porta.chiudi();
   }
 
@@ -473,24 +549,20 @@ export class LavoriDeiProgetti {
   }
 
   /** Quali file tornerebbero com'erano riprendendo da prima di quel messaggio. */
-  async anteprimaRiavvolgimento(idProgetto: string, idMessaggio: string): Promise<AnteprimaRiavvolgimento> {
-    const progetto = this.#o.progetti.trova(idProgetto);
-    if (progetto === undefined) return { motivo: "Progetto non trovato." };
-    if (!this.#o.ambienti.attivo(progetto.idAmbiente)) return { motivo: "L'ambiente del progetto è spento." };
-    const porta = this.#porta(progetto);
+  async anteprimaRiavvolgimento(idConversazione: string, idMessaggio: string): Promise<AnteprimaRiavvolgimento> {
+    const porta = this.#portaAttiva(idConversazione);
+    if (typeof porta === "string") return { motivo: porta };
     return porta.anteprimaRiavvolgimento?.(idMessaggio) ?? { motivo: "Questa conversazione non sa ripartire da un messaggio." };
   }
 
   /** Il proprietario modifica un suo messaggio: si riparte da prima di quello, e il testo nuovo parte. Il motivo, se non si può. */
-  async modifica(idProgetto: string, idMessaggio: string, testo: string, opzioni: { file: boolean }): Promise<string | undefined> {
-    const progetto = this.#o.progetti.trova(idProgetto);
-    if (progetto === undefined) return "Progetto non trovato.";
-    if (!this.#o.ambienti.attivo(progetto.idAmbiente)) return "L'ambiente del progetto è spento.";
-    const porta = this.#porta(progetto);
+  async modifica(idConversazione: string, idMessaggio: string, testo: string, opzioni: { file: boolean }): Promise<string | undefined> {
+    const porta = this.#portaAttiva(idConversazione);
+    if (typeof porta === "string") return porta;
     if (porta.riprendiDa === undefined) return "Questa conversazione non sa ripartire da un messaggio.";
     const motivo = await porta.riprendiDa(idMessaggio, opzioni);
     if (motivo !== undefined) return motivo;
-    this.invia(idProgetto, testo);
+    this.invia(idConversazione, testo);
     return undefined;
   }
 
@@ -508,12 +580,12 @@ export class LavoriDeiProgetti {
     return porta.annullaModifiche?.(idTurno, percorsi) ?? { motivo: "Questa conversazione non tiene le modifiche dei turni." };
   }
 
-  /** La conversazione di un progetto con l'ambiente acceso, o perché non c'è. */
-  #portaAttiva(idProgetto: string): PortaConversazione | string {
-    const progetto = this.#o.progetti.trova(idProgetto);
+  /** Una conversazione di un progetto con l'ambiente acceso, o perché non c'è. */
+  #portaAttiva(idConversazione: string): PortaConversazione | string {
+    const progetto = this.#progettoDi(idConversazione);
     if (progetto === undefined) return "Progetto non trovato.";
     if (!this.#o.ambienti.attivo(progetto.idAmbiente)) return "L'ambiente del progetto è spento.";
-    return this.#porta(progetto);
+    return this.#porta(progetto, idConversazione);
   }
 
   /** La parte finale dell'uscita di un'attività del progetto. */
@@ -525,23 +597,18 @@ export class LavoriDeiProgetti {
     return porta.uscitaAttivita?.(idAttivita) ?? { motivo: "Questa conversazione non tiene le attività." };
   }
 
-  /** Una domanda a parte sulla conversazione del progetto: non vi resta. */
-  async chiediAParte(idProgetto: string, domanda: string): Promise<RispostaAParte> {
-    const progetto = this.#o.progetti.trova(idProgetto);
-    if (progetto === undefined) return { motivo: "Progetto non trovato." };
-    if (!this.#o.ambienti.attivo(progetto.idAmbiente)) return { motivo: "L'ambiente del progetto è spento." };
-    const porta = this.#porta(progetto);
-    return porta.chiediAParte?.(domanda) ?? { motivo: "Questa conversazione non sa rispondere a una domanda a parte." };
+  rispondiDomande(idConversazione: string, idDomande: string, risposta: RispostaAlleDomande): boolean {
+    return (
+      (this.#porte.get(idConversazione)?.rispondiDomande?.(idDomande, risposta) ?? false) ||
+      this.#incarichi.rispondiDomande(progettoDellaConversazione(idConversazione), idDomande, risposta)
+    );
   }
 
-  rispondiDomande(idProgetto: string, idDomande: string, risposta: RispostaAlleDomande): boolean {
-    return (this.#porte.get(idProgetto)?.rispondiDomande?.(idDomande, risposta) ?? false) || this.#incarichi.rispondiDomande(idProgetto, idDomande, risposta);
-  }
-
-  async interrompi(idProgetto: string): Promise<void> {
+  /** Ferma una conversazione del progetto; la principale ferma anche l'incarico che sta aspettando. */
+  async interrompi(idConversazione: string): Promise<void> {
     // Prima l'incarico: chi guida lo sta aspettando, e saprà che è stato fermato.
-    await this.#incarichi.interrompi(idProgetto);
-    await this.#porte.get(idProgetto)?.interrompi();
+    if (numeroDellaChat(idConversazione) === CHAT_PRINCIPALE) await this.#incarichi.interrompi(idConversazione);
+    await this.#porte.get(idConversazione)?.interrompi();
   }
 
   stato(): StatoProgetti {
@@ -553,6 +620,14 @@ export class LavoriDeiProgetti {
         condizione: this.#condizione(progetto),
         // Fin dove arriva il suo archivio: chi ne tiene una copia sa se gli manca qualcosa.
         ...this.#canali.get(progetto.id)?.indice,
+        ...(this.#o.progetti.chatParallele(progetto.id).length === 0
+          ? {}
+          : {
+              chat: this.#o.progetti.chatParallele(progetto.id).map((numero) => ({
+                numero,
+                condizione: this.#condizioneDi(progetto, conversazioneDellaChat(progetto.id, numero)),
+              })),
+            }),
       })),
     };
   }
@@ -601,17 +676,17 @@ export class LavoriDeiProgetti {
     if (progetto === undefined) return { motivo: "Progetto non trovato." };
     if (progetto.diShinka === true) return { motivo: "Il progetto Shinka non si elimina: è quello in cui Shinka sviluppa sé stessa." };
     // Un progetto al lavoro si ferma: il proprietario ha scelto di eliminarlo.
-    if ((this.#canali.get(idProgetto)?.sospesi.turni ?? 0) > 0 || this.#incarichi.inCorso(idProgetto)) {
-      await this.interrompi(idProgetto).catch(() => {});
+    const conversazioni = this.#conversazioniDi(idProgetto);
+    for (const idConversazione of conversazioni) {
+      if ((this.#canali.get(idConversazione)?.sospesi.turni ?? 0) > 0 || (idConversazione === idProgetto && this.#incarichi.inCorso(idProgetto))) {
+        await this.interrompi(idConversazione).catch(() => {});
+      }
     }
     this.#incarichi.chiudiDelProgetto(idProgetto);
-    this.#porte.get(idProgetto)?.chiudi();
-    this.#porte.delete(idProgetto);
+    for (const idConversazione of conversazioni) this.#chiudiConversazione(idConversazione);
     this.#perQuestoLavoro.delete(idProgetto);
-    this.#canali.delete(idProgetto);
     await this.#o.progetti.togli(idProgetto);
-    await rm(join(this.#o.cartellaConversazioni, `${idProgetto}.jsonl`), { force: true });
-    await rm(fileDellaVersione(join(this.#o.cartellaConversazioni, `${idProgetto}.jsonl`)), { force: true });
+    for (const idConversazione of conversazioni) await this.#togliArchivio(idConversazione);
     await this.#o.immagini.dimentica(idProgetto);
     // Le versioni dei file e le loro fotografie, per i progetti dell'ambiente del centro; non deve fermare l'eliminazione.
     if (this.#o.cartellaModifiche !== undefined) {
@@ -636,9 +711,16 @@ export class LavoriDeiProgetti {
     this.#porte.clear();
   }
 
+  /** La condizione del progetto, con quella delle sue chat parallele: se una aspetta il proprietario, il progetto aspetta te. */
   #condizione(progetto: Progetto): CondizioneProgetto {
+    const condizioni = this.#conversazioniDi(progetto.id).map((idConversazione) => this.#condizioneDi(progetto, idConversazione));
+    for (const parola of ["ambiente-spento", "aspetta-te", "al-lavoro"] as const) if (condizioni.includes(parola)) return parola;
+    return "fermo";
+  }
+
+  #condizioneDi(progetto: Progetto, idConversazione: string): CondizioneProgetto {
     if (!this.#o.ambienti.attivo(progetto.idAmbiente)) return "ambiente-spento";
-    const sospesi = this.#canali.get(progetto.id)?.sospesi;
+    const sospesi = this.#canali.get(idConversazione)?.sospesi;
     if (sospesi === undefined) return "fermo";
     if (sospesi.permessi > 0) return "aspetta-te";
     return sospesi.turni > 0 ? "al-lavoro" : "fermo";
@@ -669,51 +751,59 @@ export class LavoriDeiProgetti {
     return idAmbiente === ID_AMBIENTE_DEL_CENTRO ? this.#o.locale : this.#o.remoti.per(idAmbiente);
   }
 
-  #porta(progetto: Progetto): PortaConversazione {
-    const esistente = this.#porte.get(progetto.id);
+  /** La conversazione aperta di una conversazione del progetto: la principale, se non se ne indica un'altra. */
+  #porta(progetto: Progetto, idConversazione: string = progetto.id): PortaConversazione {
+    const esistente = this.#porte.get(idConversazione);
     if (esistente !== undefined) return esistente;
-    const canale = this.#canali.get(progetto.id);
+    const canale = this.#canali.get(idConversazione);
     if (canale === undefined) throw new Error("Il progetto non ha ancora il suo archivio.");
+    const principale = this.#canali.get(progetto.id) ?? canale;
     const porta = this.#esecutore(progetto.idAmbiente).apriConversazione(
-      progetto.id,
+      idConversazione,
       progetto.cartella,
-      () => this.#o.progetti.idSessione(progetto.id),
-      () => this.impostazioniInUso(progetto.id),
+      () => this.#o.progetti.idSessione(idConversazione),
+      () => this.impostazioniInUso(idConversazione),
       // Le immagini restano al centro come file: nell'archivio della conversazione va solo il loro nome.
       (evento) => {
-        // Lo stato del progetto entra nella storia solo quando cambia: dopo un riavvio
-        // chi lavora lo riferisce di nuovo, anche se è quello di prima.
-        if (evento.tipo === "stato-progetto" && statoDelProgetto(canale.archiviati)?.testo === evento.testo) return;
+        // Lo stato del progetto entra nella storia della principale, da qualunque chat arrivi, e solo
+        // quando cambia: dopo un riavvio chi lavora lo riferisce di nuovo, anche se è quello di prima.
+        if (evento.tipo === "stato-progetto") {
+          if (statoDelProgetto(principale.archiviati)?.testo !== evento.testo) principale.pubblica(evento);
+          return;
+        }
         // Le attività della conversazione si mostrano insieme a quelle degli incarichi.
         if (evento.tipo === "attivita") {
-          this.#attivitaDellaConversazione.set(progetto.id, evento.attivita);
-          this.#pubblicaAttivita(progetto.id);
+          this.#attivitaDellaConversazione.set(idConversazione, evento.attivita);
+          this.#pubblicaAttivita(idConversazione);
           return;
         }
         canale.pubblica(this.#o.immagini.prendi(progetto.id, evento));
       },
-      (idSessione) => void this.#o.progetti.ricordaSessione(progetto.id, idSessione),
+      (idSessione) => void this.#o.progetti.ricordaSessione(idConversazione, idSessione),
       () => this.#o.progetti.estensioni(progetto.id),
     );
-    this.#porte.set(progetto.id, porta);
+    this.#porte.set(idConversazione, porta);
     return porta;
   }
 
-  async #apriCanale(idProgetto: string): Promise<void> {
-    if (this.#canali.has(idProgetto)) return;
-    const canale = await Canale.apri(join(this.#o.cartellaConversazioni, `${idProgetto}.jsonl`));
-    this.#canali.set(idProgetto, canale);
+  async #apriCanale(idConversazione: string): Promise<void> {
+    if (this.#canali.has(idConversazione)) return;
+    const idProgetto = progettoDellaConversazione(idConversazione);
+    const principale = idConversazione === idProgetto;
+    const canale = await Canale.apri(join(this.#o.cartellaConversazioni, `${idConversazione}.jsonl`));
+    this.#canali.set(idConversazione, canale);
     // Chi apre il progetto deve sapere subito come è impostato.
     canale.pubblica({ tipo: "impostazioni", impostazioni: this.impostazioni(idProgetto) });
     // La condizione di un progetto cambia quando un turno o un permesso si apre o si chiude.
     canale.ascolta((archiviato) => {
       const { evento } = archiviato;
-      // Un lavoro con impostazioni sue finisce quando il progetto non ha più turni aperti.
       if (evento.tipo === "turno-concluso" && canale.sospesi.turni === 0) {
-        this.#tornaAlleSalvate(idProgetto);
-        if (this.#daRiaprire.has(idProgetto)) this.#riapri(idProgetto);
+        // Un lavoro con impostazioni sue finisce quando il progetto non ha più turni aperti.
+        if (principale) this.#tornaAlleSalvate(idProgetto);
+        if (this.#daRiaprire.has(idConversazione)) this.#riapri(idConversazione);
       }
-      for (const ascoltatore of this.#ascoltatoriDegliEventi) ascoltatore(idProgetto, archiviato);
+      // Chi ascolta il progetto (lavori programmati, avvisi) segue la sua conversazione principale.
+      if (principale) for (const ascoltatore of this.#ascoltatoriDegliEventi) ascoltatore(idProgetto, archiviato);
       if (
         evento.tipo === "turno-iniziato" ||
         evento.tipo === "turno-concluso" ||
@@ -731,12 +821,12 @@ export class LavoriDeiProgetti {
     });
   }
 
-  /** Le attività del progetto: quelle della sua conversazione e quelle dei suoi incarichi. */
-  #pubblicaAttivita(idProgetto: string): void {
-    const incarichi = this.#incarichi.attivita(idProgetto);
-    const dellaConversazione = this.#attivitaDellaConversazione.get(idProgetto);
+  /** Le attività di una conversazione del progetto; nella principale anche quelle dei suoi incarichi. */
+  #pubblicaAttivita(idConversazione: string): void {
+    const incarichi = numeroDellaChat(idConversazione) === CHAT_PRINCIPALE ? this.#incarichi.attivita(idConversazione) : [];
+    const dellaConversazione = this.#attivitaDellaConversazione.get(idConversazione);
     if (dellaConversazione === undefined && incarichi.length === 0) return;
-    this.#canali.get(idProgetto)?.pubblica({ tipo: "attivita", attivita: [...(dellaConversazione ?? []), ...incarichi] });
+    this.#canali.get(idConversazione)?.pubblica({ tipo: "attivita", attivita: [...(dellaConversazione ?? []), ...incarichi] });
   }
 
   /** Un ambiente si è scollegato: ciò che vi era in corso non arriverà più a conclusione. */
@@ -744,9 +834,9 @@ export class LavoriDeiProgetti {
     this.#incarichi.ambienteScollegato(idAmbiente);
     for (const progetto of this.#o.progetti.elenco()) {
       if (progetto.idAmbiente !== idAmbiente) continue;
-      this.#canali
-        .get(progetto.id)
-        ?.chiudiSospesi("L'ambiente si è scollegato mentre Claude stava lavorando.");
+      for (const idConversazione of this.#conversazioniDi(progetto.id)) {
+        this.#canali.get(idConversazione)?.chiudiSospesi("L'ambiente si è scollegato mentre Claude stava lavorando.");
+      }
     }
   }
 

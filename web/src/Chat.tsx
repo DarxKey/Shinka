@@ -15,8 +15,7 @@ import {
 import { flushSync } from "react-dom";
 import { FINE_STORIA, type EventoArchiviato, type EventoConversazione } from "../../src/protocollo/eventi.ts";
 import { difettoDegliAllegati, preparaAllegati } from "./allegati.ts";
-import { chiediAParte, interrompi, inviaMessaggio, inviaPosizione, leggiStato, type RiferimentoElaborato } from "./api.ts";
-import { RiquadroAParte, type DomandaAParte } from "./AParte.tsx";
+import { interrompi, inviaMessaggio, inviaPosizione, leggiStato, type RiferimentoElaborato } from "./api.ts";
 import { SchedaSessione } from "./Sessione.tsx";
 
 /** Da quanto contesto occupato compare l'avviso, e poi di nuovo ogni dieci punti. */
@@ -34,7 +33,7 @@ import { raggruppa } from "./gruppi.ts";
 import { aCapo } from "./scrittura.ts";
 import { CoseDaFareInVista } from "./Piano.tsx";
 import { leggiBozza, leggiInCoda, quandoRiparte, scriviBozza, scriviInCoda, type MessaggioInCoda } from "./bozze.ts";
-import { COMANDO_A_PARTE, comandiPer, domandaAParte, testoDelComando } from "./comandi.ts";
+import { comandiPer, testoDelComando } from "./comandi.ts";
 import { NOMI_MOTORI, type ComandoDisponibile } from "../../src/protocollo/impostazioni.ts";
 import { alLavoro, applica, aspettaIlProprietario, statoIniziale, type StatoChat } from "./stato.ts";
 import { useAspetto } from "./aspetto.ts";
@@ -79,6 +78,8 @@ export interface ProprietaChat {
   comando?: ComandoChat;
   /** Il pulsante che apre l'elenco dei progetti sugli schermi stretti. */
   menu: ReactNode;
+  /** Le schede delle chat parallele, sotto la testata (ADR 0052). */
+  schede?: ReactNode;
   /** Altri pulsanti in testata: in un progetto, quelli del terminale e dell'anteprima. */
   strumenti?: ReactNode;
   /** Il proprietario apre l'anteprima che Claude ha proposto. */
@@ -211,12 +212,9 @@ export function Chat(proprieta: ProprietaChat): ReactNode {
   const segueIlFondo = useRef(true);
   const occupata = alLavoro(stato);
   const comandiProposti = useMemo(
-    () => (menuChiuso === bozza ? [] : comandiPer(bozza, [...(solaLettura ? [] : [COMANDO_A_PARTE]), ...(stato.stato?.comandi ?? [])])),
-    [bozza, menuChiuso, stato.stato?.comandi, solaLettura],
+    () => (menuChiuso === bozza ? [] : comandiPer(bozza, stato.stato?.comandi ?? [])),
+    [bozza, menuChiuso, stato.stato?.comandi],
   );
-  /** L'ultima domanda a parte, con la sua risposta quando arriva. */
-  const [aParte, setAParte] = useState<DomandaAParte>();
-  const domandeAParte = useRef(0);
 
   // Il flusso si riapre solo quando cambia la conversazione, non a ogni nuovo disegno di chi ci usa.
   const alApriProgetto = useRef(proprieta.alApriProgetto);
@@ -401,19 +399,6 @@ export function Chat(proprieta: ProprietaChat): ReactNode {
     evento?.preventDefault();
     const testo = bozza.trim();
     if ((testo === "" && scelti.length === 0 && commenti.length === 0) || bloccata !== undefined || invio) return;
-    // "/btw ..." è una domanda a parte: non entra nella conversazione, e si può fare anche mentre Claude lavora.
-    const domanda = scelti.length === 0 && !solaLettura ? domandaAParte(testo) : undefined;
-    if (domanda !== undefined) {
-      const numero = ++domandeAParte.current;
-      setAParte({ domanda });
-      setBozza("");
-      const risposta = await chiediAParte(base, domanda).catch((causa: unknown) => ({
-        motivo: causa instanceof Error ? causa.message : "La domanda a parte non è partita.",
-      }));
-      // Se intanto ne è partita un'altra, questa risposta non serve più.
-      if (numero === domandeAParte.current) setAParte({ domanda, risposta });
-      return;
-    }
     // Al limite del piano il messaggio aspetta che il limite si azzeri, e intanto si può cambiare.
     const riparte = quandoRiparte(stato.stato?.limiti);
     if (riparte !== undefined && scelti.length === 0) {
@@ -525,7 +510,10 @@ export function Chat(proprieta: ProprietaChat): ReactNode {
 
   return (
     <FornitoreChat value={contesto}>
-      <div className={stato.statoProgetto === undefined ? "app" : "app con-stato"} {...trascinamento}>
+      <div
+        className={["app", ...(stato.statoProgetto === undefined ? [] : ["con-stato"]), ...(proprieta.schede === undefined ? [] : ["con-schede"])].join(" ")}
+        {...trascinamento}
+      >
         {trascina && (
           <div className="lascia-qui" aria-hidden="true">
             <span>Lascia qui i file per allegarli al messaggio</span>
@@ -572,6 +560,7 @@ export function Chat(proprieta: ProprietaChat): ReactNode {
             </button>
           )}
         </header>
+        {proprieta.schede}
 
         {stato.statoProgetto !== undefined && (
           <details className="stato-progetto">
@@ -657,15 +646,6 @@ export function Chat(proprieta: ProprietaChat): ReactNode {
                   </button>
                 </div>
               </div>
-            )}
-            {aParte !== undefined && (
-              <RiquadroAParte
-                aParte={aParte}
-                allaChiusura={() => {
-                  domandeAParte.current += 1;
-                  setAParte(undefined);
-                }}
-              />
             )}
             {commenti.length > 0 && (
               <div className="commenti-in-attesa" aria-label="Commenti sui file">

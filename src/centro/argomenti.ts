@@ -7,7 +7,8 @@ import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { StatoArgomenti, VoceArgomento } from "../protocollo/argomenti.ts";
+import type { ChatDellaHome, StatoArgomenti, VoceArgomento } from "../protocollo/argomenti.ts";
+import { CHAT_PRINCIPALE, eNumeroDiChatParallela, primoNumeroLibero } from "../protocollo/chat-parallele.ts";
 
 export interface Argomento {
   /** Fa anche da nome della cartella dei suoi file, in ogni ambiente. */
@@ -41,6 +42,8 @@ export interface Ramo {
 interface Salvato {
   idAperto: string;
   argomenti: Argomento[];
+  /** Gli argomenti aperti nelle chat parallele (ADR 0052). */
+  chat?: ChatDellaHome[];
 }
 
 /** Da dove viene il primo argomento quando il registro non esiste ancora. */
@@ -54,12 +57,24 @@ export class RegistroArgomenti {
   readonly #file: string;
   readonly #argomenti: Map<string, Argomento>;
   #idAperto: string;
+  /** Le chat parallele, con l'argomento che ciascuna tiene aperto. */
+  #chat: ChatDellaHome[];
   readonly #ascoltatori = new Set<(stato: StatoArgomenti) => void>();
 
   private constructor(file: string, salvato: Salvato) {
     this.#file = file;
     this.#argomenti = new Map(salvato.argomenti.map((argomento) => [argomento.id, argomento]));
     this.#idAperto = salvato.idAperto;
+    // Restano le chat con un numero valido e un argomento aperto che c'è, una per numero e per argomento.
+    const viste = new Set<string>([salvato.idAperto]);
+    this.#chat = [];
+    for (const chat of Array.isArray(salvato.chat) ? salvato.chat : []) {
+      const argomento = this.#argomenti.get(chat?.idAperto);
+      if (!eNumeroDiChatParallela(chat?.numero) || argomento === undefined || argomento.archiviatoIl !== undefined) continue;
+      if (viste.has(chat.idAperto) || this.#chat.some((altra) => altra.numero === chat.numero)) continue;
+      viste.add(chat.idAperto);
+      this.#chat.push({ numero: chat.numero, idAperto: chat.idAperto });
+    }
   }
 
   /**
@@ -84,6 +99,57 @@ export class RegistroArgomenti {
     return aperto;
   }
 
+  /** L'argomento aperto in una chat: 1 è la principale, le altre sono chat parallele. */
+  apertoIn(numero: number): Argomento {
+    if (numero === CHAT_PRINCIPALE) return this.aperto;
+    const id = this.#chat.find((chat) => chat.numero === numero)?.idAperto;
+    const aperto = id === undefined ? undefined : this.#argomenti.get(id);
+    if (aperto === undefined) throw new Error("Questa chat della Home non è aperta.");
+    return aperto;
+  }
+
+  /** Le chat parallele aperte, in ordine. */
+  chatParallele(): ChatDellaHome[] {
+    return [...this.#chat].sort((a, b) => a.numero - b.numero).map((chat) => ({ ...chat }));
+  }
+
+  /** Apre una chat parallela con un argomento nuovo; nulla se sono già tutte aperte. */
+  async apriChat(ora: number = Date.now()): Promise<{ numero: number; argomento: Argomento } | undefined> {
+    const numero = primoNumeroLibero(this.#chat.map((chat) => chat.numero));
+    if (numero === undefined) return undefined;
+    const argomento: Argomento = { id: this.#idLibero(ora), apertoIl: new Date(ora).toISOString() };
+    this.#argomenti.set(argomento.id, argomento);
+    this.#chat.push({ numero, idAperto: argomento.id });
+    await this.#salva();
+    this.#avvisa();
+    return { numero, argomento };
+  }
+
+  /**
+   * Chiude una chat parallela: il suo argomento viene archiviato con titolo e riassunto, oppure
+   * dimenticato se non conteneva nulla da conservare. Falso se la chat non era aperta.
+   */
+  async chiudiChat(numero: number, chiuso: { titolo: string; riassunto: string } | "da-dimenticare", ora: number = Date.now()): Promise<boolean> {
+    const chat = this.#chat.find((una) => una.numero === numero);
+    if (chat === undefined) return false;
+    this.#chat = this.#chat.filter((una) => una !== chat);
+    const argomento = this.#argomenti.get(chat.idAperto);
+    if (argomento !== undefined) this.#archiviaODimentica(argomento, chiuso, new Date(ora).toISOString());
+    await this.#salva();
+    this.#avvisa();
+    return true;
+  }
+
+  #archiviaODimentica(argomento: Argomento, chiuso: { titolo: string; riassunto: string } | "da-dimenticare", quando: string): void {
+    if (chiuso === "da-dimenticare") {
+      this.#argomenti.delete(argomento.id);
+      return;
+    }
+    argomento.titolo = chiuso.titolo;
+    argomento.riassunto = chiuso.riassunto;
+    argomento.archiviatoIl = quando;
+  }
+
   trova(id: string): Argomento | undefined {
     return this.#argomenti.get(id);
   }
@@ -103,12 +169,12 @@ export class RegistroArgomenti {
   }
 
   stato(): StatoArgomenti {
-    return { idAperto: this.#idAperto, archiviati: this.archiviati() };
+    return { idAperto: this.#idAperto, archiviati: this.archiviati(), ...(this.#chat.length === 0 ? {} : { chat: this.chatParallele() }) };
   }
 
   /**
-   * Chiude l'argomento aperto e ne apre un altro: uno nuovo, un ramo di quello aperto, oppure uno
-   * archiviato da riprendere.
+   * Chiude l'argomento aperto in una chat (la principale, se non se ne indica un'altra) e ne apre un
+   * altro: uno nuovo, un ramo di quello aperto, oppure uno archiviato da riprendere.
    * Quello che si chiude viene archiviato con titolo e riassunto, oppure dimenticato se non
    * conteneva nulla da conservare. Restituisce l'argomento ora aperto.
    */
@@ -116,8 +182,9 @@ export class RegistroArgomenti {
     chiuso: { titolo: string; riassunto: string } | "da-dimenticare",
     verso: "nuovo" | string | Ramo,
     ora: number = Date.now(),
+    numero: number = CHAT_PRINCIPALE,
   ): Promise<Argomento> {
-    const precedente = this.aperto;
+    const precedente = this.apertoIn(numero);
     const quando = new Date(ora).toISOString();
     let prossimo: Argomento;
     if (verso === "nuovo") {
@@ -134,18 +201,15 @@ export class RegistroArgomenti {
       if (trovato === undefined || trovato.id === precedente.id) {
         throw new Error("L'argomento da riaprire non esiste.");
       }
+      // Un argomento aperto in un'altra chat resta lì.
+      if (trovato.archiviatoIl === undefined) throw new Error("Questo argomento è aperto in un'altra chat.");
       prossimo = trovato;
       delete prossimo.archiviatoIl;
     }
-    if (chiuso === "da-dimenticare") {
-      this.#argomenti.delete(precedente.id);
-    } else {
-      precedente.titolo = chiuso.titolo;
-      precedente.riassunto = chiuso.riassunto;
-      precedente.archiviatoIl = quando;
-    }
+    this.#archiviaODimentica(precedente, chiuso, quando);
     this.#argomenti.set(prossimo.id, prossimo);
-    this.#idAperto = prossimo.id;
+    if (numero === CHAT_PRINCIPALE) this.#idAperto = prossimo.id;
+    else this.#chat = this.#chat.map((chat) => (chat.numero === numero ? { numero, idAperto: prossimo.id } : chat));
     await this.#salva();
     this.#avvisa();
     return prossimo;
@@ -199,7 +263,11 @@ export class RegistroArgomenti {
   }
 
   async #scrivi(): Promise<void> {
-    const salvato: Salvato = { idAperto: this.#idAperto, argomenti: [...this.#argomenti.values()] };
+    const salvato: Salvato = {
+      idAperto: this.#idAperto,
+      argomenti: [...this.#argomenti.values()],
+      ...(this.#chat.length === 0 ? {} : { chat: this.#chat }),
+    };
     const provvisorio = `${this.#file}.tmp`;
     await writeFile(provvisorio, JSON.stringify(salvato, null, 2));
     await rename(provvisorio, this.#file);
@@ -215,7 +283,7 @@ function leggi(file: string): Salvato | undefined {
   try {
     const letto = JSON.parse(readFileSync(file, "utf8")) as Partial<Salvato>;
     if (typeof letto.idAperto !== "string" || !Array.isArray(letto.argomenti)) return undefined;
-    return { idAperto: letto.idAperto, argomenti: letto.argomenti };
+    return { idAperto: letto.idAperto, argomenti: letto.argomenti, ...(Array.isArray(letto.chat) ? { chat: letto.chat } : {}) };
   } catch (errore) {
     if (errore instanceof Error && "code" in errore && errore.code === "ENOENT") return undefined;
     throw errore;
