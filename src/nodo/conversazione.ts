@@ -630,6 +630,11 @@ export class Conversazione implements PortaConversazione {
           this.#disarmaInattivita();
           this.#cfg.alEvento({ tipo: "turno-iniziato" });
         }
+        // Il picco della scheda video va detto prima della fine del turno: chi aspetta un incarico chiude lì.
+        if (messaggio.type === "result" && locale !== undefined && !risultatoDiUnaNota(messaggio)) {
+          const vramPiccoMb = locale.vramPiccoMb();
+          this.#cfg.alEvento({ tipo: "stato", stato: { modelloLocale: { modello: locale.modello, ...(vramPiccoMb === undefined ? {} : { vramPiccoMb }) } } });
+        }
         for (const evento of traduci(messaggio, stato)) {
           if (evento.tipo === "turno-concluso" && this.#interruzioneRichiesta) {
             // L'harness chiude un turno interrotto come se fosse fallito: per noi non è un errore.
@@ -647,10 +652,6 @@ export class Conversazione implements PortaConversazione {
         }
         if (messaggio.type === "result" && !risultatoDiUnaNota(messaggio)) {
           void this.#riferisciStato(sessione, false);
-          if (locale !== undefined) {
-            const vramPiccoMb = locale.vramPiccoMb();
-            this.#cfg.alEvento({ tipo: "stato", stato: { modelloLocale: { modello: locale.modello, ...(vramPiccoMb === undefined ? {} : { vramPiccoMb }) } } });
-          }
           this.#turnoFinito();
         }
       }

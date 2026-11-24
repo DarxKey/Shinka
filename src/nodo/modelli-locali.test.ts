@@ -4,6 +4,7 @@
  */
 
 import assert from "node:assert/strict";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type AddressInfo } from "node:net";
 import { createServer as serverHttp } from "node:http";
 import { test } from "node:test";
@@ -142,4 +143,112 @@ test("la prova accende il server, dice il suo modello e lo spegne", async () => 
   await finche(async () => (await risponde(porta)) === undefined, "dopo la prova il server è spento");
   const rotta = await modelli.prova(definizione(porta, "/non/esiste/llama-server"));
   assert.equal(rotta.riuscita, false);
+});
+
+/**
+ * Un avvio finto con processi veri: ogni server è un Node che, chiesto di spegnersi, ci mette un
+ * po' a uscire. La porta «risponde» finché è vivo, secondo la sonda finta.
+ */
+function serverLenti(uscitaDopoMs: number) {
+  const avviati: { argomenti: string[]; vivo: boolean }[] = [];
+  const figli: ChildProcess[] = [];
+  const avvia = (_comando: string, argomenti: string[]) => {
+    const voce = { argomenti, vivo: true };
+    avviati.push(voce);
+    const figlio = spawn(
+      process.execPath,
+      ["-e", `process.on("SIGTERM", () => setTimeout(() => process.exit(0), ${uscitaDopoMs})); setInterval(() => {}, 1000);`],
+      { stdio: "ignore", detached: process.platform !== "win32" },
+    );
+    figlio.on("exit", () => (voce.vivo = false));
+    figli.push(figlio);
+    return figlio;
+  };
+  return { avviati, figli, avvia, sonda: async () => avviati.some((voce) => voce.vivo) };
+}
+
+test("cambiando impegno il server nuovo parte solo dopo che quello di prima è uscito", async (t) => {
+  const finti = serverLenti(300);
+  const modelli = new ModelliLocali({ avvia: finti.avvia, sonda: finti.sonda, passoMs: 20, vram: async () => undefined });
+  t.after(() => modelli.chiudi());
+  modelli.imposta([estensione(definizione(9))]);
+  const prima = modelli.prendi("locale:qwen", "xhigh");
+  assert.ok(!("motivo" in prima));
+  await prima.pronto;
+  assert.deepEqual(finti.avviati.map((voce) => voce.argomenti.at(-1)), ["xhigh"]);
+  prima.lascia();
+
+  // Fermo da poco, con un altro impegno: il vecchio si spegne, e il nuovo aspetta che sia uscito.
+  const seconda = modelli.prendi("locale:qwen", "medium");
+  assert.ok(!("motivo" in seconda));
+  await seconda.pronto;
+  assert.deepEqual(finti.avviati.map((voce) => [voce.argomenti.at(-1), voce.vivo]), [["xhigh", false], ["medium", true]]);
+  seconda.lascia();
+});
+
+test("se il server di prima non lascia la porta, il nuovo non parte e dice perché", async (t) => {
+  const finti = serverLenti(50);
+  let portaBloccata = false;
+  const modelli = new ModelliLocali({
+    avvia: finti.avvia,
+    sonda: async () => portaBloccata || (await finti.sonda()),
+    passoMs: 20,
+    chiusuraMs: 300,
+    vram: async () => undefined,
+  });
+  t.after(() => modelli.chiudi());
+  modelli.imposta([estensione(definizione(9))]);
+  const prima = modelli.prendi("locale:qwen", "xhigh");
+  assert.ok(!("motivo" in prima));
+  await prima.pronto;
+  prima.lascia();
+  // Qualcos'altro tiene la porta anche dopo che il processo è uscito.
+  portaBloccata = true;
+  const seconda = modelli.prendi("locale:qwen", "medium");
+  assert.ok(!("motivo" in seconda));
+  await assert.rejects(seconda.pronto, /Il server di prima non ha lasciato la porta 9 entro 0 secondi: non riparte con l'impegno medium\./);
+  assert.equal(finti.avviati.length, 1);
+  assert.equal(modelli.acceso("qwen"), false);
+});
+
+test("un server acceso fuori da Shinka che poi si spegne non resta registrato: la volta dopo se ne accende uno", async (t) => {
+  const finti = serverLenti(10);
+  let suo = true;
+  const modelli = new ModelliLocali({ avvia: finti.avvia, sonda: async () => suo || (await finti.sonda()), passoMs: 20, misuraMs: 30, vram: async () => undefined });
+  t.after(() => modelli.chiudi());
+  modelli.imposta([estensione(definizione(9))]);
+  const prima = modelli.prendi("locale:qwen", "xhigh");
+  assert.ok(!("motivo" in prima));
+  await prima.pronto;
+  assert.equal(finti.avviati.length, 0, "quello del proprietario si usa così com'è");
+  // Con un altro impegno non lo si può riaccendere: lo si dice.
+  assert.match((modelli.prendi("locale:qwen", "medium") as { motivo: string }).motivo, /fuori da Shinka/);
+  suo = false;
+  await new Promise((fatto) => setTimeout(fatto, 150));
+  const seconda = modelli.prendi("locale:qwen", "medium");
+  assert.ok(!("motivo" in seconda));
+  await seconda.pronto;
+  assert.deepEqual(finti.avviati.map((voce) => voce.argomenti.at(-1)), ["medium"]);
+  prima.lascia();
+  seconda.lascia();
+});
+
+test("un server acceso da Shinka che si ferma da solo non si riusa", async (t) => {
+  const finti = serverLenti(10);
+  const modelli = new ModelliLocali({ avvia: finti.avvia, sonda: finti.sonda, passoMs: 20, vram: async () => undefined });
+  t.after(() => modelli.chiudi());
+  modelli.imposta([estensione(definizione(9))]);
+  const prima = modelli.prendi("locale:qwen");
+  assert.ok(!("motivo" in prima));
+  await prima.pronto;
+  prima.lascia();
+  // Il processo muore per conto suo, mentre il server aspetta i suoi dieci minuti.
+  finti.figli[0]?.kill("SIGKILL");
+  await finche(() => finti.avviati[0]?.vivo === false, "il processo è morto");
+  const seconda = modelli.prendi("locale:qwen");
+  assert.ok(!("motivo" in seconda));
+  await seconda.pronto;
+  assert.equal(finti.avviati.length, 2);
+  assert.equal(finti.avviati[1]?.vivo, true);
+  seconda.lascia();
 });

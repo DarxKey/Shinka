@@ -118,3 +118,63 @@ test("se il modello locale non si può prendere, la conversazione lo dice e il t
   assert.deepEqual(eventi.find((evento) => evento.tipo === "turno-concluso"), { tipo: "turno-concluso", riuscito: false, durataMs: 0, errore: "La conversazione si è chiusa prima della risposta." });
   assert.match((await conversazione.chiediAParte("Che cosa fai?") as { motivo: string }).motivo, /modello locale/);
 });
+
+test("il picco della scheda video arriva prima della fine del turno, che chiude l'incarico", async (t) => {
+  const presa: PresaDelModello = {
+    modello: "qwen-prova",
+    indirizzo: "http://127.0.0.1:8080",
+    contesto: 98_304,
+    uscita: 32_000,
+    pronto: Promise.resolve(),
+    vramPiccoMb: () => 23_650,
+    lascia: () => {},
+  };
+  const eventi: EventoConversazione[] = [];
+  /** Un harness che, letto il primo messaggio, risponde con la fine del turno e poi resta acceso. */
+  const harnessCheRisponde = (prompt: string | AsyncIterable<SDKUserMessage>): Query => {
+    const uscite: unknown[] = [];
+    let sveglia: () => void = () => {};
+    let chiuso = false;
+    if (typeof prompt !== "string") {
+      void (async () => {
+        for await (const _messaggio of prompt) {
+          uscite.push({ type: "result", subtype: "success", is_error: false, result: "Fatto.", num_turns: 3, duration_ms: 1200, duration_api_ms: 1100, usage: { input_tokens: 900, output_tokens: 80 } });
+          sveglia();
+        }
+      })().catch(() => {});
+    }
+    const finto = {
+      [Symbol.asyncIterator]: () => ({
+        next: async () => {
+          while (uscite.length === 0 && !chiuso) await new Promise<void>((fatto) => (sveglia = fatto));
+          return chiuso ? { value: undefined, done: true as const } : { value: uscite.shift(), done: false as const };
+        },
+      }),
+      close: () => ((chiuso = true), sveglia()),
+      getContextUsage: async () => ({ model: "qwen-prova", categories: [], totalTokens: 10, maxTokens: 98_304, percentage: 0 }),
+      usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({}),
+      supportedCommands: async () => [],
+      supportedModels: async () => [],
+    };
+    return finto as unknown as Query;
+  };
+  const conversazione = new Conversazione(
+    {
+      cartella: process.cwd(),
+      istruzioni: "Rispondi in breve.",
+      strumenti: [],
+      strumentiSenzaRichiesta: [],
+      impostazioni: { modello: "locale:qwen", permessi: "chiedi" },
+      modelliLocali: conModello(presa, []),
+      alEvento: (evento) => eventi.push(evento),
+      alIdSessione: () => {},
+    },
+    { avvia: ({ prompt }) => harnessCheRisponde(prompt) },
+  );
+  t.after(() => conversazione.chiudi());
+  conversazione.invia("Scrivi somma.");
+  await finche(() => eventi.some((evento) => evento.tipo === "turno-concluso"), "il turno finisce");
+  const vram = eventi.findIndex((evento) => evento.tipo === "stato" && evento.stato.modelloLocale?.vramPiccoMb === 23_650);
+  const fine = eventi.findIndex((evento) => evento.tipo === "turno-concluso");
+  assert.ok(vram !== -1 && vram < fine, `picco a ${vram}, fine del turno a ${fine}`);
+});
