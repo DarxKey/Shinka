@@ -81,7 +81,11 @@ test("una cartella diventa uno ZIP che Python legge, con i CRC giusti, i nomi in
   assert.equal(testo("gioco/vuoto.txt"), "");
 });
 
-test("oltre i 65.535 file l'archivio passa a ZIP64", { skip: conPython ? false : "manca python3", timeout: 120_000 }, async (t) => {
+// Crea oltre 65.535 file e ci mette una ventina di secondi: gira nelle prove dell'installazione
+// (CI=1) e quando lo si chiede con SHINKA_PROVE_LENTE, non nelle prove mirate di chi sviluppa.
+const lenteAccese = process.env.CI !== undefined || process.env.SHINKA_PROVE_LENTE !== undefined;
+
+test("oltre i 65.535 file l'archivio passa a ZIP64", { skip: !conPython ? "manca python3" : lenteAccese ? false : "prova lenta: gira con CI o SHINKA_PROVE_LENTE", timeout: 120_000 }, async (t) => {
   const qui = cartellaProvvisoria(t);
   const radice = join(qui, "tanti");
   for (let cartella = 0; cartella < 66; cartella++) {
