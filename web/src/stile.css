@@ -4557,17 +4557,23 @@ button.torna-giu.aspetta {
   flex: none;
 }
 
+/* Un'icona, come quelle della sessione e dell'affiancare: sul telefono la testata non ha posto per le parole. */
 .menu-esporta summary {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 36px;
   min-height: 34px;
-  padding: 0 var(--s-3);
-  border: 1px solid var(--bordo);
   border-radius: var(--raggio);
   color: var(--tenue);
-  font-size: var(--t-ui);
   cursor: pointer;
   list-style: none;
+}
+
+.menu-esporta summary:hover,
+.menu-esporta[open] summary {
+  background: var(--codice);
+  color: var(--testo);
 }
 
 .menu-esporta summary::-webkit-details-marker {
@@ -4604,13 +4610,6 @@ button.torna-giu.aspetta {
 .voci-esporta a:hover,
 .voci-esporta button:hover {
   background: var(--sfondo);
-}
-
-@media (max-width: 860px) {
-  .menu-esporta summary {
-    padding: 0 var(--s-2);
-    font-size: var(--t-piccolo);
-  }
 }
 
 /* La pagina Cerca. */

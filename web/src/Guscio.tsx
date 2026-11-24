@@ -46,6 +46,13 @@ function comandoNuovoArgomento(base: string): ComandoChat {
   return {
     etichetta: "Nuovo argomento",
     descrizione: "Archivia questo argomento e comincia da capo",
+    // Un'icona: sul telefono la testata della Home non ha posto per le parole.
+    icona: (
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+        <path d="M9 3.5H5.5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M14.5 2.8a1.5 1.5 0 0 1 2.1 2.1L10 11.5l-2.8.7.7-2.8z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      </svg>
+    ),
     esegui: () => nuovoArgomento(base),
   };
 }

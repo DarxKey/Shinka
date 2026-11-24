@@ -102,6 +102,8 @@ export interface ProprietaChat {
 /** Un pulsante in testata. Mentre Claude lavora non si può usare. */
 export interface ComandoChat {
   etichetta: string;
+  /** Se presente, nella testata il comando è un'icona: l'etichetta resta il suo nome per chi ascolta la pagina. */
+  icona?: ReactNode;
   /** Che cosa fa, per chi ci passa sopra con il puntatore. */
   descrizione: string;
   esegui(): Promise<void>;
@@ -554,12 +556,13 @@ export function Chat(proprieta: ProprietaChat): ReactNode {
           {comando !== undefined && (
             <button
               type="button"
-              className="comando"
-              title={comando.descrizione}
+              className={comando.icona === undefined ? "comando" : "discreto icona comando-icona"}
+              title={comando.icona === undefined ? comando.descrizione : `${comando.etichetta}: ${comando.descrizione.charAt(0).toLowerCase()}${comando.descrizione.slice(1)}`}
+              {...(comando.icona === undefined ? {} : { "aria-label": comando.etichetta })}
               disabled={occupata || comandoInCorso || !collegata}
               onClick={() => void eseguiComando()}
             >
-              {comando.etichetta}
+              {comando.icona ?? comando.etichetta}
             </button>
           )}
         </header>

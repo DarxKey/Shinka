@@ -1,4 +1,4 @@
-/** Il menu Esporta, nella testata della chat: la conversazione in Markdown, oppure stampata o salvata in PDF. */
+/** Il menu Esporta, un'icona nella testata della chat: la conversazione in Markdown, oppure stampata o salvata in PDF. */
 
 import type { ReactNode } from "react";
 
@@ -6,7 +6,9 @@ export function MenuEsporta({ base }: { base: string }): ReactNode {
   return (
     <details className="menu-esporta">
       <summary aria-label="Esporta la conversazione" title="Esporta la conversazione">
-        Esporta
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+          <path d="M10 3v9M6.5 8.5 10 12l3.5-3.5M4 14.5V16h12v-1.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </summary>
       <div className="voci-esporta">
         <a href={`${base}/esporta`} download>
