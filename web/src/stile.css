@@ -358,18 +358,23 @@ pre {
   height: 100%;
 }
 
-/* Con lo stato del progetto c'è una riga in più, tra la testata e la conversazione. */
-.app.con-stato {
-  grid-template-rows: auto auto 1fr auto;
+/*
+ * La chat è una colonna: la conversazione prende lo spazio che resta, qualunque cosa ci sia sopra
+ * (testata, schede delle chat parallele, stato del progetto) e sotto (cose da fare, pulsanti delle
+ * estensioni, campo di scrittura). Così il campo resta in fondo anche a chat vuota.
+ */
+.app.chat {
+  display: flex;
+  flex-direction: column;
 }
 
-/* Con le chat parallele c'è la riga delle schede sotto la testata (ADR 0052). */
-.app.con-schede {
-  grid-template-rows: auto auto 1fr auto;
+.app.chat > * {
+  flex: none;
 }
 
-.app.con-schede.con-stato {
-  grid-template-rows: auto auto auto 1fr auto;
+.app.chat > .conversazione {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .schede-chat {

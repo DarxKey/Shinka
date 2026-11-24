@@ -512,7 +512,7 @@ export function Chat(proprieta: ProprietaChat): ReactNode {
   return (
     <FornitoreChat value={contesto}>
       <div
-        className={["app", ...(stato.statoProgetto === undefined ? [] : ["con-stato"]), ...(proprieta.schede === undefined ? [] : ["con-schede"])].join(" ")}
+        className="app chat"
         {...trascinamento}
       >
         {trascina && (
