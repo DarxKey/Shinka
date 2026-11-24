@@ -3,6 +3,7 @@
  * così i test esercitano tutto il percorso senza consumare la quota di Claude.
  */
 
+import { EstensioniInterfaccia } from "../centro/interfaccia.ts";
 import { ModelliLocali } from "../nodo/modelli-locali.ts";
 import { PrimoAvvio } from "../centro/primo-avvio.ts";
 import { AccessiNegliAmbienti, type PortaAccessi } from "../centro/accessi.ts";
@@ -315,6 +316,8 @@ export interface Banco {
   programmati: LavoriProgrammati;
   /** Le estensioni, se il test le ha accese. */
   estensioni: Estensioni | undefined;
+  /** Le estensioni dell'interfaccia (ADR 0054). */
+  interfaccia: EstensioniInterfaccia;
   /** L'harness finto con cui l'ambiente del centro prova le estensioni e guarda ciò che ha già. */
   harnessEstensioni: HarnessDiProva;
   /** Quante volte lo sviluppo ha chiesto di riavviare il centro. */
@@ -750,7 +753,9 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
   const perINodi = opzioni.senzaCertificatoDeiNodi === true ? undefined : preparaIdentitaPerINodi(join(cartella, "collegamento-nodi"));
   // Le copie di sicurezza: la chiave si ricava in fretta, e un riavvio chiesto resta solo annotato.
   const copie = new CopieDiSicurezza({ dati: cartella, memoria, skill, versione: "versione-di-prova", costo: 2 ** 10, riavvia: () => void riavvii.push(Date.now()) });
+  const interfaccia = await EstensioniInterfaccia.apri({ file: join(cartella, "interfaccia.json"), annota: (testo) => casa.annota(testo) });
   const centro = await creaCentro({
+    interfaccia,
     accesso,
     primoAvvio,
     ...(perINodi === undefined ? {} : { perINodi }),
@@ -874,6 +879,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     posizione,
     aggiornamenti,
     estensioni,
+    interfaccia,
     harnessEstensioni,
     riavvii,
     copie,

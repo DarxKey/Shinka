@@ -32,6 +32,7 @@ import { Formattato, VistaVoce } from "./Elementi.tsx";
 import { raggruppa } from "./gruppi.ts";
 import { aCapo } from "./scrittura.ts";
 import { CoseDaFareInVista } from "./Piano.tsx";
+import { PulsantiDelleEstensioni } from "./Interfaccia.tsx";
 import { leggiBozza, leggiInCoda, quandoRiparte, scriviBozza, scriviInCoda, type MessaggioInCoda } from "./bozze.ts";
 import { comandiPer, testoDelComando } from "./comandi.ts";
 import { NOMI_MOTORI, type ComandoDisponibile } from "../../src/protocollo/impostazioni.ts";
@@ -597,6 +598,7 @@ export function Chat(proprieta: ProprietaChat): ReactNode {
             <CoseDaFareInVista scheda={coseInCorso} />
           </div>
         )}
+        {!solaLettura && bloccata === undefined && <PulsantiDelleEstensioni base={base} occupata={occupata} />}
         <form className="scrittura" onSubmit={(evento) => void invia(evento)}>
           {/* Chi è salito a leggere torna all'ultimo messaggio con un tocco; la chat non lo tira giù da sola. */}
           {!inFondo && (

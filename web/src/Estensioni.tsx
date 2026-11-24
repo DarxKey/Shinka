@@ -8,7 +8,8 @@ import {
   type StatoEstensioni,
 } from "../../src/protocollo/estensioni.ts";
 import type { Ambiente, StatoAmbienti } from "../../src/protocollo/nodi.ts";
-import { accendiEstensione, decidiEstensione, guardaEstensioniDellAmbiente, mettiInRete, rimuoviEstensione } from "./api.ts";
+import { accendiEstensione, accendiInterfaccia, decidiEstensione, guardaEstensioniDellAmbiente, mettiInRete, rimuoviEstensione, togliInterfaccia } from "./api.ts";
+import { useQuadroCorrente } from "./Quadro.tsx";
 import { useSolaLettura } from "./ContestoChat.ts";
 import { momentoInBreve } from "./descrivi.ts";
 import type { Elemento } from "./stato.ts";
@@ -211,6 +212,7 @@ export function PaginaEstensioni({ menu, stato, ambienti }: ProprietaPaginaEsten
                   ))}
                 </ul>
               )}
+              <EstensioniDellInterfaccia />
               <h2 className="titolo-sezione">Già negli ambienti</h2>
               <p className="tenue">
                 Ciò che hai installato per conto tuo in un ambiente, fuori da Shinka. I progetti di quell'ambiente lo usano
@@ -415,6 +417,74 @@ function ModelloInRete({ estensione, ambiente, indirizzo, porta }: { estensione:
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * Le estensioni dell'interfaccia (ADR 0054): temi, pagine e pulsanti scritti da Claude. Qui si
+ * spengono, si riaccendono e si tolgono; per aggiungerne o cambiarne una si chiede alla Home.
+ */
+function EstensioniDellInterfaccia(): ReactNode {
+  const quadro = useQuadroCorrente();
+  const [inCorso, setInCorso] = useState<string>();
+  const [errore, setErrore] = useState<string>();
+  const elenco = quadro.interfaccia?.estensioni ?? [];
+
+  async function fai(id: string, azione: () => Promise<void>): Promise<void> {
+    setInCorso(id);
+    setErrore(undefined);
+    try {
+      await azione();
+    } catch (causa) {
+      setErrore(inParole(causa, "Non è riuscito."));
+    } finally {
+      setInCorso(undefined);
+    }
+  }
+
+  return (
+    <>
+      <h2 className="titolo-sezione">Dell'interfaccia</h2>
+      <p className="tenue">
+        Temi, pagine e pulsanti che cambiano l'aspetto di Shinka o le aggiungono funzioni. Li scrive la Home quando glieli chiedi, e
+        entrano solo se confermi la sua scheda. Se un tema rompe l'interfaccia, aprila con «?senza-estensioni» nell'indirizzo.
+      </p>
+      {elenco.length === 0 ? (
+        <p className="tenue vuota">Ancora nessuna.</p>
+      ) : (
+        <ul className="credenziali-vault">
+          {elenco.map((una) => (
+            <li key={una.id} className="estensione-interfaccia">
+              <div className="riga-ambiente">
+                <span className="nome">{una.nome}</span>
+                <span className="stato">{una.accesa ? "accesa" : "spenta"}</span>
+                <button type="button" className="discreto piccolo" disabled={inCorso !== undefined} onClick={() => void fai(una.id, () => accendiInterfaccia(una.id, !una.accesa))}>
+                  {una.accesa ? "Spegni" : "Accendi"}
+                </button>
+                <button type="button" className="discreto piccolo" disabled={inCorso !== undefined} onClick={() => void fai(una.id, () => togliInterfaccia(una.id))}>
+                  Togli
+                </button>
+              </div>
+              <div>{una.descrizione}</div>
+              <div className="tenue">
+                {[
+                  una.tema === undefined ? "" : "un tema",
+                  ...una.pagine.map((pagina) => `la pagina «${pagina.titolo}» ${pagina.dove === "menu" ? "nel menu" : "nel pannello dei progetti"}`),
+                  ...una.pulsanti.map((pulsante) => `il pulsante «${pulsante.etichetta}»`),
+                ]
+                  .filter((parte) => parte !== "")
+                  .join(", ")}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {errore !== undefined && (
+        <p className="errore" role="alert">
+          {errore}
+        </p>
+      )}
+    </>
   );
 }
 

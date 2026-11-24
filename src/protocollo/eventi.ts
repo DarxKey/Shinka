@@ -3,6 +3,7 @@
  * Sono dati semplici, serializzabili in JSON: nessuna funzione, nessun riferimento all'SDK.
  */
 
+import type { PaginaDiEstensione, PulsanteDiEstensione } from "./interfaccia.ts";
 import type { LimiteRaggiunto } from "./limiti.ts";
 import type { Allegato, Immagine } from "./allegati.ts";
 import type { EstensioniDegliAmbienti, SkillDiPartenza } from "./avvio-progetto.ts";
@@ -338,6 +339,24 @@ export type EventoConversazione =
       /** Perché non è partita. */
       motivo?: string;
     }
+  /**
+   * La Home propone un'estensione dell'interfaccia (ADR 0054): un tema, delle pagine, dei pulsanti.
+   * Le pagine si guardano in anteprima dalla scheda; nulla entra finché il proprietario non conferma.
+   */
+  | {
+      tipo: "interfaccia-proposta";
+      idProposta: string;
+      nome: string;
+      descrizione: string;
+      /** Vero se ne sostituisce una con lo stesso nome. */
+      sostituisce?: true;
+      /** Quante righe ha il tema, se ce n'è uno. */
+      righeTema?: number;
+      pagine: PaginaDiEstensione[];
+      pulsanti: PulsanteDiEstensione[];
+    }
+  /** Com'è finita la proposta di un'estensione dell'interfaccia. */
+  | { tipo: "interfaccia-decisa"; idProposta: string; esito: "confermata" | "annullata" }
   /** Il progetto ha riscritto il proprio stato: a che punto è, cosa è deciso, cosa aspetta. */
   | { tipo: "stato-progetto"; testo: string }
   /** Nel dubbio la Home chiede al proprietario se fare il lavoro lì o aprire un progetto. */

@@ -344,6 +344,10 @@ _Avoid_: planner, orchestratore
 Il modello che il proprietario sceglie per svolgere gli incarichi di un progetto; senza, il progetto lavora con un modello solo.
 _Avoid_: executor, esecutore, worker
 
+**Estensione dell'interfaccia**:
+Un tema, delle pagine e dei pulsanti che cambiano l'aspetto di Shinka o le aggiungono funzioni: li scrive Claude, li conferma il proprietario, e stanno tra i dati del centro, non nel codice. Le pagine girano in un recinto e parlano con Shinka solo per leggerne lo stato e mandare messaggi.
+_Avoid_: plugin dell'interfaccia, widget, skin
+
 **Modello locale**:
 Un modello che gira su una macchina del proprietario, con un server che parla come l'API di Anthropic (per esempio Qwen con llama-server): è un'estensione di Shinka, il nodo lo accende quando una conversazione lo sceglie e lo spegne dopo dieci minuti fermo. Messo in rete dal proprietario, lo usano anche la Home e i progetti degli altri ambienti, con una chiave che Shinka tiene per sé.
 _Avoid_: LLM locale, modello offline

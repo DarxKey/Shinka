@@ -1,3 +1,4 @@
+import type { StatoInterfaccia } from "../../src/protocollo/interfaccia.ts";
 import { createContext, useContext, useEffect, useState } from "react";
 import type { StatoAnteprima } from "../../src/protocollo/anteprima.ts";
 import type { StatoArgomenti } from "../../src/protocollo/argomenti.ts";
@@ -25,6 +26,8 @@ export interface Quadro {
   anteprima: StatoAnteprima | undefined;
   /** Se la Home lavora o aspetta il proprietario, con le sue chat parallele (ADR 0052). */
   home: VistaHome | undefined;
+  /** Le estensioni dell'interfaccia (ADR 0054). */
+  interfaccia: StatoInterfaccia | undefined;
 }
 
 /** La Home nel quadro: la condizione della principale, quella con le chat parallele, e le chat aperte. */
@@ -44,6 +47,7 @@ const QUADRO_VUOTO: Quadro = {
   vault: undefined,
   anteprima: undefined,
   home: undefined,
+  interfaccia: undefined,
 };
 
 /**
@@ -85,6 +89,10 @@ export function useQuadro(): Quadro {
     sorgente.addEventListener("home", (messaggio: MessageEvent<string>) => {
       const home = JSON.parse(messaggio.data) as VistaHome;
       setQuadro((prima) => ({ ...prima, home }));
+    });
+    sorgente.addEventListener("interfaccia", (messaggio: MessageEvent<string>) => {
+      const interfaccia = JSON.parse(messaggio.data) as StatoInterfaccia;
+      setQuadro((prima) => ({ ...prima, interfaccia }));
     });
     sorgente.addEventListener("anteprima", (messaggio: MessageEvent<string>) => {
       const anteprima = JSON.parse(messaggio.data) as StatoAnteprima;

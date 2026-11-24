@@ -3,6 +3,8 @@
  * tra il browser e la conversazione della Home e accoglie i nodi degli ambienti.
  */
 
+import { POLITICA_PAGINA_ESTENSIONE } from "../protocollo/interfaccia.ts";
+import type { EstensioniInterfaccia } from "./interfaccia.ts";
 import type { StatoEstensioniDelProgetto } from "../protocollo/progetti.ts";
 import { tipoInParole } from "../protocollo/estensioni.ts";
 import { AvvioConWindows } from "./avvio-con-windows.ts";
@@ -280,6 +282,8 @@ export interface OpzioniCentro {
   sviluppo?: SviluppoDiShinka;
   /** Le estensioni di Shinka. Se mancano, in questa installazione non ci sono. */
   estensioni?: Estensioni;
+  /** Le estensioni dell'interfaccia (ADR 0054). */
+  interfaccia?: EstensioniInterfaccia;
   /** Gli elaborati degli argomenti della Home. Se mancano, il pannello dice che non ci sono. */
   elaborati?: Elaborati;
   /**
@@ -952,6 +956,48 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     },
   );
 
+  // Le estensioni dell'interfaccia (ADR 0054). Una pagina si serve chiusa nel suo recinto, anche se la
+  // si apre da sola; quella di una proposta, per l'anteprima dalla scheda, allo stesso modo.
+  const mandaPagina = (risposta: FastifyReply, html: string | undefined): FastifyReply => {
+    if (html === undefined) return risposta.code(404).send({ errore: "Pagina non trovata." });
+    return risposta
+      .header("Content-Type", "text/html; charset=utf-8")
+      .header("Content-Security-Policy", POLITICA_PAGINA_ESTENSIONE)
+      .header("Cache-Control", "no-store")
+      .header("X-Content-Type-Options", "nosniff")
+      .send(html);
+  };
+  app.get<{ Params: { id: string; idPagina: string } }>("/api/interfaccia/:id/pagine/:idPagina", async (richiesta, risposta) =>
+    mandaPagina(risposta, opzioni.interfaccia?.pagina(richiesta.params.id, richiesta.params.idPagina)),
+  );
+  app.get<{ Params: { id: string; idPagina: string } }>("/api/interfaccia/proposte/:id/pagine/:idPagina", async (richiesta, risposta) =>
+    mandaPagina(risposta, opzioni.interfaccia?.paginaProposta(richiesta.params.id, richiesta.params.idPagina)),
+  );
+  app.post<{ Params: { id: string }; Body: { esito: "confermata" | "annullata" } }>(
+    "/api/interfaccia/proposte/:id",
+    { schema: { body: { type: "object", required: ["esito"], additionalProperties: false, properties: { esito: { type: "string", enum: ["confermata", "annullata"] } } } } },
+    async (richiesta, risposta) => {
+      const fatto =
+        richiesta.body.esito === "confermata"
+          ? await opzioni.interfaccia?.conferma(richiesta.params.id)
+          : opzioni.interfaccia?.annulla(richiesta.params.id);
+      if (fatto !== true) return risposta.code(404).send({ errore: "Questa proposta non aspetta più una decisione." });
+      return { deciso: true };
+    },
+  );
+  app.post<{ Params: { id: string }; Body: { accesa: boolean } }>(
+    "/api/interfaccia/:id",
+    { schema: { body: { type: "object", required: ["accesa"], additionalProperties: false, properties: { accesa: { type: "boolean" } } } } },
+    async (richiesta, risposta) => {
+      if ((await opzioni.interfaccia?.accendi(richiesta.params.id, richiesta.body.accesa)) !== true) return risposta.code(404).send({ errore: "Estensione non trovata." });
+      return { accesa: richiesta.body.accesa };
+    },
+  );
+  app.delete<{ Params: { id: string } }>("/api/interfaccia/:id", async (richiesta, risposta) => {
+    if ((await opzioni.interfaccia?.togli(richiesta.params.id)) !== true) return risposta.code(404).send({ errore: "Estensione non trovata." });
+    return { tolta: true };
+  });
+
   app.post<{ Params: { id: string } }>("/api/estensioni/:id/rimozione", async (richiesta, risposta) => {
     if ((await opzioni.estensioni?.rimuovi(richiesta.params.id)) !== true) {
       return risposta.code(404).send({ errore: "Questa estensione non c'è più." });
@@ -1370,6 +1416,9 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     flusso.allaChiusura(skill.iscrivi((stato) => flusso.manda(stato, "skill")));
     if (opzioni.estensioni !== undefined) {
       flusso.allaChiusura(opzioni.estensioni.iscrivi((stato) => flusso.manda(stato, "estensioni")));
+    }
+    if (opzioni.interfaccia !== undefined) {
+      flusso.allaChiusura(opzioni.interfaccia.iscrivi((stato) => flusso.manda(stato, "interfaccia")));
     }
     if (opzioni.gateway !== undefined) {
       flusso.allaChiusura(opzioni.gateway.iscrivi((breve) => flusso.manda(breve, "vault")));

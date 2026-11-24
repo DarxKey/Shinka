@@ -87,6 +87,7 @@ import { apriGateway, GatewayAssente } from "./gateway.ts";
 import { Home } from "./home.ts";
 import type { Canale } from "./canale.ts";
 import { ModelliInRete, unisciModelli } from "./modelli-in-rete.ts";
+import { EstensioniInterfaccia } from "./interfaccia.ts";
 import { eIncarico, progettoDellaConversazione } from "../protocollo/incarichi.ts";
 import { CustodiaImmagini } from "./immagini.ts";
 import {
@@ -454,6 +455,8 @@ estensioni = await Estensioni.apri({
   canaleHome: () => laHome().canale,
   annotaHome: annotaLaHome,
 });
+// Le estensioni dell'interfaccia (ADR 0054): le propone la Home, le conferma il proprietario.
+const interfaccia = await EstensioniInterfaccia.apri({ file: join(dati, "interfaccia.json"), annota: annotaLaHome });
 const agisciInAmbiente = (idAmbiente: string, idArgomento: string, azione: Parameters<typeof locale.agisci>[1]) =>
   (idAmbiente === ID_AMBIENTE_DEL_CENTRO ? locale : remoti.per(idAmbiente)).agisci(idArgomento, azione);
 const elaborati = new Elaborati({
@@ -481,6 +484,7 @@ const opzioniStrumenti = {
   lavori,
   proposte,
   estensioni,
+  interfaccia,
   home: laHome,
   comuni: (nome: Parameters<typeof comuni.esegui>[1], argomenti: unknown) =>
     comuni.esegui({ chiave: chiaveDellaHome(laHome().idArgomentoAperto), origine: "Home" }, nome, argomenti),
@@ -611,6 +615,7 @@ const centro = await creaCentro({
   lavori,
   proposte,
   estensioni,
+  interfaccia,
   elaborati,
   posizione,
   https,

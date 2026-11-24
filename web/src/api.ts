@@ -312,6 +312,26 @@ export async function decidiEstensione(id: string, esito: "confermata" | "annull
 }
 
 /** Accende o spegne in un ambiente un'estensione dell'elenco. Accenderla la prova di nuovo, lì. */
+/** Il proprietario conferma o annulla la proposta di un'estensione dell'interfaccia. */
+export async function decidiInterfaccia(idProposta: string, esito: "confermata" | "annullata"): Promise<void> {
+  await chiama("POST", `/api/interfaccia/proposte/${encodeURIComponent(idProposta)}`, { esito });
+}
+
+/** Accende o spegne un'estensione dell'interfaccia. */
+export async function accendiInterfaccia(id: string, accesa: boolean): Promise<void> {
+  await chiama("POST", `/api/interfaccia/${encodeURIComponent(id)}`, { accesa });
+}
+
+/** Toglie un'estensione dell'interfaccia dall'elenco. */
+export async function togliInterfaccia(id: string): Promise<void> {
+  await chiama("DELETE", `/api/interfaccia/${encodeURIComponent(id)}`);
+}
+
+/** L'indirizzo di una pagina di un'estensione dell'interfaccia, o di una proposta per l'anteprima. */
+export function indirizzoPaginaEstensione(id: string, idPagina: string, proposta = false): string {
+  return `/api/interfaccia/${proposta ? "proposte/" : ""}${encodeURIComponent(id)}/pagine/${encodeURIComponent(idPagina)}`;
+}
+
 /** Mette in rete un modello locale acceso in un ambiente, all'indirizzo indicato, o con nulla lo toglie dalla rete. */
 export async function mettiInRete(id: string, idAmbiente: string, indirizzo: string | null): Promise<void> {
   await chiama("POST", `/api/estensioni/${encodeURIComponent(id)}/ambienti/${encodeURIComponent(idAmbiente)}/rete`, { indirizzo });

@@ -16,6 +16,7 @@ import { anteprimaProposta, comandoSuHost, dettaglioDi, etichettaDi, oraInBreve 
 import { SchedaDomande } from "./Domande.tsx";
 import { SchedaElaborato } from "./Elaborati.tsx";
 import { SchedaEstensione } from "./Estensioni.tsx";
+import { SchedaInterfaccia } from "./Interfaccia.tsx";
 import { esitoDi, riassuntoDi, type Azione, type Gruppo, type Voce } from "./gruppi.ts";
 import { ImmagineNelTesto, Immagini } from "./Immagini.tsx";
 import { disposizioneImmagini } from "./immagini-nel-testo.ts";
@@ -229,6 +230,8 @@ function AltraVoce({ voce }: { voce: Exclude<Voce, { tipo: "proprietario" | "tes
       return <SchedaSviluppo sviluppo={voce} />;
     case "estensione":
       return <SchedaEstensione proposta={voce} />;
+    case "interfaccia":
+      return <SchedaInterfaccia proposta={voce} />;
     case "installazione":
       return <SchedaInstallazione installazione={voce} />;
     case "installata":

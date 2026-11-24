@@ -4,6 +4,8 @@
  * cambiare argomento e ritrovare ciò che è stato fatto in quelli archiviati.
  */
 
+import { leggiRichiestaInterfaccia } from "../protocollo/interfaccia.ts";
+import type { EstensioniInterfaccia } from "./interfaccia.ts";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
@@ -74,6 +76,8 @@ export interface OpzioniStrumentiHome {
   comuni?: ChiamaStrumento;
   /** Lo sviluppo di Shinka da dentro Shinka. Senza, la Home non può proporlo. */
   sviluppo?: Pick<SviluppoDiShinka, "proponi">;
+  /** Le estensioni dell'interfaccia (ADR 0054). Senza, la Home non ne propone. */
+  interfaccia?: Pick<EstensioniInterfaccia, "proponi" | "stato">;
   /** Le estensioni di Shinka. Senza, la Home non può proporne. */
   estensioni?: Pick<Estensioni, "proponi" | "stato" | "guarda">;
   /** Gli elaborati degli argomenti. Senza, la Home non può mostrarne nella chat. */
@@ -347,6 +351,36 @@ export function azioniDellaHome(opzioni: OpzioniStrumentiHome) {
       opzioni.sviluppo.proponi({ titolo, richiesta }, opzioni.home().canale);
       return risposta(
         `Proposta mostrata al proprietario: sviluppare in Shinka "${titolo}". Non è partito nulla: il lavoro comincia nel progetto Shinka solo se lui conferma la scheda. Rispondi con una frase sola e aspetta la sua decisione.`,
+      );
+    },
+
+    /** La Home propone un'estensione dell'interfaccia: tema, pagine e pulsanti scritti per intero (ADR 0054). */
+    async proponiInterfaccia(argomenti: unknown): Promise<RispostaStrumento> {
+      if (opzioni.interfaccia === undefined) return nonRiuscito("In questa installazione di Shinka le estensioni dell'interfaccia non ci sono.");
+      const letta = leggiRichiestaInterfaccia(argomenti);
+      if ("motivo" in letta) return nonRiuscito(`${letta.motivo} La proposta non è stata mostrata.`);
+      opzioni.interfaccia.proponi(letta, opzioni.home().canale);
+      return risposta(
+        `Proposta mostrata al proprietario: l'estensione dell'interfaccia "${letta.nome}"` +
+          ` (${[letta.tema === undefined ? "" : "un tema", letta.pagine.length === 0 ? "" : `${letta.pagine.length === 1 ? "una pagina" : `${letta.pagine.length} pagine`}`, letta.pulsanti.length === 0 ? "" : `${letta.pulsanti.length === 1 ? "un pulsante" : `${letta.pulsanti.length} pulsanti`}`].filter((parte) => parte !== "").join(", ")}).` +
+          " Dalla scheda può guardare le pagine in anteprima. Non è entrato nulla: entra solo se lui conferma. Rispondi con una frase sola e aspetta la sua decisione.",
+      );
+    },
+
+    /** Le estensioni dell'interfaccia che ci sono, con i loro pezzi. */
+    async elencaInterfaccia(): Promise<RispostaStrumento> {
+      const elenco = opzioni.interfaccia?.stato().estensioni ?? [];
+      if (elenco.length === 0) return risposta("Non c'è nessuna estensione dell'interfaccia.");
+      return risposta(
+        elenco
+          .map(
+            (una) =>
+              `- ${una.nome} (${una.accesa ? "accesa" : "spenta"}): ${una.descrizione}` +
+              (una.tema === undefined ? "" : `\n  Tema: ${una.tema.split("\n").length} righe.`) +
+              una.pagine.map((pagina) => `\n  Pagina «${pagina.titolo}» (id ${pagina.id}, ${pagina.dove === "menu" ? "nel menu delle pagine" : "nel pannello dei progetti"}).`).join("") +
+              una.pulsanti.map((pulsante) => `\n  Pulsante «${pulsante.etichetta}» (${pulsante.dove}): ${pulsante.testo}`).join(""),
+          )
+          .join("\n"),
       );
     },
 
@@ -1027,6 +1061,47 @@ export function creaStrumentiHome(opzioni: OpzioniStrumentiHome) {
                   .describe("Solo i NOMI dei segreti che l'estensione vuole: variabili d'ambiente per mcp-locale (per esempio GITHUB_TOKEN), intestazioni per mcp-remoto (per esempio Authorization). Il valore lo scrive il proprietario nel vault: tu non lo chiedi e non lo vedi."),
               },
               async (argomenti) => azioni.proponiEstensione(argomenti),
+            ),
+          ]),
+      ...(opzioni.interfaccia === undefined
+        ? []
+        : [
+            tool(
+              "proponi_estensione_interfaccia",
+              "Propone al proprietario un'estensione dell'interfaccia di Shinka, scritta da te per intero: un tema (CSS che si aggiunge a quello di Shinka), delle pagine (documenti HTML con il loro JavaScript, nel menu delle pagine o come schede del pannello dei progetti) e dei pulsanti sopra il campo di scrittura che mandano un messaggio già scritto. Non cambia nulla da solo: mostra una scheda, con l'anteprima delle pagine, ed entra solo se il proprietario conferma. Una proposta con il nome di un'estensione che c'è già la sostituisce: riscrivila intera. Dopo averlo usato, rispondi con una frase sola.",
+              {
+                nome: z.string().min(1).max(40).describe("Il nome: minuscole, cifre e trattini."),
+                descrizione: z.string().min(1).max(600).describe("Che cosa cambia o aggiunge, in una o due frasi per il proprietario."),
+                tema: z.string().max(60_000).optional().describe("CSS che si aggiunge a quello di Shinka. Niente @import né url() verso altri siti: l'interfaccia li blocca."),
+                pagine: z
+                  .array(
+                    z.object({
+                      id: z.string().min(1).max(32).describe("Breve: minuscole, cifre e trattini."),
+                      titolo: z.string().min(1).max(60),
+                      dove: z.enum(["menu", "pannello"]).optional().describe("Nel menu delle pagine (predefinito) o come scheda del pannello dei progetti."),
+                      html: z.string().min(1).max(300_000).describe("Il documento intero, con CSS e JavaScript dentro: niente risorse da altri siti né richieste in rete."),
+                    }),
+                  )
+                  .max(6)
+                  .optional(),
+                pulsanti: z
+                  .array(
+                    z.object({
+                      etichetta: z.string().min(1).max(40),
+                      testo: z.string().min(1).max(4000).describe("Il messaggio che il pulsante manda alla conversazione."),
+                      dove: z.enum(["home", "progetti", "ovunque"]).optional(),
+                    }),
+                  )
+                  .max(8)
+                  .optional(),
+              },
+              async (argomenti) => azioni.proponiInterfaccia(argomenti),
+            ),
+            tool(
+              "elenca_estensioni_interfaccia",
+              "Elenca le estensioni dell'interfaccia di Shinka, accese e spente, con il tema, le pagine e i pulsanti di ciascuna. Usalo prima di proporne una, per cambiare quella che c'è invece di farne un doppione.",
+              {},
+              async () => azioni.elencaInterfaccia(),
             ),
           ]),
       ...(opzioni.comuni === undefined ? [] : [...definizioniComuni(opzioni.comuni), ...definizioniApplicazione(opzioni.comuni)]),

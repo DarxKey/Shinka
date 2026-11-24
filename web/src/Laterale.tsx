@@ -1,3 +1,4 @@
+import { pagineDelleEstensioni } from "./Interfaccia.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { VoceProgetto } from "../../src/protocollo/progetti.ts";
 import { eliminaProgetto, fissaProgetto, rinominaProgetto } from "./api.ts";
@@ -268,6 +269,8 @@ function MenuPagine({
     { vista: { tipo: "estensioni" }, nome: "Estensioni", accanto: estensioni !== undefined && <span className="quanti">{estensioni}</span> },
     { vista: { tipo: "vault" }, nome: "Vault", accanto: vault !== undefined && <span className="quanti">{vault}</span> },
     { vista: { tipo: "impostazioni" }, nome: "Impostazioni" },
+    // Le pagine delle estensioni dell'interfaccia (ADR 0054).
+    ...pagineDelleEstensioni(quadro, "menu").map((una) => ({ vista: { tipo: "interfaccia" as const, id: una.id, pagina: una.pagina }, nome: una.titolo })),
   ];
   const suUnaPagina = pagine.some((pagina) => pagina.vista.tipo === vista.tipo);
   const attivi = quadro.ambienti?.ambienti.filter((ambiente) => ambiente.attivo).length ?? 0;
@@ -315,10 +318,10 @@ function MenuPagine({
           )}
         </button>
         {pagine.map((pagina) => {
-          const attuale = pagina.vista.tipo === vista.tipo;
+          const attuale = frammentoDi(pagina.vista) === frammentoDi(vista);
           return (
             <a
-              key={pagina.vista.tipo}
+              key={frammentoDi(pagina.vista)}
               className={attuale ? "voce attuale" : "voce"}
               href={frammentoDi(pagina.vista)}
               aria-current={attuale ? "page" : undefined}
