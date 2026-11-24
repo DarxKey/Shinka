@@ -108,3 +108,20 @@ test("una skill dal nome strano, vuota o con un segreto non viene salvata", asyn
   }
   assert.deepEqual(registro.elenco(), []);
 });
+
+test("una skill senza storia nel repository non risulta nuova a ogni rilettura", async (t) => {
+  const registro = await registroDiProva(t);
+  const { mkdir, writeFile, utimes } = await import("node:fs/promises");
+  // Messa lì a mano, senza passare dal registro: nessun commit la racconta.
+  const cartella = join(registro.cartella, "skills", "a-mano");
+  await mkdir(cartella, { recursive: true });
+  const file = join(cartella, "SKILL.md");
+  await writeFile(file, '---\nname: a-mano\ndescription: "Una skill messa a mano."\n---\n\nPassi.\n');
+  const quando = new Date("2026-11-01T10:00:00Z");
+  await utimes(file, quando, quando);
+  const prima = (await RegistroSkill.apri(registro.cartella)).elenco().find((voce) => voce.nome === "a-mano");
+  await new Promise((fatto) => setTimeout(fatto, 20));
+  const dopo = (await RegistroSkill.apri(registro.cartella)).elenco().find((voce) => voce.nome === "a-mano");
+  assert.equal(prima?.modificataIl, quando.toISOString());
+  assert.equal(dopo?.modificataIl, prima?.modificataIl);
+});

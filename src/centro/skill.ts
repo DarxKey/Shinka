@@ -9,7 +9,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   componiSkill,
@@ -292,7 +292,8 @@ export class RegistroSkill {
       voci.push({
         nome,
         descrizione: parti.descrizione,
-        modificataIl: storia[0]?.quando ?? new Date().toISOString(),
+        // Senza storia nel repository vale la data del file: «adesso» la farebbe nuova a ogni rilettura.
+        modificataIl: storia[0]?.quando ?? (await dataDelFile(this.#percorso(nome))),
         modifiche: storia.length,
       });
     }
@@ -304,5 +305,14 @@ export class RegistroSkill {
     const esito = this.#coda.then(lavoro);
     this.#coda = esito.catch(() => {});
     return esito;
+  }
+}
+
+/** Quando un file è stato cambiato l'ultima volta; l'inizio del 1970 se non si sa, così non risulta nuovo. */
+async function dataDelFile(percorso: string): Promise<string> {
+  try {
+    return (await stat(percorso)).mtime.toISOString();
+  } catch {
+    return new Date(0).toISOString();
   }
 }

@@ -151,6 +151,17 @@ function Prepara-AmbienteShinka {
   $collegamento.WindowStyle = 7
   $collegamento.Description = 'Nodo di Shinka'
   $collegamento.Save()
+  # Un avvio di prima, fatto a mano o da una versione vecchia (per esempio un .vbs), partirebbe insieme
+  # a questo: si toglie, con i suoi script.
+  foreach ($vecchio in @(Get-ChildItem -LiteralPath ([Environment]::GetFolderPath('Startup')) -Filter '*.lnk' -ErrorAction SilentlyContinue)) {
+    if ($vecchio.FullName -eq $esecuzioneAutomatica) { continue }
+    $letto = $shell.CreateShortcut($vecchio.FullName)
+    if ("$($letto.TargetPath) $($letto.Arguments)" -match 'avvia-guardiano|avvio-nodo\.ts') {
+      Remove-Item -LiteralPath $vecchio.FullName -Force -ErrorAction SilentlyContinue
+      Passo "Tolto l'avvio di prima ($($vecchio.Name))"
+    }
+  }
+  foreach ($script in 'avvia-guardiano.vbs', 'avvia-guardiano.ps1') { Remove-Item -LiteralPath (Join-Path $cartella $script) -Force -ErrorAction SilentlyContinue }
 
   if (-not (Test-Path -LiteralPath $registro)) { New-Item -ItemType File -Path $registro | Out-Null }
   $inizio = @(Get-Content -LiteralPath $registro -Encoding UTF8).Count

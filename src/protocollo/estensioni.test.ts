@@ -152,3 +152,11 @@ test("ciò che un nodo riferisce viene letto solo se ha la forma giusta, e accor
     assert.equal(leggiEstensioniDellAmbiente(guaste), undefined, JSON.stringify(guaste));
   }
 });
+
+test("un tipo di estensione che questa versione non conosce si mostra com'è, senza rompersi", async () => {
+  const { definizioneInChiaro, inUnaRiga, tipoInParole } = await import("./estensioni.ts");
+  const ignota = { tipo: "tema-dell-interfaccia", colore: "viola" } as unknown as Parameters<typeof inUnaRiga>[0];
+  assert.equal(inUnaRiga(ignota), '{"tipo":"tema-dell-interfaccia","colore":"viola"}');
+  assert.match(definizioneInChiaro(ignota).join("\n"), /"colore": "viola"/);
+  assert.equal(tipoInParole("tema-dell-interfaccia" as Parameters<typeof tipoInParole>[0]), "tema-dell-interfaccia");
+});

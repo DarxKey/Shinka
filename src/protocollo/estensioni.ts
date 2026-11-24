@@ -201,6 +201,9 @@ export function inUnaRiga(definizione: DefinizioneEstensione): string {
       return `${definizione.repository} @ ${definizione.commit.slice(0, 12)}${definizione.cartella === undefined ? "" : ` (${definizione.cartella})`}`;
     case "modello-locale":
       return [definizione.comando, ...definizione.argomenti].map((parte) => (/\s/.test(parte) ? `"${parte}"` : parte)).join(" ");
+    default:
+      // Un tipo che questa versione non conosce, arrivato da un centro più nuovo: lo si mostra com'è.
+      return JSON.stringify(definizione);
   }
 }
 
@@ -227,6 +230,8 @@ export function definizioneInChiaro(definizione: DefinizioneEstensione): string[
         `modello ${definizione.modello} su 127.0.0.1:${definizione.porta}, contesto ${definizione.contesto} token, risposte fino a ${definizione.uscita}`,
         `impegni: ${definizione.impegni.join(", ")}`,
       ];
+    default:
+      return [JSON.stringify(definizione, null, 2)];
   }
 }
 
@@ -256,6 +261,8 @@ export function tipoInParole(tipo: TipoEstensione): string {
       return "Plugin di Claude Code";
     case "modello-locale":
       return "Modello locale";
+    default:
+      return String(tipo);
   }
 }
 

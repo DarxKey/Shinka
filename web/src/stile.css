@@ -6537,3 +6537,24 @@ kbd {
   flex-wrap: wrap;
   gap: var(--s-2);
 }
+
+/* Una pagina che non si è potuta mostrare: l'avviso al suo posto, la barra laterale resta. */
+.avviso-pagina-rotta {
+  max-width: 40rem;
+  margin: var(--s-5) auto;
+  padding: var(--s-4);
+  display: grid;
+  gap: var(--s-2);
+}
+
+.avviso-pagina-rotta h2 {
+  margin: 0;
+}
+
+.avviso-pagina-rotta p {
+  margin: 0;
+}
+
+.avviso-pagina-rotta code {
+  overflow-wrap: anywhere;
+}
