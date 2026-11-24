@@ -128,11 +128,26 @@ export function effortPerCodex(impegno: Impegno | undefined): string | undefined
 
 /** Vero se tutti i file della modifica stanno nella cartella della conversazione. */
 export function nellaCartella(percorsi: readonly string[], cartella: string): boolean {
+  return nelleCartelle(percorsi, cartella, []);
+}
+
+/**
+ * Vero se tutti i file della modifica stanno nella cartella della conversazione o in una delle
+ * cartelle in più del progetto. I percorsi relativi partono dalla cartella della conversazione.
+ */
+export function nelleCartelle(percorsi: readonly string[], cartella: string, altre: readonly string[]): boolean {
   const radice = resolve(cartella);
-  return percorsi.length > 0 && percorsi.every((percorso) => {
-    const dentro = relative(radice, resolve(radice, percorso));
-    return dentro !== "" && !dentro.startsWith("..") && !isAbsolute(dentro);
-  });
+  const ammesse = [radice, ...altre.map((altra) => resolve(altra))];
+  return (
+    percorsi.length > 0 &&
+    percorsi.every((percorso) => {
+      const assoluto = resolve(radice, percorso);
+      return ammesse.some((ammessa) => {
+        const dentro = relative(ammessa, assoluto);
+        return dentro !== "" && !dentro.startsWith("..") && !isAbsolute(dentro);
+      });
+    })
+  );
 }
 
 export interface OpzioniCodex {
@@ -786,9 +801,11 @@ export class ConversazioneCodex implements PortaConversazione {
       case "applyPatchApproval": {
         const idVoce = String(parametri.itemId ?? parametri.callId ?? randomUUID());
         const azione = this.#traduzione.azioneInCorso(idVoce) ?? (metodo.includes("ommand") ? { strumento: "Bash", ingresso: { command: String(parametri.command ?? "") } } : { strumento: "Edit", ingresso: {} });
-        // Nelle modifiche libere una modifica dentro la cartella non chiede, come con Claude Code.
+        // Nelle modifiche libere una modifica dentro la cartella non chiede, come con Claude Code; così
+        // anche nelle cartelle in più del progetto, e ovunque con «tutto il computer».
         const percorsi = this.#traduzione.percorsiInCorso(idVoce);
-        if (metodo === "item/fileChange/requestApproval" && this.#impostazioni.permessi === "modifiche-libere" && nellaCartella(percorsi, this.#cfg.cartella)) {
+        const dentro = this.#impostazioni.tuttoIlPc === true ? percorsi.length > 0 : nelleCartelle(percorsi, this.#cfg.cartella, this.#impostazioni.cartelleInPiu ?? []);
+        if (metodo === "item/fileChange/requestApproval" && this.#impostazioni.permessi === "modifiche-libere" && dentro) {
           return { risultato: { decision: "accept" } };
         }
         return this.#chiedi(idVoce, String(parametri.approvalId ?? idVoce), azione, typeof parametri.reason === "string" ? parametri.reason : undefined, { decision: "accept" }, { decision: "decline" });

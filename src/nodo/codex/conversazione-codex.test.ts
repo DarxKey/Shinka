@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { EventoConversazione } from "../../protocollo/eventi.ts";
-import { ConversazioneCodex, effortPerCodex, modelliDiCodex, modelloPerCodex, motoreConfigurato, nellaCartella, politicaDi, scambiDiCodex, skillDiCodex } from "./conversazione-codex.ts";
+import { ConversazioneCodex, effortPerCodex, modelliDiCodex, modelloPerCodex, motoreConfigurato, nellaCartella, nelleCartelle, politicaDi, scambiDiCodex, skillDiCodex } from "./conversazione-codex.ts";
 import { comandoLeggibile } from "./traduzione.ts";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
@@ -151,6 +151,10 @@ test("i quattro modi dei permessi diventano politiche di approvazione di Codex, 
   assert.equal(nellaCartella(["../fuori.ts"], "/progetto"), false);
   assert.equal(nellaCartella(["/etc/passwd"], "/progetto"), false);
   assert.equal(nellaCartella([], "/progetto"), false);
+  // Le cartelle in più del progetto valgono come la sua.
+  assert.equal(nelleCartelle(["/srv/dati/a.txt", "src/b.ts"], "/progetto", ["/srv/dati"]), true);
+  assert.equal(nelleCartelle(["/srv/altro/a.txt"], "/progetto", ["/srv/dati"]), false);
+  assert.equal(nelleCartelle(["/srv/dati"], "/progetto", ["/srv/dati"]), false);
   assert.equal(comandoLeggibile("/bin/bash -lc ls"), "ls");
   assert.equal(comandoLeggibile("/bin/bash -lc 'touch b.txt'"), "touch b.txt");
   assert.equal(comandoLeggibile(`/bin/bash -lc 'echo '\\''ciao'\\'''`), "echo 'ciao'");
