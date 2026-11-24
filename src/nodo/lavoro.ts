@@ -60,6 +60,8 @@ export interface ContestoLavoro {
   accessi?: { esegui(richiesta: RichiestaAccessi): Promise<EsitoAccessi> };
   /** Le risorse di questa macchina, per la pagina dell'ambiente. Senza, il nodo non le dice. */
   risorse?: { leggi(): Promise<RisorseDellAmbiente> };
+  /** Su Windows: il collegamento che fa partire il nodo a ogni accesso. Senza, il nodo non lo sa cambiare. */
+  avvioConWindows?: { imposta(attivo: boolean): Promise<{ attivo: boolean } | { motivo: string }> };
   /** Come si accende la shell di un terminale. Nei test se ne mette una finta. */
   accendiShell?: AccendiShell;
 }
@@ -135,6 +137,19 @@ export class LavoroDelNodo {
         const { idRichiesta, richiesta } = comando;
         const esito = this.#contesto.accessi?.esegui(richiesta) ?? Promise.resolve({ motivo: "Questo nodo non sa dire gli accessi dei motori." });
         void esito.then((letto) => this.#contesto.riferisci({ tipo: "accessi-esito", idRichiesta, esito: letto }));
+        return;
+      }
+      case "avvio-con-windows": {
+        const { idRichiesta, attivo } = comando;
+        const avvio = this.#contesto.avvioConWindows;
+        if (avvio === undefined) {
+          this.#contesto.riferisci({ tipo: "avvio-con-windows-esito", idRichiesta, motivo: "Questo nodo non sa cambiarlo da qui: rilancia su questa macchina il comando di una riga." });
+          return;
+        }
+        void avvio.imposta(attivo).then(
+          (esito) => this.#contesto.riferisci({ tipo: "avvio-con-windows-esito", idRichiesta, ...esito }),
+          (errore: unknown) => this.#contesto.riferisci({ tipo: "avvio-con-windows-esito", idRichiesta, motivo: errore instanceof Error ? errore.message : String(errore) }),
+        );
         return;
       }
       case "risorse": {

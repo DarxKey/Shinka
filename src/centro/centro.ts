@@ -3,6 +3,7 @@
  * tra il browser e la conversazione della Home e accoglie i nodi degli ambienti.
  */
 
+import { AvvioConWindows } from "./avvio-con-windows.ts";
 import type { PrimoAvvio } from "./primo-avvio.ts";
 import { pacchettoDiInstallazione } from "./installazione-nuova.ts";
 import { InvitiDegliAmbienti, PERCORSO_PACCHETTO_NODO, PERCORSO_PREPARAZIONE, pacchettoDelNodo, scriptDiPreparazione } from "./ambiente-nuovo.ts";
@@ -1555,6 +1556,17 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     return { avviato: true };
   });
 
+  // Un nodo Windows parte a ogni accesso, oppure no: lo sceglie il proprietario dalla pagina degli ambienti.
+  const avvioConWindows = new AvvioConWindows(ambienti);
+  app.post<{ Params: { id: string }; Body: { attivo: boolean } }>(
+    "/api/ambienti/:id/avvio-con-windows",
+    { schema: { body: { type: "object", required: ["attivo"], additionalProperties: false, properties: { attivo: { type: "boolean" } } } } },
+    async (richiesta, risposta) => {
+      const esito = await avvioConWindows.imposta(richiesta.params.id, richiesta.body.attivo);
+      return "motivo" in esito ? risposta.code(409).send({ errore: esito.motivo }) : esito;
+    },
+  );
+
   // Un ambiente nuovo con un comando di una riga: il proprietario sceglie sistema e nome, il centro dà il comando.
   const inviti = opzioni.inviti ?? new InvitiDegliAmbienti(perINodi === undefined ? {} : { certificato: perINodi });
   app.post<{ Body: { sistema: string; centro: string; nome: string; descrizione?: string } }>(
@@ -2604,6 +2616,8 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
         ...(versioneValida(campi.versione) ? { versione: campi.versione } : {}),
         ...(campi.siAggiorna === true ? { siAggiorna: true } : {}),
         ...(aggiornamentoFallito === undefined ? {} : { aggiornamentoFallito }),
+        ...(typeof campi.centro === "string" && /^https?:\/\/[A-Za-z0-9.\-[\]:]+$/.test(campi.centro) ? { centro: campi.centro } : {}),
+        ...(typeof campi.avvioConWindows === "boolean" ? { avvioConWindows: campi.avvioConWindows } : {}),
       };
     }
     case "evento": {
@@ -2715,6 +2729,17 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
       const estensione = campo("estensione");
       if (idRichiesta === undefined || estensione === undefined) return undefined;
       return { tipo: "chiavi-richieste", idRichiesta, estensione };
+    }
+    case "avvio-con-windows-esito": {
+      const idRichiesta = campo("idRichiesta");
+      if (idRichiesta === undefined) return undefined;
+      const motivo = campo("motivo");
+      return {
+        tipo: "avvio-con-windows-esito",
+        idRichiesta,
+        ...(typeof campi.attivo === "boolean" ? { attivo: campi.attivo } : {}),
+        ...(motivo === undefined ? {} : { motivo: motivo.slice(0, 2000) }),
+      };
     }
     case "aggiornamento-pronto": {
       const idRichiesta = campo("idRichiesta");

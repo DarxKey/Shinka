@@ -84,6 +84,8 @@ export interface ConfigurazioneCollegamento {
   siAggiorna?: boolean;
   /** L'ultimo aggiornamento, se non è partito: chiesto ogni volta che il nodo si presenta. */
   aggiornamentoFallito?(): { versione: string; motivo: string } | undefined;
+  /** Su Windows: se il nodo parte a ogni accesso, chiesto quando si presenta; nulla dove non si sa. */
+  avvioConWindows?(): boolean | undefined;
   alCambio(stato: StatoCollegamento): void;
   /** Il centro chiede di fare qualcosa in questo ambiente. */
   alComando?(comando: ComandoPerNodo): void;
@@ -207,6 +209,7 @@ export class CollegamentoAlCentro {
         // Se il file dell'identità non si scrive, il segreto resta quello di adesso.
       }
       const fallito = this.#cfg.aggiornamentoFallito?.();
+      const avvioConWindows = this.#cfg.avvioConWindows?.();
       this.#manda({
         tipo: "presentazione",
         idNodo: this.#cfg.identita.idNodo,
@@ -219,6 +222,9 @@ export class CollegamentoAlCentro {
         ...(this.#cfg.versione === undefined ? {} : { versione: this.#cfg.versione }),
         ...(this.#cfg.siAggiorna === true ? { siAggiorna: true } : {}),
         ...(fallito === undefined ? {} : { aggiornamentoFallito: fallito }),
+        // L'indirizzo con cui il nodo raggiunge il centro: per reinstallarlo con lo stesso.
+        centro: this.#cfg.centro,
+        ...(avvioConWindows === undefined ? {} : { avvioConWindows }),
       });
       this.#battito = setInterval(() => this.#manda({ tipo: "battito" }), INTERVALLO_BATTITO_MS);
     });

@@ -46,6 +46,8 @@ interface NodoRegistrato {
   radiceProgetti: string;
   improntaSegreto: string;
   registratoIl: string;
+  /** L'indirizzo con cui il nodo raggiunge il centro, come l'ha detto l'ultima volta. */
+  indirizzoDelCentro?: string;
 }
 
 /** Ciò che un nodo dice della sua versione quando si presenta. */
@@ -54,6 +56,8 @@ export interface VersioneDelNodo {
   versione?: string;
   /** Vero se sa cambiare versione da solo. */
   siAggiorna: boolean;
+  /** Su Windows: se parte a ogni accesso; manca se il nodo non lo dice. */
+  avvioConWindows?: boolean;
 }
 
 interface NodoCollegato extends VersioneDelNodo {
@@ -67,6 +71,7 @@ interface NodoInAttesa extends VersioneDelNodo {
   richiesta: RichiestaCollegamento;
   improntaSegreto: string;
   radiceProgetti: string;
+  indirizzoDelCentro?: string;
 }
 
 export interface AmbienteDelCentro {
@@ -82,6 +87,7 @@ function versioneDichiarata(presentazione: Presentazione): VersioneDelNodo {
   return {
     ...(presentazione.versione === undefined ? {} : { versione: presentazione.versione }),
     siAggiorna: presentazione.siAggiorna === true,
+    ...(presentazione.avvioConWindows === undefined ? {} : { avvioConWindows: presentazione.avvioConWindows }),
   };
 }
 
@@ -193,6 +199,7 @@ export class RegistroAmbienti {
       canale,
       improntaSegreto: impronta,
       radiceProgetti: presentazione.radiceProgetti.trim(),
+      ...(presentazione.centro === undefined ? {} : { indirizzoDelCentro: presentazione.centro }),
       ...versioneDichiarata(presentazione),
       richiesta: {
         id: presentazione.idNodo,
@@ -233,6 +240,14 @@ export class RegistroAmbienti {
     const collegato = this.#collegati.get(idAmbiente);
     if (collegato === undefined) return undefined;
     return { ...(collegato.versione === undefined ? {} : { versione: collegato.versione }), siAggiorna: collegato.siAggiorna };
+  }
+
+  /** Il nodo collegato ha cambiato il suo avvio con Windows: lo si ricorda finché resta collegato. */
+  segnaAvvioConWindows(idAmbiente: string, attivo: boolean): void {
+    const collegato = this.#collegati.get(idAmbiente);
+    if (collegato === undefined || collegato.avvioConWindows === attivo) return;
+    collegato.avvioConWindows = attivo;
+    this.#avvisa();
   }
 
   /** Segna a che punto è l'aggiornamento chiesto a un nodo, con la versione per intero; nulla lo toglie. */
@@ -310,6 +325,7 @@ export class RegistroAmbienti {
       radiceProgetti: inAttesa.radiceProgetti,
       improntaSegreto: inAttesa.improntaSegreto,
       registratoIl: new Date(ora).toISOString(),
+      ...(inAttesa.indirizzoDelCentro === undefined ? {} : { indirizzoDelCentro: inAttesa.indirizzoDelCentro }),
     };
     this.#registrati.set(registrato.id, registrato);
     await this.#salva();
@@ -378,6 +394,8 @@ export class RegistroAmbienti {
           ...(collegato?.siAggiorna === true ? { siAggiorna: true } : {}),
           ...(collegato === undefined ? {} : { cifrato: collegato.cifrato }),
           ...(aggiornamento === undefined ? {} : { aggiornamento: { ...aggiornamento, versione: inBreve(aggiornamento.versione) } }),
+          ...(nodo.indirizzoDelCentro === undefined ? {} : { indirizzoDelCentro: nodo.indirizzoDelCentro }),
+          ...(collegato?.avvioConWindows === undefined ? {} : { avvioConWindows: collegato.avvioConWindows }),
         };
       })
       .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
@@ -438,6 +456,7 @@ export class RegistroAmbienti {
       ultimoBattito: ora,
       ...(dichiarata.versione === undefined ? {} : { versione: dichiarata.versione }),
       siAggiorna: dichiarata.siAggiorna,
+      ...(dichiarata.avvioConWindows === undefined ? {} : { avvioConWindows: dichiarata.avvioConWindows }),
       cifrato: canale.cifrato === true,
     });
     canale.invia({ tipo: "accolto", nome: registrato.nome, ...(segretoCambiato ? { segretoCambiato: true as const } : {}) });
@@ -457,14 +476,17 @@ export class RegistroAmbienti {
     const descrizione = presentazione.descrizione.trim();
     const sistema = presentazione.sistema.trim();
     const radiceProgetti = presentazione.radiceProgetti.trim();
+    const indirizzoDelCentro = presentazione.centro ?? registrato.indirizzoDelCentro;
     if (
       registrato.nome === nome &&
       registrato.descrizione === descrizione &&
       registrato.sistema === sistema &&
-      registrato.radiceProgetti === radiceProgetti
+      registrato.radiceProgetti === radiceProgetti &&
+      registrato.indirizzoDelCentro === indirizzoDelCentro
     ) {
       return;
     }
+    if (indirizzoDelCentro !== undefined) registrato.indirizzoDelCentro = indirizzoDelCentro;
     registrato.nome = nome;
     registrato.descrizione = descrizione;
     registrato.sistema = sistema;

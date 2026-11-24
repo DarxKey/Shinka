@@ -500,6 +500,11 @@ export async function leggiRisorseAmbiente(id: string): Promise<DettaglioDellAmb
 }
 
 /** Chiede al nodo di un ambiente di passare alla versione del centro. */
+/** Fa partire un nodo Windows a ogni accesso, oppure no. */
+export async function impostaAvvioConWindows(idAmbiente: string, attivo: boolean): Promise<{ attivo: boolean }> {
+  return (await chiama("POST", `/api/ambienti/${encodeURIComponent(idAmbiente)}/avvio-con-windows`, { attivo })) as { attivo: boolean };
+}
+
 export async function aggiornaAmbiente(id: string): Promise<void> {
   await chiama("POST", `/api/ambienti/${encodeURIComponent(id)}/aggiornamento`);
 }

@@ -27,6 +27,7 @@
  *   SHINKA_GUARDIANO  "1" quando il nodo è tenuto acceso dal suo guardiano, che lo imposta da sé
  */
 
+import { AvvioConWindows } from "./avvio-con-windows.ts";
 import { AccessiDeiMotori } from "./accessi.ts";
 import { CampionatoreRisorse } from "./risorse.ts";
 import { ETICHETTA_STACK } from "../protocollo/stack.ts";
@@ -109,6 +110,8 @@ try {
 
   let ultimoStato = "";
   let inAggiornamento = false;
+  // Su Windows il proprietario sceglie dalla pagina degli ambienti se il nodo parte a ogni accesso.
+  const avvioConWindows = AvvioConWindows.diQuestaMacchina();
   const lavoro = new LavoroDelNodo({
     radiceProgetti: impostazioni.progetti,
     cartellaSkill,
@@ -117,6 +120,7 @@ try {
     accessi: new AccessiDeiMotori({ dopoIlCambio: () => modelliDeiMotori.dimentica() }),
     // Le risorse di questa macchina: si leggono quando il proprietario guarda la pagina dell'ambiente.
     risorse: new CampionatoreRisorse({ radiceProgetti: impostazioni.progetti, etichettaDiShinka: ETICHETTA_STACK }),
+    ...(avvioConWindows === undefined ? {} : { avvioConWindows }),
     // Le estensioni che il centro accende qui: i plugin stanno tra i dati del nodo, e nella
     // configurazione di Claude Code di questa macchina non si scrive nulla.
     estensioni: (chiavi, alCambio) =>
@@ -180,6 +184,7 @@ try {
       return { versione: ultima.versione, motivo: ultima.motivo ?? "non è partita" };
     },
     alComando: (comando) => lavoro.esegui(comando),
+    ...(avvioConWindows === undefined ? {} : { avvioConWindows: () => avvioConWindows.attivo() }),
     alCambio: (stato) => {
       // Senza il centro nessuno vedrebbe il lavoro: le conversazioni aperte si fermano.
       if (stato.stato === "scollegato" || stato.stato === "rifiutato" || stato.stato === "centro-non-riconosciuto" || stato.stato === "solo-cifrato") lavoro.chiudiTutto();
