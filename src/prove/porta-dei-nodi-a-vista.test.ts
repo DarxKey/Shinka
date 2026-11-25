@@ -49,7 +49,11 @@ for (const [nome, larghezza, accesa] of [
     await pagina.fill("#password", PASSWORD);
     await pagina.click('button[type="submit"]');
     await pagina.locator("form.scrittura textarea").waitFor();
-    await pagina.goto(`${indirizzo}/#/sicurezza`);
+    if (larghezza > 1000) {
+      // Dal menu delle pagine, dove la pagina Sicurezza sta accanto alle Impostazioni.
+      await pagina.locator(".menu-pagine > summary").click();
+      await pagina.locator(".voci-pagine").getByRole("link", { name: "Sicurezza" }).click();
+    } else await pagina.goto(`${indirizzo}/#/sicurezza`);
 
     const riga = pagina.locator('[data-parte="porta-dei-nodi"]');
     if (accesa) {
