@@ -13,6 +13,7 @@
  * certificato è quello del sito, e vale la verifica di sempre.
  */
 
+import type { StatoChrome } from "../protocollo/browser-del-pc.ts";
 import { leggiSigillo } from "../protocollo/sigillo.ts";
 import { leggiComandoOffline } from "../protocollo/offline.ts";
 import type { IncomingMessage } from "node:http";
@@ -92,6 +93,8 @@ export interface ConfigurazioneCollegamento {
   offline?(): string[];
   /** La chiave pubblica con cui il nodo riceve le credenziali del vault (ADR 0062). */
   chiaveVault?: string;
+  /** Che cosa c'è per guidare Chrome, e se il proprietario lo ha acceso: chiesto quando il nodo si presenta (ADR 0063). */
+  chrome?(): { stato?: StatoChrome; acceso: boolean };
   alCambio(stato: StatoCollegamento): void;
   /** Il centro chiede di fare qualcosa in questo ambiente. */
   alComando?(comando: ComandoPerNodo): void;
@@ -217,6 +220,7 @@ export class CollegamentoAlCentro {
       const fallito = this.#cfg.aggiornamentoFallito?.();
       const avvioConWindows = this.#cfg.avvioConWindows?.();
       const offline = this.#cfg.offline?.() ?? [];
+      const chrome = this.#cfg.chrome?.();
       this.#manda({
         tipo: "presentazione",
         idNodo: this.#cfg.identita.idNodo,
@@ -234,6 +238,7 @@ export class CollegamentoAlCentro {
         ...(avvioConWindows === undefined ? {} : { avvioConWindows }),
         ...(offline.length === 0 ? {} : { offline }),
         ...(this.#cfg.chiaveVault === undefined ? {} : { chiaveVault: this.#cfg.chiaveVault }),
+        ...(chrome?.stato === undefined ? {} : { chrome: chrome.stato, browserDelPc: chrome.acceso }),
       });
       this.#battito = setInterval(() => this.#manda({ tipo: "battito" }), INTERVALLO_BATTITO_MS);
     });
@@ -413,6 +418,11 @@ export function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | u
     case "risorse": {
       const idRichiesta = testo("idRichiesta");
       return idRichiesta === undefined ? undefined : { tipo: "risorse", idRichiesta };
+    }
+    case "browser-del-pc": {
+      const idRichiesta = testo("idRichiesta");
+      if (idRichiesta === undefined || typeof campi.attivo !== "boolean") return undefined;
+      return { tipo: "browser-del-pc", idRichiesta, attivo: campi.attivo };
     }
     case "credenziali": {
       const sigillo = leggiSigillo(campi.sigillo);

@@ -65,6 +65,7 @@ import { AccessiDeiMotori } from "../nodo/accessi.ts";
 import { modelliDeiMotori, modelliDellAmbiente } from "../nodo/sonde-motori.ts";
 import { CatalogoDeiModelli } from "./catalogo-modelli.ts";
 import { CredenzialiNegliAmbienti } from "./credenziali-negli-ambienti.ts";
+import { LavoriNelBrowser } from "./lavori-nel-browser.ts";
 import { AccessiNegliAmbienti } from "./accessi.ts";
 import { ImpostazioniDellInstallazione } from "./impostazioni-installazione.ts";
 import { EstensioniInAmbiente } from "../nodo/estensioni.ts";
@@ -496,9 +497,12 @@ const elaborati = new Elaborati({
 let ponteTelegram: PonteTelegram | undefined;
 // La posizione del proprietario resta qui, finché il centro è acceso: non va su disco.
 const posizione = new PosizioneDelProprietario();
+// I lavori della Home nel Chrome dei PC (ADR 0063): una conversazione a parte sul nodo, con Claude in Chrome.
+const lavoriNelBrowser = new LavoriNelBrowser({ ambienti, esecutore: (idAmbiente) => lavori.esecutore(idAmbiente) });
 const opzioniStrumenti = {
   ambienti,
   elaborati,
+  lavoriNelBrowser,
   posizione,
   mappe: serviziVeri(),
   cartellaDellArgomento: (idArgomento: string) => laHome().cartellaDellArgomento(idArgomento),
@@ -531,6 +535,8 @@ home = await Home.apri({
   radiceProgetti,
   impostazioni: () => statoHome.impostazioni,
   notaPrimaDelMessaggio: (idArgomento) => memoria.daConsegnare(chiaveDellaHome(idArgomento)),
+  // Le azioni nel Chrome di un PC chieste per la Home si decidono nella sua chat (ADR 0063).
+  decidiAltrove: (idPermesso, decisione) => lavoriNelBrowser.decidiPermesso(idPermesso, decisione),
   apri: (apertura) =>
     apriConversazione({
       cartella: apertura.cartella,

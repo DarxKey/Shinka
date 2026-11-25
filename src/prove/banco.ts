@@ -56,9 +56,11 @@ import { colLavoroOffline } from "../centro/lavoro-offline.ts";
 import type { AggiornamentiDallOriginale } from "../centro/originale.ts";
 import { CatalogoDeiModelli } from "../centro/catalogo-modelli.ts";
 import { CredenzialiNegliAmbienti } from "../centro/credenziali-negli-ambienti.ts";
+import { LavoriNelBrowser } from "../centro/lavori-nel-browser.ts";
 import { preparaCartellaProgetti } from "../nodo/cartella-progetti.ts";
 import { CredenzialiDelegate } from "../nodo/credenziali-delegate.ts";
 import { leggiChiavePrivata, nuovaCoppia } from "../protocollo/sigillo.ts";
+import type { StatoChrome } from "../protocollo/browser-del-pc.ts";
 import { ProposteRicordate, postiDegliArchivi } from "../centro/proposte-ricordate.ts";
 import { LavoroOffline } from "../nodo/offline.ts";
 import { Memoria } from "../centro/memoria.ts";
@@ -310,6 +312,8 @@ export interface Banco {
   approvazioni: Approvazioni | undefined;
   /** Le credenziali date agli ambienti (ADR 0062), se il banco ha un gateway: i giri li chiede il test. */
   credenzialiNegliAmbienti: CredenzialiNegliAmbienti | undefined;
+  /** I lavori della Home nel Chrome dei PC (ADR 0063). */
+  lavoriNelBrowser: LavoriNelBrowser;
   /** Gli elaborati degli argomenti della Home, come li vede il pannello. */
   elaborati: Elaborati;
   /** Il ponte con Telegram, se il test lo ha acceso. */
@@ -704,6 +708,8 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     assert.ok(sviluppo, "il progetto Shinka deve potersi aprire");
   }
   const argomenti = await RegistroArgomenti.apri(join(cartella, "argomenti.json"));
+  // I lavori della Home nel Chrome dei PC (ADR 0063), come nel centro vero.
+  const lavoriNelBrowser = new LavoriNelBrowser({ ambienti, esecutore: (idAmbiente) => lavori.esecutore(idAmbiente) });
   const conversazioniHome: ConversazioneFinta[] = [];
   const casa = await Home.apri({
     argomenti,
@@ -712,6 +718,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     radiceProgetti,
     impostazioni: () => statoHome.impostazioni,
     notaPrimaDelMessaggio: (idArgomento) => memoria.daConsegnare(chiaveDellaHome(idArgomento)),
+    decidiAltrove: (idPermesso, decisione) => lavoriNelBrowser.decidiPermesso(idPermesso, decisione),
     apri: (apertura) => {
       const conversazione = new ConversazioneFinta({
         cartella: apertura.cartella,
@@ -911,6 +918,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     applicazioni,
     approvazioni,
     credenzialiNegliAmbienti,
+    lavoriNelBrowser,
     sviluppo,
     elaborati,
     ponte,
@@ -995,6 +1003,8 @@ export async function avviaNodo(
     ponte?: NonNullable<ContestoLavoro["ponte"]>;
     /** I modelli dei motori nell'ambiente del nodo. Senza, nessun motore ha un accesso: le prove non sondano i motori veri. */
     modelli?: NonNullable<ContestoLavoro["modelli"]>;
+    /** Che cosa c'è per guidare Chrome su questa macchina, e se è acceso (ADR 0063). Senza, il nodo non lo dice. */
+    chrome?: { stato: StatoChrome; acceso: boolean };
   } = {},
 ): Promise<NodoInProva> {
   if (!banco.centro.server.listening) await banco.centro.listen({ host: "127.0.0.1", port: 0 });
@@ -1008,8 +1018,21 @@ export async function avviaNodo(
   // La chiave del nodo per il vault, e le credenziali che riceve (ADR 0062).
   const coppiaVault = nuovaCoppia();
   const credenziali = new CredenzialiDelegate({ privata: leggiChiavePrivata(coppiaVault.privata) });
+  // Chrome per Claude: come nel nodo vero, la scelta si salva e vale dal prossimo avvio (qui, dalla prossima presentazione).
+  const chrome = opzioni.chrome === undefined ? undefined : { ...opzioni.chrome };
   const lavoro = new LavoroDelNodo({
     credenziali,
+    ...(chrome === undefined
+      ? {}
+      : {
+          ...(chrome.acceso ? { browserDelPc: true } : {}),
+          sceltaChrome: {
+            imposta: async (attivo: boolean) => {
+              chrome.acceso = attivo;
+              return { attivo, riparte: false };
+            },
+          },
+        }),
     radiceProgetti,
     cartellaSkill,
     ...(opzioni.accessi === undefined ? {} : { accessi: opzioni.accessi }),
@@ -1066,6 +1089,7 @@ export async function avviaNodo(
     sistema: "Windows 11",
     radiceProgetti,
     chiaveVault: coppiaVault.pubblica,
+    ...(chrome === undefined ? {} : { chrome: () => ({ stato: chrome.stato, acceso: chrome.acceso }) }),
     ...(opzioni.versione === undefined ? {} : { versione: opzioni.versione }),
     ...(opzioni.aggiorna === undefined ? {} : { siAggiorna: true }),
     ...(opzioni.aggiornamentoFallito === undefined ? {} : { aggiornamentoFallito: () => opzioni.aggiornamentoFallito }),

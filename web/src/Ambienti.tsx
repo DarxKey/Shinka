@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { chromeInParole } from "../../src/protocollo/browser-del-pc.ts";
 import type { DecisionePermesso } from "../../src/protocollo/eventi.ts";
 import type { Ambiente, RichiestaCollegamento, StatoAmbienti } from "../../src/protocollo/nodi.ts";
-import { aggiornaAmbiente, decidiRichiesta, impostaAvvioConWindows, impostaCartellaProgetti, impostaPonte, invitaAmbiente, rimuoviAmbiente, type InvitoAmbiente } from "./api.ts";
+import { aggiornaAmbiente, decidiRichiesta, impostaAvvioConWindows, impostaCartellaProgetti, impostaChromeDellAmbiente, impostaPonte, invitaAmbiente, rimuoviAmbiente, type InvitoAmbiente } from "./api.ts";
 import { copia } from "./copia.ts";
 import { frammentoDi } from "./vista.ts";
 import { collegamentoAmbiente, sottotitoloAmbiente as sottotitolo, versioneAmbiente } from "./descrivi.ts";
@@ -180,6 +181,7 @@ function VistaAmbiente({ ambiente, indirizzoNoto, allaChiusura }: { ambiente: Am
         <p className="tenue">Per scegliere da qui se parte con Windows, reinstalla il nodo con il comando di una riga.</p>
       )}
       {ambiente.radiceProgetti !== "" && <CartellaDeiProgetti ambiente={ambiente} />}
+      {ambiente.attivo && ambiente.chrome !== undefined && <ChromeDellAmbiente ambiente={ambiente} />}
       {!ambiente.delCentro && (ambiente.attivo || ambiente.ponte !== undefined) && <PonteDellAmbiente ambiente={ambiente} />}
       {ambiente.attivo && ambiente.indietro === true && ambiente.siAggiorna !== true && (
         <p className="tenue">Questo nodo non si aggiorna da qui: va aggiornato su quella macchina.</p>
@@ -423,6 +425,58 @@ const PORTA_DEL_PONTE = 7851;
  * collega attraverso di lui. Acceso, dice l'indirizzo da usare per la macchina nuova e, su Windows,
  * la regola del firewall da creare una volta.
  */
+/**
+ * Chrome per Claude in un ambiente (ADR 0063): se ci sono Chrome e l'estensione Claude in Chrome, e
+ * l'interruttore con cui il proprietario lo accende. Il nodo riparte per usarlo.
+ */
+function ChromeDellAmbiente({ ambiente }: { ambiente: Ambiente }): ReactNode {
+  const [inCorso, setInCorso] = useState(false);
+  const [errore, setErrore] = useState<string>();
+  const [fatto, setFatto] = useState<string>();
+  const acceso = ambiente.browserDelPc === true;
+  const siPuo = ambiente.chrome?.estensione === true;
+
+  async function cambia(attivo: boolean): Promise<void> {
+    setInCorso(true);
+    setErrore(undefined);
+    try {
+      const esito = await impostaChromeDellAmbiente(ambiente.id, attivo);
+      setFatto(
+        esito.riparte
+          ? `Chrome per Claude ${esito.attivo ? "acceso" : "spento"}: il nodo riparte adesso per usarlo.`
+          : `Chrome per Claude ${esito.attivo ? "acceso" : "spento"} dal prossimo avvio del nodo.`,
+      );
+    } catch (causa) {
+      setErrore(causa instanceof Error ? causa.message : "Non è cambiato.");
+    } finally {
+      setInCorso(false);
+    }
+  }
+
+  return (
+    <div className="chrome-ambiente">
+      <div className="tenue">{chromeInParole(ambiente.chrome, acceso)}</div>
+      {(siPuo || acceso) && (
+        <label className="avvio-con-windows">
+          <input type="checkbox" checked={acceso} disabled={inCorso} onChange={(evento) => void cambia(evento.target.checked)} />
+          Chrome per Claude
+          <span className="tenue"> · i progetti lo accendono nella scheda della sessione, la Home lo usa per un lavoro; ogni azione la chiede a te</span>
+        </label>
+      )}
+      {fatto !== undefined && (
+        <p className="tenue" role="status">
+          {fatto}
+        </p>
+      )}
+      {errore !== undefined && (
+        <p className="errore" role="alert">
+          {errore}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
  * La cartella in cui nascono i progetti nuovi di un ambiente. Quella di un nodo collegato si cambia
  * da qui: il nodo la prepara, la salva e, se lo tiene acceso il suo guardiano, riparte per usarla.

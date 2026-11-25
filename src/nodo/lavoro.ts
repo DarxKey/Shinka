@@ -3,6 +3,9 @@
  * le loro conversazioni ed eseguire le azioni della Home, su richiesta del centro.
  */
 
+import { eNelBrowser } from "../protocollo/browser-del-pc.ts";
+import { tmpdir } from "node:os";
+import { mkdirSync } from "node:fs";
 import type { EsitoAccessi, RichiestaAccessi } from "../protocollo/accessi.ts";
 import type { RisorseDellAmbiente } from "../protocollo/risorse.ts";
 import type { Motore } from "../protocollo/impostazioni.ts";
@@ -78,6 +81,8 @@ export interface ContestoLavoro {
    * Senza, il nodo non ne riceve.
    */
   credenziali?: CredenzialiDelegate;
+  /** Chrome per Claude in questo ambiente (ADR 0063): acceso o spento dalla pagina Ambienti. Senza, il nodo non lo sa cambiare. */
+  sceltaChrome?: { imposta(attivo: boolean): Promise<{ attivo: boolean; riparte: boolean } | { motivo: string }> };
   /** I processi accesi da Shinka qui: per terminarne uno bloccato. */
   processiDiShinka?: { termina(pid: number): Promise<{ riuscita: boolean; testo: string }> };
   /** Su Windows: il collegamento che fa partire il nodo a ogni accesso. Senza, il nodo non lo sa cambiare. */
@@ -254,6 +259,19 @@ export class LavoroDelNodo {
         void avvio.imposta(attivo).then(
           (esito) => this.#contesto.riferisci({ tipo: "avvio-con-windows-esito", idRichiesta, ...esito }),
           (errore: unknown) => this.#contesto.riferisci({ tipo: "avvio-con-windows-esito", idRichiesta, motivo: errore instanceof Error ? errore.message : String(errore) }),
+        );
+        return;
+      }
+      case "browser-del-pc": {
+        const { idRichiesta, attivo } = comando;
+        const scelta = this.#contesto.sceltaChrome;
+        if (scelta === undefined) {
+          this.#contesto.riferisci({ tipo: "browser-del-pc-esito", idRichiesta, motivo: "Questo nodo non sa accendere Chrome per Claude da qui." });
+          return;
+        }
+        void scelta.imposta(attivo).then(
+          (esito) => this.#contesto.riferisci({ tipo: "browser-del-pc-esito", idRichiesta, ...esito }),
+          (errore: unknown) => this.#contesto.riferisci({ tipo: "browser-del-pc-esito", idRichiesta, motivo: errore instanceof Error ? errore.message : String(errore) }),
         );
         return;
       }
@@ -591,6 +609,11 @@ export class LavoroDelNodo {
     // Il progetto sta finendo qui un lavoro cominciato offline: la conversazione è una, e il centro la
     // riprende dopo la consegna (ADR 0056).
     if (this.#offline?.aperta(idConversazione) === true) return;
+    // Un lavoro della Home nel browser non è un progetto: lavora in una cartella sua, temporanea (ADR 0063).
+    if (eNelBrowser(idConversazione)) {
+      cartella = join(tmpdir(), "shinka-browser-del-pc");
+      mkdirSync(cartella, { recursive: true });
+    }
     this.#impostazioniDate.set(idConversazione, testoStabile(impostazioni));
     this.#conversazioni.set(
       idConversazione,
@@ -654,6 +677,7 @@ export class LavoroDelNodo {
         : { estensioni: scelte === undefined ? this.#estensioni : soloLeScelte(this.#estensioni, () => scelte) }),
       ...(this.#contesto.browserDelPc === true ? { browserDelPc: true } : {}),
       ...(eIncarico(idConversazione) ? { incarico: true } : {}),
+      ...(eNelBrowser(idConversazione) ? { nelBrowser: true } : {}),
       ...(this.#estensioni === undefined
         ? {}
         : { modelliLocali: scelte === undefined ? this.#estensioni.modelliLocali : soloIModelliScelti(this.#estensioni.modelliLocali, () => scelte) }),

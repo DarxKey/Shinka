@@ -596,6 +596,11 @@ export async function impostaAvvioConWindows(idAmbiente: string, attivo: boolean
   return (await chiama("POST", `/api/ambienti/${encodeURIComponent(idAmbiente)}/avvio-con-windows`, { attivo })) as { attivo: boolean };
 }
 
+/** Accende o spegne Chrome per Claude in un ambiente (ADR 0063): il nodo salva la scelta e riparte per usarla. */
+export async function impostaChromeDellAmbiente(idAmbiente: string, attivo: boolean): Promise<{ attivo: boolean; riparte: boolean }> {
+  return (await chiama("POST", `/api/ambienti/${encodeURIComponent(idAmbiente)}/browser-del-pc`, { attivo })) as { attivo: boolean; riparte: boolean };
+}
+
 /** Sceglie la cartella in cui nascono i progetti nuovi di un ambiente: il nodo la prepara e la salva. */
 export async function impostaCartellaProgetti(idAmbiente: string, percorso: string): Promise<{ percorso: string; riparte: boolean }> {
   return (await chiama("POST", `/api/ambienti/${encodeURIComponent(idAmbiente)}/cartella-progetti`, { percorso })) as { percorso: string; riparte: boolean };

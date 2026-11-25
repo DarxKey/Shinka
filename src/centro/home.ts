@@ -65,6 +65,11 @@ export interface OpzioniHome {
   notaPrimaDelMessaggio?(idArgomento: string): string | undefined;
   /** L'orologio, per sapere quali argomenti sono stati archiviati di recente. Nei test se ne mette uno fermo. */
   adesso?: () => number;
+  /**
+   * Le richieste di consenso nate da ciò che la Home fa altrove, come un lavoro nel Chrome di un PC
+   * (ADR 0063): si decidono nella sua chat, qui o da Telegram. Vero se la richiesta era di lì.
+   */
+  decidiAltrove?: (idPermesso: string, decisione: DecisionePermesso) => boolean;
 }
 
 /** Quanti argomenti archiviati di recente la conversazione aperta conosce, e di quanti giorni al massimo. */
@@ -549,7 +554,7 @@ export class Home implements PortaConversazione {
   }
 
   decidiPermesso(idPermesso: string, decisione: DecisionePermesso): boolean {
-    return this.#porta.decidiPermesso(idPermesso, decisione);
+    return this.#porta.decidiPermesso(idPermesso, decisione) || this.#o.decidiAltrove?.(idPermesso, decisione) === true;
   }
 
   /** Quali file tornerebbero com'erano riprendendo da prima di quel messaggio. */

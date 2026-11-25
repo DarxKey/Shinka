@@ -4,6 +4,7 @@
  * cambiare argomento e ritrovare ciò che è stato fatto in quelli archiviati.
  */
 
+import type { LavoriNelBrowser } from "./lavori-nel-browser.ts";
 import { riferimentoEstensioniInterfaccia } from "./riferimento-estensioni.ts";
 import { AMBITI, CLIENT_DELLE_ESTENSIONI, PARTI, POSTI } from "../protocollo/interfaccia.ts";
 import { leggiRichiestaInterfaccia } from "../protocollo/interfaccia.ts";
@@ -92,6 +93,8 @@ export interface OpzioniStrumentiHome {
   mappe?: ServiziMappa;
   /** Telegram, chiesto nel momento in cui serve: nasce dopo gli strumenti. Senza, la Home non manda file lì. */
   telegram?: () => Pick<PonteTelegram, "inviaElaborato"> | undefined;
+  /** I lavori nel Chrome dei PC (ADR 0063). Senza, la Home non li fa. */
+  lavoriNelBrowser?: Pick<LavoriNelBrowser, "esegui">;
 }
 
 /**
@@ -186,7 +189,16 @@ export function azioniDellaHome(opzioni: OpzioniStrumentiHome) {
     const comeAgire = ambiente.delCentro
       ? "qui giri tu: usa Bash, Read, Write ed Edit"
       : `shell: ${shellDi(ambiente)}; cartella di questo argomento: ${cartella}`;
-    return `- nome: "${ambiente.nome}"; sistema: ${ambiente.sistema}${offre}; ${comeAgire}`;
+    // Il Chrome del proprietario, dove c'è (ADR 0063): la Home lo usa con usa_chrome_del_pc.
+    const chrome =
+      ambiente.chrome === undefined
+        ? ""
+        : ambiente.browserDelPc === true && ambiente.chrome.estensione
+          ? "; Chrome con Claude in Chrome: acceso, lo usi con usa_chrome_del_pc"
+          : ambiente.chrome.estensione
+            ? "; Chrome con Claude in Chrome: c'è, ma il proprietario non l'ha acceso per Claude (lo fa dalla pagina Ambienti)"
+            : "";
+    return `- nome: "${ambiente.nome}"; sistema: ${ambiente.sistema}${offre}; ${comeAgire}${chrome}`;
   };
   const elencoAttivi = (): string => attivi().map(descriviAmbiente).join("\n");
 
@@ -1029,6 +1041,22 @@ function definizioniHome(opzioni: OpzioniStrumentiHome) {
         { testo: z.string().min(1).max(200).describe("Poche parole che descrivono ciò che si cerca.") },
         async (argomenti) => azioni.cercaArgomenti(argomenti),
       ),
+      ...(opzioni.lavoriNelBrowser === undefined
+        ? []
+        : [
+            tool(
+              "usa_chrome_del_pc",
+              "Fa un lavoro nel Chrome di un PC del proprietario, con l'estensione Claude in Chrome: aprire una pagina, cercare, leggere, cliccare, compilare. È il suo browser vero, con i siti in cui è già entrato. Lo svolge una conversazione a parte di Claude Code su quel PC, e ogni azione nel browser chiede il consenso del proprietario qui in chat; alla fine ricevi il risultato. Vale negli ambienti che elenca_ambienti dice con Chrome acceso. Mai per pagare, confermare ordini, cambiare password o cancellare account, e mai per scrivere credenziali: se un sito chiede di entrare, ci entra il proprietario.",
+              {
+                ambiente: z.string().min(1).max(200).describe("Il nome dell'ambiente, come in elenca_ambienti: per esempio PC ATES."),
+                compito: z.string().min(1).max(8000).describe("Che cosa fare nel browser e che cosa riferire, completo: chi lo svolge non vede questa conversazione."),
+              },
+              async ({ ambiente, compito }) => {
+                const esito = await opzioni.lavoriNelBrowser!.esegui(ambiente, compito, (evento) => opzioni.home().pubblica(evento));
+                return esito.errore === true ? nonRiuscito(esito.testo) : risposta(esito.testo);
+              },
+            ),
+          ]),
       tool(
         "leggi_argomento",
         "Riporta la conversazione di un argomento archiviato e i file che vi sono stati scritti, con il loro contenuto.",

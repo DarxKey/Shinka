@@ -3,6 +3,7 @@
  * quali sono collegati in questo momento e quali aspettano il suo consenso.
  */
 
+import type { StatoChrome } from "../protocollo/browser-del-pc.ts";
 import type { AmbientePerIlVault } from "../protocollo/vault.ts";
 import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -65,6 +66,9 @@ export interface VersioneDelNodo {
   avvioConWindows?: boolean;
   /** La chiave con cui il nodo riceve le credenziali del vault (ADR 0062); manca se il nodo non la dice. */
   chiaveVault?: string;
+  /** Che cosa c'è per guidare Chrome, e se il proprietario lo ha acceso (ADR 0063). */
+  chrome?: StatoChrome;
+  browserDelPc?: boolean;
 }
 
 interface NodoCollegato extends VersioneDelNodo {
@@ -100,6 +104,7 @@ function versioneDichiarata(presentazione: Presentazione): VersioneDelNodo {
     siAggiorna: presentazione.siAggiorna === true,
     ...(presentazione.avvioConWindows === undefined ? {} : { avvioConWindows: presentazione.avvioConWindows }),
     ...(presentazione.chiaveVault === undefined ? {} : { chiaveVault: presentazione.chiaveVault }),
+    ...(presentazione.chrome === undefined ? {} : { chrome: presentazione.chrome, browserDelPc: presentazione.browserDelPc === true }),
   };
 }
 
@@ -443,6 +448,7 @@ export class RegistroAmbienti {
           ...(aggiornamento === undefined ? {} : { aggiornamento: { ...aggiornamento, versione: inBreve(aggiornamento.versione) } }),
           ...(nodo.indirizzoDelCentro === undefined ? {} : { indirizzoDelCentro: nodo.indirizzoDelCentro }),
           ...(collegato?.avvioConWindows === undefined ? {} : { avvioConWindows: collegato.avvioConWindows }),
+          ...(collegato?.chrome === undefined ? {} : { chrome: collegato.chrome, browserDelPc: collegato.browserDelPc === true }),
           ...(collegato?.canale.indirizzo === undefined ? {} : { indirizzoDelNodo: collegato.canale.indirizzo }),
           ...(nodo.ponte === undefined
             ? {}
@@ -515,6 +521,7 @@ export class RegistroAmbienti {
       siAggiorna: dichiarata.siAggiorna,
       ...(dichiarata.avvioConWindows === undefined ? {} : { avvioConWindows: dichiarata.avvioConWindows }),
       ...(dichiarata.chiaveVault === undefined ? {} : { chiaveVault: dichiarata.chiaveVault }),
+      ...(dichiarata.chrome === undefined ? {} : { chrome: dichiarata.chrome, browserDelPc: dichiarata.browserDelPc === true }),
       cifrato: canale.cifrato === true,
       ...(offline === undefined ? {} : { offline: offline.filter((id) => typeof id === "string").slice(0, 1000) }),
     });

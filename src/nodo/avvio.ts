@@ -5,7 +5,7 @@
  *
  *   npm run nodo -- --centro http://192.168.1.20:7850 --nome "PC Windows" --descrizione "Unity, Blender" --progetti "C:/Users/io/Progetti"
  *
- * Con `--browser-del-pc si` i progetti di questo ambiente possono usare il browser di questa macchina
+ * Con `--browser-del-pc si` (o dalla pagina Ambienti di Shinka) i progetti di questo ambiente possono usare il browser di questa macchina
  * attraverso l'estensione Claude in Chrome; `--browser-del-pc no` lo spegne. Vale solo su Windows e macOS,
  * e solo nei modi dei permessi in cui ogni azione viene chiesta. Accenderlo fa riscrivere a Claude Code il
  * collegamento con l'estensione (~/.claude/chrome), che da quel momento punta al programma usato da Shinka.
@@ -61,6 +61,7 @@ import { sistemaDiQuestaMacchina } from "./sistema.ts";
 import { FILE_STATO_DEL_COLLEGAMENTO, scriviStatoDelCollegamento } from "./stato-del-collegamento.ts";
 import { preparaCartellaProgetti } from "./cartella-progetti.ts";
 import { chiaveDelNodo, CredenzialiDelegate } from "./credenziali-delegate.ts";
+import { rilevaChrome } from "./chrome.ts";
 
 interface Impostazioni {
   centro: string;
@@ -115,6 +116,17 @@ try {
     );
   }
 
+  // Che cosa c'è per guidare Chrome (ADR 0063): si guarda all'avvio e poi ogni dieci minuti, e lo si
+  // dice al centro quando il nodo si presenta.
+  let statoChrome = await rilevaChrome().catch(() => undefined);
+  setInterval(() => {
+    void rilevaChrome()
+      .then((stato) => {
+        statoChrome = stato;
+      })
+      .catch(() => {});
+  }, 10 * 60_000).unref();
+
   let ultimoStato = "";
   let inAggiornamento = false;
   // I processi che il nodo accende: la pagina dell'ambiente li mostra per progetto, e ne termina uno bloccato.
@@ -135,6 +147,25 @@ try {
     processiDiShinka,
     // Le credenziali per SSH che il proprietario dà a questo ambiente (ADR 0062): solo in memoria.
     credenziali,
+    // Chrome per Claude, acceso o spento dalla pagina Ambienti (ADR 0063): si salva tra le scelte del
+    // nodo, e con il guardiano il nodo riparte per usarla.
+    sceltaChrome: {
+      imposta: async (attivo) => {
+        if (process.platform !== "win32" && process.platform !== "darwin") return { motivo: "Chrome per Claude vale solo su Windows e su macOS." };
+        impostazioni.browserDelPc = attivo;
+        await writeFile(fileImpostazioni, JSON.stringify(impostazioni, null, 2));
+        console.log(`Chrome per Claude ${attivo ? "acceso" : "spento"}${colGuardiano ? ": riparto per usarlo." : ", dal prossimo avvio del nodo."}`);
+        const riparte = colGuardiano && !inAggiornamento;
+        if (riparte) {
+          setTimeout(() => {
+            lavoro.spegni();
+            collegamento.ferma();
+            process.exit(CODICE_RIAVVIO);
+          }, 2_000);
+        }
+        return { attivo, riparte };
+      },
+    },
     // La cartella dei progetti nuovi, scelta dalla pagina degli ambienti: si salva tra le scelte del nodo,
     // e con il guardiano il nodo riparte subito per usarla.
     cartellaProgetti: {
@@ -228,6 +259,7 @@ try {
     descrizione: impostazioni.descrizione,
     radiceProgetti: impostazioni.progetti,
     chiaveVault: chiaveVault.pubblica,
+    chrome: () => ({ ...(statoChrome === undefined ? {} : { stato: statoChrome }), acceso: browserDelPc }),
     identita,
     segreto: custodiaDelSegreto(fileIdentita, identita),
     ...(impostazioni.improntaDelCentro === undefined ? {} : { impronta: impostazioni.improntaDelCentro }),

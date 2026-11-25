@@ -3,6 +3,7 @@
  * vede degli ambienti. Sono dati semplici, serializzabili in JSON.
  */
 
+import type { StatoChrome } from "./browser-del-pc.ts";
 import type { Sigillo } from "./sigillo.ts";
 import type { AzioneInAmbiente, EsitoAzione } from "./azioni.ts";
 import type { RichiestaAllaConversazione } from "./modifiche.ts";
@@ -92,6 +93,8 @@ export type RiferitoDalNodo =
    * adesso per usarlo (con il suo guardiano) o lo userà dal prossimo avvio; oppure perché no.
    */
   | { tipo: "cartella-progetti-esito"; idRichiesta: string; percorso?: string; riparte?: boolean; motivo?: string }
+  /** Com'è andata la scelta di Chrome per Claude: com'è adesso, e se il nodo riparte per usarla; oppure perché no. */
+  | { tipo: "browser-del-pc-esito"; idRichiesta: string; attivo?: boolean; riparte?: boolean; motivo?: string }
   /** Com'è finito un comando che il nodo ha eseguito con una credenziale data al suo ambiente. */
   | { tipo: "esito-su-host"; idRichiesta: string; esito: EsitoSuHost }
   /** Com'è andata la scelta di far partire il nodo a ogni accesso a Windows. */
@@ -149,6 +152,10 @@ export type MessaggioNodo =
        * gli dà (ADR 0062), in SPKI e base64. Un nodo di prima non la dice, e non ne riceve.
        */
       chiaveVault?: string;
+      /** Che cosa c'è su questa macchina per guidare Chrome (ADR 0063); manca dove non vale o in un nodo di prima. */
+      chrome?: StatoChrome;
+      /** Vero se il proprietario ha acceso Chrome per Claude in questo ambiente. */
+      browserDelPc?: boolean;
     }
   | { tipo: "battito" }
   | RiferitoDalNodo;
@@ -207,6 +214,8 @@ export type ComandoPerNodo =
    * esistono restano dove sono. Un nodo di prima non lo conosce e tace.
    */
   | { tipo: "cartella-progetti"; idRichiesta: string; percorso: string }
+  /** Il proprietario accende o spegne Chrome per Claude in questo ambiente (ADR 0063). */
+  | { tipo: "browser-del-pc"; idRichiesta: string; attivo: boolean }
   /**
    * Le credenziali per SSH che il proprietario ha dato a questo ambiente (ADR 0062), in un sigillo
    * che solo la chiave del nodo apre: il nodo le tiene in memoria al posto di quelle di prima.
@@ -329,6 +338,10 @@ export interface Ambiente {
   ponte?: { porta: number; aperto: boolean; motivo?: string };
   /** Su Windows, per un nodo collegato che lo sa dire: se parte a ogni accesso. */
   avvioConWindows?: boolean;
+  /** Per un nodo collegato su Windows o macOS: che cosa c'è per guidare Chrome (ADR 0063). */
+  chrome?: StatoChrome;
+  /** Vero se il proprietario ha acceso Chrome per Claude in questo ambiente. */
+  browserDelPc?: boolean;
 }
 
 /** L'aggiornamento di un nodo alla versione del centro: in corso, oppure non riuscito. */

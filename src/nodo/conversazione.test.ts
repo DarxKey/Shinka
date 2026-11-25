@@ -172,7 +172,9 @@ test("il browser del PC è acceso in ogni modo dei permessi, e ogni sua azione p
       chieste.push({ strumento, ingresso, idAzione, motivo });
       return risposta;
     };
-    const opzioni = opzioniHarness(conIlBrowser(), "abbonamento", undefined, { permessi }, nessunPermesso, [], chiedi);
+    // Acceso per l'ambiente ma spento nella sessione, Claude Code parte senza Chrome (ADR 0063).
+    assert.equal("extraArgs" in opzioniHarness(conIlBrowser(), "abbonamento", undefined, { permessi }, nessunPermesso, [], chiedi), false, permessi);
+    const opzioni = opzioniHarness(conIlBrowser(), "abbonamento", undefined, { permessi, browserChrome: true }, nessunPermesso, [], chiedi);
     assert.deepEqual(opzioni.extraArgs, { chrome: null }, permessi);
     // Ogni strumento del browser viene chiesto, anche quelli che l'harness lascerebbe passare da sé.
     assert.equal(opzioni.hooks?.PreToolUse?.length, 2, permessi);
@@ -200,7 +202,7 @@ test("il browser del PC è acceso in ogni modo dei permessi, e ogni sua azione p
     assert.deepEqual(opzioni.allowedTools, [], permessi);
 
     // Senza un modo di chiedere, nel browser del PC non parte nulla.
-    const senzaChiedere = opzioniHarness(conIlBrowser(), "abbonamento", undefined, { permessi }, nessunPermesso);
+    const senzaChiedere = opzioniHarness(conIlBrowser(), "abbonamento", undefined, { permessi, browserChrome: true }, nessunPermesso);
     const muta = decisione(await senzaChiedere.hooks?.PreToolUse?.find((voce) => voce.matcher === controllo?.matcher)?.hooks[0]?.(azione, "azione-1", { signal: segnale }));
     assert.equal(muta.permissionDecision, "deny", permessi);
   }

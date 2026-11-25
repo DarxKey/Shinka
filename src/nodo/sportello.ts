@@ -292,6 +292,10 @@ function leggiModifica(corpo: Record<string, unknown>): ModificaImpostazioni | u
         if (valore !== null && typeof valore !== "boolean") return undefined;
         modifica.tuttoIlPc = valore;
         break;
+      case "browserChrome":
+        if (valore !== null && typeof valore !== "boolean") return undefined;
+        modifica.browserChrome = valore;
+        break;
       case "cartelleInPiu":
         if (valore !== null && !Array.isArray(valore)) return undefined;
         modifica.cartelleInPiu = valore as string[] | null;

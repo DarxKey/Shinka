@@ -5,6 +5,7 @@
  */
 
 import { apriSchedaDelPannello } from "./apri-pannello.ts";
+import { useQuadroCorrente } from "./Quadro.tsx";
 import { progettoDellaConversazione } from "../../src/protocollo/incarichi.ts";
 import { CartelleCollegate } from "./Collegate.tsx";
 import { ChiImplementa } from "./ChiImplementa.tsx";
@@ -78,6 +79,7 @@ export function SchedaSessione({
             )}
           </dl>
           {idProgetto !== undefined && impostazioni !== undefined && <TuttoIlPc base={base} attivo={impostazioni.tuttoIlPc === true} />}
+          {idProgetto !== undefined && impostazioni !== undefined && <BrowserChrome idProgetto={idProgetto} base={base} attivo={impostazioni.browserChrome === true} />}
           {idProgetto !== undefined && impostazioni !== undefined && impostazioni.tuttoIlPc !== true && <CartelleInPiu base={base} cartelle={impostazioni.cartelleInPiu ?? []} />}
           {idProgetto !== undefined && <ChiImplementa idProgetto={idProgetto} modelli={stato?.modelli} />}
           {idProgetto !== undefined && <EstensioniDelProgetto idProgetto={idProgetto} />}
@@ -328,6 +330,49 @@ function CartelleInPiu({ base, cartelle }: { base: string; cartelle: readonly st
         </button>
       </form>
       <p className="tenue">Il percorso completo, nell'ambiente del progetto: lì legge e scrive come nella sua cartella, con le stesse regole dei permessi.</p>
+      {errore !== undefined && (
+        <p className="errore" role="alert">
+          {errore}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * «Browser Chrome» per la conversazione di un progetto (ADR 0063): c'è dove il proprietario ha acceso
+ * Chrome per Claude nell'ambiente del progetto. Acceso, Claude Code riparte con Claude in Chrome, e ogni
+ * azione nel browser viene chiesta.
+ */
+function BrowserChrome({ idProgetto, base, attivo }: { idProgetto: string; base: string; attivo: boolean }): ReactNode {
+  const quadro = useQuadroCorrente();
+  const [lavoro, setLavoro] = useState(false);
+  const [errore, setErrore] = useState<string>();
+  const idAmbiente = quadro.progetti?.progetti.find((progetto) => progetto.id === idProgetto)?.idAmbiente;
+  const ambiente = quadro.ambienti?.ambienti.find((uno) => uno.id === idAmbiente);
+  if (ambiente?.browserDelPc !== true && !attivo) return null;
+  return (
+    <div className="tutto-il-pc">
+      <label>
+        <input
+          type="checkbox"
+          checked={attivo}
+          disabled={lavoro}
+          onChange={(evento) => {
+            setLavoro(true);
+            setErrore(undefined);
+            void cambiaImpostazioni(base, { browserChrome: evento.target.checked })
+              .catch((causa: unknown) => setErrore(causa instanceof Error ? causa.message : "Non è cambiato."))
+              .finally(() => setLavoro(false));
+          }}
+        />
+        Browser Chrome
+      </label>
+      <p className="tenue">
+        {attivo
+          ? `Claude guida il tuo Chrome su «${ambiente?.nome ?? "questo ambiente"}», con Claude in Chrome: ogni azione te la chiede.`
+          : `Lascia che Claude guidi il tuo Chrome su «${ambiente?.nome ?? "questo ambiente"}», con i siti in cui sei entrato. Ogni azione te la chiede.`}
+      </p>
       {errore !== undefined && (
         <p className="errore" role="alert">
           {errore}

@@ -3,6 +3,7 @@
  * tra il browser e la conversazione della Home e accoglie i nodi degli ambienti.
  */
 
+import { leggiStatoChrome, type StatoChrome } from "../protocollo/browser-del-pc.ts";
 import { leggiConsegnaOffline } from "../protocollo/offline.ts";
 import { POLITICA_PAGINA_ESTENSIONE, rottaEsclusa } from "../protocollo/interfaccia.ts";
 import { conLaLibreria } from "../protocollo/ponte-delle-pagine.ts";
@@ -13,6 +14,7 @@ import type { StatoEstensioniDelProgetto } from "../protocollo/progetti.ts";
 import { tipoInParole } from "../protocollo/estensioni.ts";
 import { AvvioConWindows } from "./avvio-con-windows.ts";
 import { CartellaDeiProgetti } from "./cartella-progetti.ts";
+import { ChromeNegliAmbienti } from "./chrome-negli-ambienti.ts";
 import type { PrimoAvvio } from "./primo-avvio.ts";
 import { pacchettoDiInstallazione } from "./installazione-nuova.ts";
 import { InvitiDegliAmbienti, PERCORSO_PACCHETTO_NODO, PERCORSO_PREPARAZIONE, pacchettoDelNodo, scriptDiPreparazione } from "./ambiente-nuovo.ts";
@@ -240,6 +242,7 @@ const CORPO_IMPOSTAZIONI = {
     permessi: { enum: [...MODI_PERMESSI] },
     stile: { type: ["string", "null"], maxLength: 100 },
     tuttoIlPc: { type: ["boolean", "null"] },
+    browserChrome: { type: ["boolean", "null"] },
     cartelleInPiu: { type: ["array", "null"], maxItems: 20, items: { type: "string", maxLength: 500 } },
   },
 } as const;
@@ -1757,6 +1760,17 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     },
   );
 
+  // Chrome per Claude in un ambiente (ADR 0063): lo accende e lo spegne il proprietario dalla pagina degli ambienti.
+  const chromeNegliAmbienti = new ChromeNegliAmbienti(ambienti);
+  app.post<{ Params: { id: string }; Body: { attivo: boolean } }>(
+    "/api/ambienti/:id/browser-del-pc",
+    { schema: { body: { type: "object", required: ["attivo"], additionalProperties: false, properties: { attivo: { type: "boolean" } } } } },
+    async (richiesta, risposta) => {
+      const esito = await chromeNegliAmbienti.imposta(richiesta.params.id, richiesta.body.attivo);
+      return "motivo" in esito ? risposta.code(409).send({ errore: esito.motivo }) : esito;
+    },
+  );
+
   // La cartella in cui nascono i progetti nuovi di un ambiente: la sceglie il proprietario dalla pagina degli ambienti.
   const cartellaProgetti = new CartellaDeiProgetti(ambienti);
   app.post<{ Params: { id: string }; Body: { percorso: string } }>(
@@ -2898,6 +2912,7 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
         ...(typeof campi.avvioConWindows === "boolean" ? { avvioConWindows: campi.avvioConWindows } : {}),
         ...(Array.isArray(campi.offline) ? { offline: campi.offline.filter((id): id is string => typeof id === "string" && id.length <= 64).slice(0, 1000) } : {}),
         ...(typeof campi.chiaveVault === "string" && /^[A-Za-z0-9+/=]{20,200}$/.test(campi.chiaveVault) ? { chiaveVault: campi.chiaveVault } : {}),
+        ...(leggiStatoChrome(campi.chrome) === undefined ? {} : { chrome: leggiStatoChrome(campi.chrome) as StatoChrome, browserDelPc: campi.browserDelPc === true }),
       };
     }
     case "evento": {
@@ -3059,6 +3074,18 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
         tipo: "ponte-esito",
         ...(typeof porta === "number" && Number.isInteger(porta) && porta > 0 && porta < 65536 ? { porta } : {}),
         ...(motivo === undefined ? {} : { motivo: motivo.slice(0, 500) }),
+      };
+    }
+    case "browser-del-pc-esito": {
+      const idRichiesta = campo("idRichiesta");
+      if (idRichiesta === undefined) return undefined;
+      const motivo = campo("motivo");
+      return {
+        tipo: "browser-del-pc-esito",
+        idRichiesta,
+        ...(typeof campi.attivo === "boolean" ? { attivo: campi.attivo } : {}),
+        ...(typeof campi.riparte === "boolean" ? { riparte: campi.riparte } : {}),
+        ...(motivo === undefined ? {} : { motivo: motivo.slice(0, 2000) }),
       };
     }
     case "avvio-con-windows-esito": {

@@ -50,6 +50,11 @@ export interface ImpostazioniConversazione {
   tuttoIlPc?: true;
   /** Cartelle dell'ambiente, fuori da quella del progetto, in cui legge e scrive come nella sua. */
   cartelleInPiu?: string[];
+  /**
+   * Vero se la conversazione usa il Chrome del proprietario con l'estensione Claude in Chrome (ADR
+   * 0063): vale solo dove il proprietario ha acceso Chrome per l'ambiente, e ogni azione gli è chiesta.
+   */
+  browserChrome?: true;
 }
 
 /**
@@ -65,6 +70,7 @@ export interface ModificaImpostazioni {
   tuttoIlPc?: boolean | null;
   /** L'elenco intero delle cartelle in più; null lo svuota. */
   cartelleInPiu?: string[] | null;
+  browserChrome?: boolean | null;
 }
 
 /** La modifica come la manda l'interfaccia: lo stile per identificativo. */
@@ -80,6 +86,7 @@ export function applicaModifica(
   const stile = modifica.stile === undefined ? attuali.stile : (modifica.stile ?? undefined);
   const tuttoIlPc = modifica.tuttoIlPc === undefined ? attuali.tuttoIlPc === true : modifica.tuttoIlPc === true;
   const cartelle = modifica.cartelleInPiu === undefined ? (attuali.cartelleInPiu ?? []) : cartelleInPiuValide(modifica.cartelleInPiu ?? []);
+  const browserChrome = modifica.browserChrome === undefined ? attuali.browserChrome === true : modifica.browserChrome === true;
   return {
     ...(motore === undefined ? {} : { motore }),
     ...(modello === undefined || modello.trim() === "" ? {} : { modello: modello.trim() }),
@@ -88,6 +95,7 @@ export function applicaModifica(
     ...(stile === undefined ? {} : { stile }),
     ...(tuttoIlPc ? { tuttoIlPc: true as const } : {}),
     ...(cartelle.length === 0 ? {} : { cartelleInPiu: cartelle }),
+    ...(browserChrome ? { browserChrome: true as const } : {}),
   };
 }
 
@@ -121,6 +129,7 @@ export function leggiImpostazioni(valore: unknown): ImpostazioniConversazione | 
     ...(stile === undefined ? {} : { stile }),
     ...(campi.tuttoIlPc === true ? { tuttoIlPc: true as const } : {}),
     ...(cartelleInPiuValide(campi.cartelleInPiu).length === 0 ? {} : { cartelleInPiu: cartelleInPiuValide(campi.cartelleInPiu) }),
+    ...(campi.browserChrome === true ? { browserChrome: true as const } : {}),
   };
 }
 

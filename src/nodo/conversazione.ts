@@ -1100,11 +1100,13 @@ export function opzioniHarness(
     // Claude Code collega l'estensione del browser solo se glielo si chiede all'avvio, con --chrome.
     // Alcuni suoi strumenti l'harness li lascerebbe passare da sé, e in due modi dei permessi tutti:
     // qui ognuno viene chiesto al proprietario, e se il controllo non riesce l'azione non parte.
-    ...(cfg.browserDelPc === true ? { extraArgs: { chrome: null } } : {}),
+    // Vale dove il proprietario ha acceso Chrome per l'ambiente, e solo se lo ha acceso nella sessione (ADR 0063).
+    ...(cfg.browserDelPc === true && impostazioni.browserChrome === true ? { extraArgs: { chrome: null } } : {}),
     // Le domande di Claude le mostra Shinka, con la sua scheda, in ogni modo dei permessi.
     hooks: {
       PreToolUse: [
         controlloDelleDomande(chiediRisposte, ATTESA_DEL_CONSENSO_NEL_BROWSER_S),
+        // Il controllo resta anche con il browser spento nella sessione: se uno strumento del browser comparisse, chiede.
         ...(cfg.browserDelPc === true ? [controlloDelBrowserDelPc(chiediPerIlBrowser)] : []),
         ...(primaDellaModifica === undefined ? [] : [versioneDiPrima(primaDellaModifica)]),
       ],

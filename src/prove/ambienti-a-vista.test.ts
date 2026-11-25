@@ -71,6 +71,56 @@ test("gli ambienti si aprono dal menu delle pagine, e un nodo si reinstalla con 
   assert.deepEqual(chiesto, { sistema: /windows/i.test(ambiente?.sistema ?? "") ? "windows" : "linux", centro: indirizzoDelNodo, nome: "PC Windows", descrizione: ambiente?.descrizione });
 });
 
+test("Chrome per Claude si accende dalla pagina degli ambienti, e un progetto di lì lo accende nella sua sessione", { skip: salta, timeout: 120_000 }, async (t) => {
+  const banco = await allestisci(t, { cartellaWeb });
+  await banco.centro.listen({ host: "127.0.0.1", port: 0 });
+  const nodo = await avviaNodoAccettato(t, banco, { chrome: { stato: { chrome: true, estensione: true, collegamento: false }, acceso: false } });
+  const progetto = await banco.lavori.crea("Ricerche", ID_NODO, "Ricerche sul web.");
+  const indirizzo = `http://localhost:${(banco.centro.server.address() as AddressInfo).port}`;
+  const browser = await chromium.launch({
+    chromiumSandbox: disponibile?.recinto !== false,
+    ...(disponibile?.canale === undefined ? {} : { channel: disponibile.canale }),
+    ...(disponibile?.eseguibile === undefined ? {} : { executablePath: disponibile.eseguibile }),
+  });
+  t.after(() => browser.close());
+  const pagina = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await pagina.goto(`${indirizzo}/`);
+  await pagina.fill("#password", PASSWORD);
+  await pagina.click('button[type="submit"]');
+  await pagina.locator("form.scrittura textarea").waitFor();
+
+  // Nella sessione del progetto l'opzione non c'è finché Chrome non è acceso per l'ambiente.
+  await pagina.goto(`${indirizzo}/#/progetti/${progetto.id}`);
+  await pagina.locator(".menu-sessione > summary").click();
+  await pagina.getByRole("dialog", { name: "La sessione" }).waitFor();
+  assert.equal(await pagina.getByLabel("Browser Chrome").count(), 0);
+  await pagina.locator(".menu-sessione > summary").click();
+
+  await pagina.locator(".menu-pagine > summary").click();
+  await pagina.locator(".voci-pagine").getByRole("button", { name: /Ambienti/ }).click();
+  const pannello = pagina.getByRole("region", { name: "Ambienti" });
+  const voce = pannello.locator("li.ambiente", { hasText: "PC Windows" });
+  await voce.locator(".chrome-ambiente").waitFor();
+  assert.match((await voce.locator(".chrome-ambiente").textContent()) ?? "", /Chrome con Claude in Chrome: si può accendere per Claude/);
+  await voce.getByLabel("Chrome per Claude").click();
+  await voce.getByRole("status").filter({ hasText: "Chrome per Claude acceso dal prossimo avvio del nodo." }).waitFor();
+  // Il nodo la usa quando si ripresenta.
+  nodo.collegamento.ferma();
+  await finche(() => !banco.ambienti.attivo(ID_NODO), "il nodo si scollega");
+  nodo.collegamento.avvia();
+  await finche(() => banco.ambienti.stato().ambienti.find((uno) => uno.id === ID_NODO)?.browserDelPc === true, "il nodo torna con Chrome acceso");
+
+  // Ora la sessione del progetto ha «Browser Chrome», spento; acceso, vale per la conversazione.
+  await pagina.keyboard.press("Escape");
+  await pagina.goto(`${indirizzo}/#/progetti/${progetto.id}`);
+  await pagina.locator(".menu-sessione > summary").click();
+  const opzione = pagina.getByLabel("Browser Chrome");
+  await opzione.waitFor();
+  assert.equal(await opzione.isChecked(), false);
+  await opzione.click();
+  await finche(() => banco.lavori.impostazioni(progetto.id).browserChrome === true, "l'impostazione si salva");
+});
+
 test("la cartella dei progetti nuovi di un nodo si cambia dalla pagina degli ambienti", { skip: salta, timeout: 120_000 }, async (t) => {
   const banco = await allestisci(t, { cartellaWeb });
   await banco.centro.listen({ host: "127.0.0.1", port: 0 });
