@@ -1005,7 +1005,7 @@ function definizioniHome(opzioni: OpzioniStrumentiHome) {
       ),
       tool(
         "cambia_argomento",
-        "Archivia l'argomento aperto e passa a un altro: uno nuovo, oppure uno archiviato da riprendere. Usalo come prima e unica azione quando il messaggio del proprietario apre una questione diversa. Il messaggio viene riproposto da Shinka nell'altro argomento: dopo averlo usato non rispondere e non scrivere altro.",
+        "Archivia l'argomento aperto e passa a un altro: uno nuovo, oppure uno archiviato da riprendere. Usalo quando il messaggio del proprietario apre una questione diversa, prima di fare altro; se il messaggio può essere il seguito di un argomento archiviato, prima guarda quelli recenti o cercalo con cerca_argomenti. Il messaggio viene riproposto da Shinka nell'altro argomento: dopo averlo usato non rispondere e non scrivere altro.",
         {
           titolo: z.string().min(1).max(80).describe("Titolo dell'argomento che si chiude, poche parole."),
           riassunto: z

@@ -63,6 +63,27 @@ export interface OpzioniHome {
    * proprietario, se c'è: è così che le arriva la memoria.
    */
   notaPrimaDelMessaggio?(idArgomento: string): string | undefined;
+  /** L'orologio, per sapere quali argomenti sono stati archiviati di recente. Nei test se ne mette uno fermo. */
+  adesso?: () => number;
+}
+
+/** Quanti argomenti archiviati di recente la conversazione aperta conosce, e di quanti giorni al massimo. */
+const ARCHIVIATI_DA_DIRE = 8;
+const GIORNI_DEGLI_ARCHIVIATI = 14;
+
+/**
+ * Gli argomenti archiviati di recente, per la conversazione aperta: così, quando il proprietario
+ * scrive il seguito di uno di loro, anche con una foto e poche parole, lo riconosce e lo riprende
+ * invece di cominciarne uno nuovo. Nulla se non ce ne sono.
+ */
+export function notaDegliArchiviati(voci: readonly VoceArgomento[], adesso: number): string | undefined {
+  const limite = adesso - GIORNI_DEGLI_ARCHIVIATI * 24 * 60 * 60 * 1000;
+  const recenti = voci.filter((voce) => Date.parse(voce.archiviatoIl) >= limite).slice(0, ARCHIVIATI_DA_DIRE);
+  if (recenti.length === 0) return undefined;
+  return [
+    "[Shinka] Gli argomenti archiviati di recente. Se il prossimo messaggio del proprietario è il seguito di uno di loro, anche solo con un'immagine e poche parole, riprendilo con `cambia_argomento` e il suo identificativo in `riprendi`; nel dubbio guarda con `cerca_argomenti` o `leggi_argomento`.",
+    ...recenti.map((voce) => `- ${voce.id}: «${voce.titolo}» (archiviato il ${voce.archiviatoIl.slice(0, 10)})`),
+  ].join("\n");
 }
 
 /** Ciò che la Home chiede a Claude quando è il proprietario a chiudere l'argomento. */
@@ -178,6 +199,8 @@ export class Home implements PortaConversazione {
   #fermato = false;
   /** L'ultimo messaggio del proprietario: se fa cambiare argomento, va riproposto in quello nuovo. */
   #ultimoMessaggio: Messaggio | undefined;
+  /** L'ultimo elenco degli archiviati detto alla conversazione aperta: si ripete solo se cambia. */
+  #archiviatiDetti: string | undefined;
   /** I messaggi arrivati durante un passaggio: partono appena l'argomento nuovo è aperto. */
   readonly #inCoda: Messaggio[] = [];
   /** Da dove arriva il messaggio che si sta consegnando alla conversazione, se non dall'interfaccia. */
@@ -490,6 +513,11 @@ export class Home implements PortaConversazione {
     this.#ultimoMessaggio = messaggio;
     const nota = this.#o.notaPrimaDelMessaggio?.(this.idArgomentoAperto);
     if (nota !== undefined) this.#porta.annota(nota);
+    const archiviati = notaDegliArchiviati(this.#o.argomenti.archiviati(), this.#o.adesso?.() ?? Date.now());
+    if (archiviati !== undefined && archiviati !== this.#archiviatiDetti) {
+      this.#porta.annota(archiviati);
+      this.#archiviatiDetti = archiviati;
+    }
     if (origine === "telegram") this.#porta.annota(NOTA_TELEGRAM);
     // La conversazione pubblica il messaggio mentre lo riceve: è lì che gli si scrive da dove arriva.
     this.#origineInConsegna = origine;
@@ -759,6 +787,8 @@ export class Home implements PortaConversazione {
       this.#canale = canale;
       this.#ascoltaIlCanale(canale);
       this.#porta = this.#apriPorta(prossimo, canale);
+      // La conversazione dell'altro argomento non ha ancora sentito l'elenco degli archiviati.
+      this.#archiviatiDetti = undefined;
       canale.pubblica({
         tipo: "passaggio-argomento",
         riaperto,

@@ -6,6 +6,7 @@ import { test } from "node:test";
 import type { EventoArchiviato, EventoConversazione } from "../protocollo/eventi.ts";
 import { allestisci, finche, type Banco, type ConversazioneFinta } from "../prove/banco.ts";
 import { RegistroArgomenti } from "./argomenti.ts";
+import { notaDegliArchiviati } from "./home.ts";
 import { COOKIE_SESSIONE } from "./centro.ts";
 
 const SCRIPT = { titolo: "Script per rinominare le foto", riassunto: "Scritto rinomina.ps1 nell'ambiente del PC." };
@@ -260,6 +261,34 @@ test("Claude riprende un argomento archiviato quando il proprietario ci torna so
   assert.equal(banco.casa.idArgomentoAperto, secondo);
   assert.equal(banco.argomenti.trova(diPassaggio), undefined);
   assert.deepEqual(banco.canale.archiviati.at(-3)?.evento, { tipo: "passaggio-argomento", riaperto: true });
+});
+
+test("prima di un messaggio la Home sa gli argomenti archiviati di recente, per riconoscere un seguito anche da una foto", async (t) => {
+  const banco = await allestisci(t);
+  const primo = await archiviaIlPrimo(banco);
+  const conversazione = banco.home;
+  // Già con il messaggio riproposto nell'argomento nuovo la conversazione ha ricevuto, prima, gli
+  // archiviati recenti con il loro identificativo: così una foto con poche parole trova il suo argomento.
+  banco.casa.invia("Che kit è?", [{ nome: "foto.jpg", tipo: "image/jpeg", dati: "AAAA" }]);
+  const note = conversazione.annotazioni.filter((testo) => testo.includes("archiviati di recente"));
+  assert.equal(note.length, 1);
+  const nota = note[0] ?? "";
+  assert.match(nota, new RegExp(`- ${primo}: «Script per rinominare le foto» \\(archiviato il \\d{4}-\\d{2}-\\d{2}\\)`));
+  assert.match(nota, /`riprendi`/);
+  concludi(conversazione);
+
+  // Lo stesso elenco non si ripete a ogni messaggio.
+  const dopo = conversazione.annotazioni.length;
+  scambia(banco, "E quanto costa?");
+  assert.equal(conversazione.annotazioni.slice(dopo).filter((testo) => testo.includes("archiviati di recente")).length, 0);
+
+  // Archiviati vecchi, o nessuno: niente nota. Al massimo gli otto più recenti.
+  const adesso = Date.parse("2026-11-25T08:00:00Z");
+  const voce = (n: number, quando: string) => ({ id: `a-${n}`, titolo: `Argomento ${n}`, riassunto: "", apertoIl: quando, archiviatoIl: quando });
+  assert.equal(notaDegliArchiviati([], adesso), undefined);
+  assert.equal(notaDegliArchiviati([voce(1, "2026-10-01T10:00:00Z")], adesso), undefined);
+  const tanti = Array.from({ length: 12 }, (_, n) => voce(n, "2026-11-24T10:00:00Z"));
+  assert.equal((notaDegliArchiviati(tanti, adesso) ?? "").split("\n").filter((riga) => riga.startsWith("- ")).length, 8);
 });
 
 test("chi guarda la Home viene portato sull'argomento nuovo, e i messaggi scritti nel frattempo non si perdono", async (t) => {
