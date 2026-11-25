@@ -55,6 +55,7 @@ import { distribuisciSkill } from "../centro/distribuzione-skill.ts";
 import { colLavoroOffline } from "../centro/lavoro-offline.ts";
 import type { AggiornamentiDallOriginale } from "../centro/originale.ts";
 import { CatalogoDeiModelli } from "../centro/catalogo-modelli.ts";
+import { preparaCartellaProgetti } from "../nodo/cartella-progetti.ts";
 import { ProposteRicordate, postiDegliArchivi } from "../centro/proposte-ricordate.ts";
 import { LavoroOffline } from "../nodo/offline.ts";
 import { Memoria } from "../centro/memoria.ts";
@@ -998,6 +999,13 @@ export async function avviaNodo(
     cartellaSkill,
     ...(opzioni.accessi === undefined ? {} : { accessi: opzioni.accessi }),
     modelli: opzioni.modelli ?? { leggi: async () => undefined },
+    // La cartella dei progetti nuovi si sceglie come nel nodo vero; senza guardiano, vale dal prossimo avvio.
+    cartellaProgetti: {
+      imposta: async (scritto) => {
+        const esito = await preparaCartellaProgetti(scritto);
+        return "motivo" in esito ? esito : { percorso: esito.percorso, riparte: false };
+      },
+    },
     // Le risorse le legge davvero, su questa macchina; Docker, nelle prove, non c'è.
     risorse: new CampionatoreRisorse({ radiceProgetti, esegui: async () => ({ codice: null, uscita: "", errori: "", assente: true }) }),
     ...(opzioni.senzaEstensioni === true

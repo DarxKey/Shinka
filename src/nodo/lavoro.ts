@@ -67,6 +67,11 @@ export interface ContestoLavoro {
   risorse?: { leggi(): Promise<RisorseDellAmbiente> };
   /** I modelli dei motori in questo ambiente. Senza, quelli che sa questo processo. Nei test se ne mettono di finti. */
   modelli?: Pick<ModelliDeiMotori, "leggi">;
+  /**
+   * La cartella in cui nascono i progetti nuovi, scelta dalla pagina degli ambienti: la salva tra le
+   * scelte del nodo. Senza, il nodo non la sa cambiare da lì.
+   */
+  cartellaProgetti?: { imposta(percorso: string): Promise<{ percorso: string; riparte: boolean } | { motivo: string }> };
   /** I processi accesi da Shinka qui: per terminarne uno bloccato. */
   processiDiShinka?: { termina(pid: number): Promise<{ riuscita: boolean; testo: string }> };
   /** Su Windows: il collegamento che fa partire il nodo a ogni accesso. Senza, il nodo non lo sa cambiare. */
@@ -243,6 +248,19 @@ export class LavoroDelNodo {
         void avvio.imposta(attivo).then(
           (esito) => this.#contesto.riferisci({ tipo: "avvio-con-windows-esito", idRichiesta, ...esito }),
           (errore: unknown) => this.#contesto.riferisci({ tipo: "avvio-con-windows-esito", idRichiesta, motivo: errore instanceof Error ? errore.message : String(errore) }),
+        );
+        return;
+      }
+      case "cartella-progetti": {
+        const { idRichiesta, percorso } = comando;
+        const scelta = this.#contesto.cartellaProgetti;
+        if (scelta === undefined) {
+          this.#contesto.riferisci({ tipo: "cartella-progetti-esito", idRichiesta, motivo: "Questo nodo non sa cambiare la cartella dei progetti da qui." });
+          return;
+        }
+        void scelta.imposta(percorso).then(
+          (esito) => this.#contesto.riferisci({ tipo: "cartella-progetti-esito", idRichiesta, ...esito }),
+          (errore: unknown) => this.#contesto.riferisci({ tipo: "cartella-progetti-esito", idRichiesta, motivo: errore instanceof Error ? errore.message : String(errore) }),
         );
         return;
       }

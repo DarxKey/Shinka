@@ -410,6 +410,12 @@ export function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | u
       const idRichiesta = testo("idRichiesta");
       return idRichiesta === undefined ? undefined : { tipo: "risorse", idRichiesta };
     }
+    case "cartella-progetti": {
+      const idRichiesta = testo("idRichiesta");
+      const percorso = testo("percorso");
+      if (idRichiesta === undefined || percorso === undefined || percorso.length > 1000) return undefined;
+      return { tipo: "cartella-progetti", idRichiesta, percorso };
+    }
     case "modelli": {
       const idRichiesta = testo("idRichiesta");
       return idRichiesta === undefined ? undefined : { tipo: "modelli", idRichiesta };

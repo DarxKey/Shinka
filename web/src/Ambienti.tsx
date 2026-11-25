@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { DecisionePermesso } from "../../src/protocollo/eventi.ts";
 import type { Ambiente, RichiestaCollegamento, StatoAmbienti } from "../../src/protocollo/nodi.ts";
-import { aggiornaAmbiente, decidiRichiesta, impostaAvvioConWindows, impostaPonte, invitaAmbiente, rimuoviAmbiente, type InvitoAmbiente } from "./api.ts";
+import { aggiornaAmbiente, decidiRichiesta, impostaAvvioConWindows, impostaCartellaProgetti, impostaPonte, invitaAmbiente, rimuoviAmbiente, type InvitoAmbiente } from "./api.ts";
 import { copia } from "./copia.ts";
 import { frammentoDi } from "./vista.ts";
 import { collegamentoAmbiente, sottotitoloAmbiente as sottotitolo, versioneAmbiente } from "./descrivi.ts";
@@ -179,6 +179,7 @@ function VistaAmbiente({ ambiente, indirizzoNoto, allaChiusura }: { ambiente: Am
       {ambiente.attivo && ambiente.avvioConWindows === undefined && eWindows(ambiente.sistema) && (
         <p className="tenue">Per scegliere da qui se parte con Windows, reinstalla il nodo con il comando di una riga.</p>
       )}
+      {ambiente.radiceProgetti !== "" && <CartellaDeiProgetti ambiente={ambiente} />}
       {!ambiente.delCentro && (ambiente.attivo || ambiente.ponte !== undefined) && <PonteDellAmbiente ambiente={ambiente} />}
       {ambiente.attivo && ambiente.indietro === true && ambiente.siAggiorna !== true && (
         <p className="tenue">Questo nodo non si aggiorna da qui: va aggiornato su quella macchina.</p>
@@ -422,6 +423,83 @@ const PORTA_DEL_PONTE = 7851;
  * collega attraverso di lui. Acceso, dice l'indirizzo da usare per la macchina nuova e, su Windows,
  * la regola del firewall da creare una volta.
  */
+/**
+ * La cartella in cui nascono i progetti nuovi di un ambiente. Quella di un nodo collegato si cambia
+ * da qui: il nodo la prepara, la salva e, se lo tiene acceso il suo guardiano, riparte per usarla.
+ */
+function CartellaDeiProgetti({ ambiente }: { ambiente: Ambiente }): ReactNode {
+  const [scritta, setScritta] = useState<string>();
+  const [inCorso, setInCorso] = useState(false);
+  const [errore, setErrore] = useState<string>();
+  const [fatto, setFatto] = useState<string>();
+  const siCambia = ambiente.attivo && !ambiente.delCentro;
+
+  async function salva(percorso: string): Promise<void> {
+    setInCorso(true);
+    setErrore(undefined);
+    try {
+      const esito = await impostaCartellaProgetti(ambiente.id, percorso);
+      setScritta(undefined);
+      setFatto(
+        esito.riparte
+          ? `I progetti nuovi nasceranno in ${esito.percorso}: il nodo riparte adesso per usarla.`
+          : `I progetti nuovi nasceranno in ${esito.percorso} dal prossimo avvio del nodo.`,
+      );
+    } catch (causa) {
+      setErrore(causa instanceof Error ? causa.message : "La cartella non è cambiata.");
+    } finally {
+      setInCorso(false);
+    }
+  }
+
+  return (
+    <div className="cartella-progetti-ambiente">
+      {scritta === undefined ? (
+        <div className="tenue">
+          Progetti nuovi in <code>{ambiente.radiceProgetti}</code>{" "}
+          {siCambia && (
+            <button type="button" className="discreto piccolo" onClick={() => {
+              setFatto(undefined);
+              setScritta(ambiente.radiceProgetti);
+            }}>
+              Cambia
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          <label>
+            Cartella dei progetti nuovi
+            <input value={scritta} disabled={inCorso} placeholder={eWindows(ambiente.sistema) ? "C:\\Users\\io\\Progetti" : "/home/io/progetti"} onChange={(evento) => setScritta(evento.target.value)} />
+          </label>
+          <p className="tenue">
+            Il percorso completo su quella macchina: se manca, il nodo la crea. I progetti che esistono restano dove sono. Per usarla il nodo riparte, e le
+            conversazioni e i terminali aperti in questo ambiente si chiudono.
+          </p>
+          <div className="pulsanti">
+            <button type="button" className="approva" disabled={inCorso || scritta.trim() === "" || scritta.trim() === ambiente.radiceProgetti} onClick={() => void salva(scritta)}>
+              {inCorso ? "Salvo…" : "Salva"}
+            </button>
+            <button type="button" className="discreto" disabled={inCorso} onClick={() => setScritta(undefined)}>
+              Annulla
+            </button>
+          </div>
+        </>
+      )}
+      {fatto !== undefined && (
+        <p className="tenue" role="status">
+          {fatto}
+        </p>
+      )}
+      {errore !== undefined && (
+        <p className="errore" role="alert">
+          {errore}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function PonteDellAmbiente({ ambiente }: { ambiente: Ambiente }): ReactNode {
   const [porta, setPorta] = useState(String(ambiente.ponte?.porta ?? PORTA_DEL_PONTE));
   const [aperto, setAperto] = useState(false);

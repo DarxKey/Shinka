@@ -16,7 +16,8 @@
  *
  * Le scelte vengono salvate: dalla volta successiva basta `npm run nodo`.
  * Per cambiarne una, per esempio la cartella dei progetti, si riavvia il nodo indicando solo quella.
- * La cartella nuova vale per i progetti che nasceranno: quelli esistenti restano dove sono.
+ * La cartella nuova vale per i progetti che nasceranno: quelli esistenti restano dove sono. La
+ * cartella dei progetti si sceglie anche dalla pagina degli ambienti di Shinka, con il nodo collegato.
  *
  * Avviato così il nodo resta alla versione che ha: per cambiarla lo si ferma e lo si riavvia dal
  * codice nuovo. Tenuto acceso dal suo guardiano (`src/guardiano/avvio-nodo.ts`) passa invece da
@@ -58,6 +59,7 @@ import { Ponte } from "./ponte.ts";
 import { preparaCartellaSkill } from "./skill.ts";
 import { sistemaDiQuestaMacchina } from "./sistema.ts";
 import { FILE_STATO_DEL_COLLEGAMENTO, scriviStatoDelCollegamento } from "./stato-del-collegamento.ts";
+import { preparaCartellaProgetti } from "./cartella-progetti.ts";
 
 interface Impostazioni {
   centro: string;
@@ -127,6 +129,25 @@ try {
     // Le risorse di questa macchina: si leggono quando il proprietario guarda la pagina dell'ambiente.
     risorse: new CampionatoreRisorse({ radiceProgetti: impostazioni.progetti, etichettaDiShinka: ETICHETTA_STACK, processiDiShinka }),
     processiDiShinka,
+    // La cartella dei progetti nuovi, scelta dalla pagina degli ambienti: si salva tra le scelte del nodo,
+    // e con il guardiano il nodo riparte subito per usarla.
+    cartellaProgetti: {
+      imposta: async (scritto) => {
+        const esito = await preparaCartellaProgetti(scritto);
+        if ("motivo" in esito) return esito;
+        impostazioni.progetti = esito.percorso;
+        await writeFile(fileImpostazioni, JSON.stringify(impostazioni, null, 2));
+        console.log(`I progetti nuovi nasceranno in ${esito.percorso}${colGuardiano ? ": riparto per usarla." : ", dal prossimo avvio del nodo."}`);
+        if (colGuardiano && !inAggiornamento) {
+          setTimeout(() => {
+            lavoro.spegni();
+            collegamento.ferma();
+            process.exit(CODICE_RIAVVIO);
+          }, 2_000);
+        }
+        return { percorso: esito.percorso, riparte: colGuardiano && !inAggiornamento };
+      },
+    },
     ...(avvioConWindows === undefined ? {} : { avvioConWindows }),
     // Il ponte per le macchine che non vedono il centro (ADR 0058): lo apre il centro, se il proprietario lo ha acceso.
     ponte: new Ponte({ centro: impostazioni.centro }),

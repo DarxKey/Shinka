@@ -71,6 +71,47 @@ test("gli ambienti si aprono dal menu delle pagine, e un nodo si reinstalla con 
   assert.deepEqual(chiesto, { sistema: /windows/i.test(ambiente?.sistema ?? "") ? "windows" : "linux", centro: indirizzoDelNodo, nome: "PC Windows", descrizione: ambiente?.descrizione });
 });
 
+test("la cartella dei progetti nuovi di un nodo si cambia dalla pagina degli ambienti", { skip: salta, timeout: 120_000 }, async (t) => {
+  const banco = await allestisci(t, { cartellaWeb });
+  await banco.centro.listen({ host: "127.0.0.1", port: 0 });
+  await avviaNodoAccettato(t, banco);
+  const indirizzo = `http://localhost:${(banco.centro.server.address() as AddressInfo).port}`;
+  const browser = await chromium.launch({
+    chromiumSandbox: disponibile?.recinto !== false,
+    ...(disponibile?.canale === undefined ? {} : { channel: disponibile.canale }),
+    ...(disponibile?.eseguibile === undefined ? {} : { executablePath: disponibile.eseguibile }),
+  });
+  t.after(() => browser.close());
+  const pagina = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await pagina.goto(`${indirizzo}/`);
+  await pagina.fill("#password", PASSWORD);
+  await pagina.click('button[type="submit"]');
+  await pagina.locator("form.scrittura textarea").waitFor();
+  await pagina.locator(".menu-pagine > summary").click();
+  await pagina.locator(".voci-pagine").getByRole("button", { name: /Ambienti/ }).click();
+  const pannello = pagina.getByRole("region", { name: "Ambienti" });
+  const nodo = pannello.locator("li.ambiente", { hasText: "PC Windows" });
+  await nodo.waitFor();
+  // Quella del centro si vede ma non si cambia da qui.
+  const centro = pannello.locator("li.ambiente", { hasText: "qui gira il centro" });
+  assert.equal(await centro.locator(".cartella-progetti-ambiente").getByRole("button", { name: "Cambia" }).count(), 0);
+
+  const prima = banco.ambienti.stato().ambienti.find((uno) => uno.id === ID_NODO)?.radiceProgetti ?? "";
+  assert.match((await nodo.locator(".cartella-progetti-ambiente").textContent()) ?? "", new RegExp(prima.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  await nodo.getByRole("button", { name: "Cambia" }).click();
+  const campo = nodo.getByLabel("Cartella dei progetti nuovi");
+  assert.equal(await campo.inputValue(), prima);
+  // Un percorso che non va lo dice, e il campo resta.
+  await campo.fill("progetti");
+  await nodo.getByRole("button", { name: "Salva" }).click();
+  await nodo.getByRole("alert").filter({ hasText: "percorso completo" }).waitFor();
+  const nuova = join(banco.cartella, "Progetti scelti");
+  await campo.fill(nuova);
+  await nodo.getByRole("button", { name: "Salva" }).click();
+  await nodo.getByRole("status").filter({ hasText: `I progetti nuovi nasceranno in ${nuova} dal prossimo avvio del nodo.` }).waitFor();
+  assert.ok(existsSync(nuova));
+});
+
 test("nella pagina dell'ambiente i processi di Shinka stanno con il loro progetto, e uno si termina", { skip: salta, timeout: 120_000 }, async (t) => {
   const banco = await allestisci(t, { cartellaWeb });
   const progetto = await banco.lavori.crea("Blog", "centro", "Un blog.");

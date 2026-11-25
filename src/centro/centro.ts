@@ -12,6 +12,7 @@ import type { CatalogoDeiModelli } from "./catalogo-modelli.ts";
 import type { StatoEstensioniDelProgetto } from "../protocollo/progetti.ts";
 import { tipoInParole } from "../protocollo/estensioni.ts";
 import { AvvioConWindows } from "./avvio-con-windows.ts";
+import { CartellaDeiProgetti } from "./cartella-progetti.ts";
 import type { PrimoAvvio } from "./primo-avvio.ts";
 import { pacchettoDiInstallazione } from "./installazione-nuova.ts";
 import { InvitiDegliAmbienti, PERCORSO_PACCHETTO_NODO, PERCORSO_PREPARAZIONE, pacchettoDelNodo, scriptDiPreparazione } from "./ambiente-nuovo.ts";
@@ -1755,6 +1756,17 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     },
   );
 
+  // La cartella in cui nascono i progetti nuovi di un ambiente: la sceglie il proprietario dalla pagina degli ambienti.
+  const cartellaProgetti = new CartellaDeiProgetti(ambienti);
+  app.post<{ Params: { id: string }; Body: { percorso: string } }>(
+    "/api/ambienti/:id/cartella-progetti",
+    { schema: { body: { type: "object", required: ["percorso"], additionalProperties: false, properties: { percorso: { type: "string", minLength: 1, maxLength: 1000 } } } } },
+    async (richiesta, risposta) => {
+      const esito = await cartellaProgetti.imposta(richiesta.params.id, richiesta.body.percorso);
+      return "motivo" in esito ? risposta.code(409).send({ errore: esito.motivo }) : esito;
+    },
+  );
+
   // Il ponte di un ambiente per le macchine che non vedono il centro (ADR 0058): lo accende e lo spegne il proprietario.
   ambienti.iscriviRiferiti((idNodo, messaggio) => {
     if (messaggio.tipo === "ponte-esito") ambienti.segnaPonte(idNodo, { ...(messaggio.porta === undefined ? {} : { porta: messaggio.porta }), ...(messaggio.motivo === undefined ? {} : { motivo: messaggio.motivo }) });
@@ -2955,6 +2967,19 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
       const esito = leggiEsitoAccessi(campi.esito);
       if (idRichiesta === undefined || esito === undefined) return undefined;
       return { tipo: "accessi-esito", idRichiesta, esito };
+    }
+    case "cartella-progetti-esito": {
+      const idRichiesta = campo("idRichiesta");
+      if (idRichiesta === undefined) return undefined;
+      const percorso = campo("percorso");
+      const motivo = campo("motivo");
+      return {
+        tipo: "cartella-progetti-esito",
+        idRichiesta,
+        ...(percorso === undefined ? {} : { percorso: percorso.slice(0, 1000) }),
+        ...(typeof campi.riparte === "boolean" ? { riparte: campi.riparte } : {}),
+        ...(motivo === undefined ? {} : { motivo: motivo.slice(0, 500) }),
+      };
     }
     case "modelli-esito": {
       const idRichiesta = campo("idRichiesta");

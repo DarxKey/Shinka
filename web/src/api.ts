@@ -596,6 +596,11 @@ export async function impostaAvvioConWindows(idAmbiente: string, attivo: boolean
   return (await chiama("POST", `/api/ambienti/${encodeURIComponent(idAmbiente)}/avvio-con-windows`, { attivo })) as { attivo: boolean };
 }
 
+/** Sceglie la cartella in cui nascono i progetti nuovi di un ambiente: il nodo la prepara e la salva. */
+export async function impostaCartellaProgetti(idAmbiente: string, percorso: string): Promise<{ percorso: string; riparte: boolean }> {
+  return (await chiama("POST", `/api/ambienti/${encodeURIComponent(idAmbiente)}/cartella-progetti`, { percorso })) as { percorso: string; riparte: boolean };
+}
+
 export async function aggiornaAmbiente(id: string): Promise<void> {
   await chiama("POST", `/api/ambienti/${encodeURIComponent(id)}/aggiornamento`);
 }

@@ -7354,6 +7354,32 @@ kbd {
   margin: 0;
 }
 
+/* La cartella dei progetti nuovi di un ambiente. */
+.cartella-progetti-ambiente {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.875rem;
+}
+
+.cartella-progetti-ambiente code {
+  overflow-wrap: anywhere;
+}
+
+.cartella-progetti-ambiente label {
+  display: grid;
+  gap: 4px;
+}
+
+.cartella-progetti-ambiente input {
+  width: 100%;
+}
+
+.cartella-progetti-ambiente p {
+  margin: 0;
+}
+
 /* Il comando per un fork, e le versioni nuove dell'originale (ADR 0059). */
 .comando-fork {
   display: block;

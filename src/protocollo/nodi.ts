@@ -86,6 +86,11 @@ export type RiferitoDalNodo =
   | { tipo: "risorse-esito"; idRichiesta: string; risorse: RisorseDellAmbiente }
   /** Com'è andata la richiesta di terminare un processo di Shinka. */
   | { tipo: "processo-terminato"; idRichiesta: string; riuscita: boolean; testo: string }
+  /**
+   * Com'è andata la scelta della cartella dei progetti: il percorso salvato, e se il nodo riparte
+   * adesso per usarlo (con il suo guardiano) o lo userà dal prossimo avvio; oppure perché no.
+   */
+  | { tipo: "cartella-progetti-esito"; idRichiesta: string; percorso?: string; riparte?: boolean; motivo?: string }
   /** Com'è andata la scelta di far partire il nodo a ogni accesso a Windows. */
   | { tipo: "avvio-con-windows-esito"; idRichiesta: string; attivo?: boolean; motivo?: string }
   /** Il modello locale in rete chiesto dal centro risponde sulla sua porta, oppure perché no. */
@@ -188,6 +193,12 @@ export type ComandoPerNodo =
   | { tipo: "accessi"; idRichiesta: string; richiesta: RichiestaAccessi }
   /** Il proprietario sta guardando la pagina di questo ambiente: come stanno le sue risorse. */
   | { tipo: "risorse"; idRichiesta: string }
+  /**
+   * Il proprietario sceglie dalla pagina degli ambienti la cartella in cui nascono i progetti nuovi:
+   * il nodo la crea se serve, controlla di poterci scrivere e la salva tra le sue scelte. Quelli che
+   * esistono restano dove sono. Un nodo di prima non lo conosce e tace.
+   */
+  | { tipo: "cartella-progetti"; idRichiesta: string; percorso: string }
   /**
    * Il proprietario sta scegliendo il modello di un progetto che nasce qui: i modelli dei motori con
    * un accesso in questo ambiente, e i modelli locali accesi qui. Un nodo di prima non lo conosce e tace.
