@@ -498,7 +498,7 @@ let ponteTelegram: PonteTelegram | undefined;
 // La posizione del proprietario resta qui, finché il centro è acceso: non va su disco.
 const posizione = new PosizioneDelProprietario();
 // I lavori della Home nel Chrome dei PC (ADR 0063): una conversazione a parte sul nodo, con Claude in Chrome.
-const lavoriNelBrowser = new LavoriNelBrowser({ ambienti, esecutore: (idAmbiente) => lavori.esecutore(idAmbiente) });
+const lavoriNelBrowser = new LavoriNelBrowser({ ambienti, esecutore: (idAmbiente) => lavori.esecutore(idAmbiente), permessiDellaHome: () => statoHome.impostazioni.permessi });
 const opzioniStrumenti = {
   ambienti,
   elaborati,

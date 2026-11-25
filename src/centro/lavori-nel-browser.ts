@@ -2,18 +2,19 @@
  * I lavori della Home nel Chrome di un PC (ADR 0063). La Home gira sul centro, dove Chrome non c'è:
  * per usare quello di un ambiente fa partire lì una conversazione a parte di Claude Code, con Claude
  * in Chrome acceso e un solo compito. Ogni azione nel browser chiede il consenso del proprietario
- * nella chat della Home; alla fine la Home riceve il risultato. La conversazione poi si chiude.
+ * nella chat della Home, tranne quando la Home è in «Automatico» o «Senza permessi» (ADR 0064);
+ * alla fine la Home riceve il risultato. La conversazione poi si chiude.
  */
 
 import { randomUUID } from "node:crypto";
 import { conversazioneNelBrowser } from "../protocollo/browser-del-pc.ts";
 import type { DecisionePermesso, EventoConversazione, PortaConversazione } from "../protocollo/eventi.ts";
-import type { ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
+import type { ImpostazioniConversazione, ModoPermessi } from "../protocollo/impostazioni.ts";
 import type { EsitoStrumento } from "../protocollo/strumenti.ts";
 import type { RegistroAmbienti } from "./ambienti.ts";
 import type { Esecutore } from "./esecutori.ts";
 
-/** Quanto può durare un lavoro nel browser: ogni azione aspetta il proprietario. */
+/** Quanto può durare un lavoro nel browser: ogni azione può aspettare il proprietario. */
 const DURATA_MASSIMA_MS = 30 * 60 * 1000;
 /** Quanto del risultato torna alla Home. */
 const RISULTATO_MASSIMO = 20_000;
@@ -21,11 +22,20 @@ const RISULTATO_MASSIMO = 20_000;
 export interface OpzioniLavoriNelBrowser {
   ambienti: Pick<RegistroAmbienti, "stato">;
   esecutore(idAmbiente: string): Pick<Esecutore, "apriConversazione">;
+  /** Il modo dei permessi della Home, chiesto quando il lavoro parte. */
+  permessiDellaHome?: () => ModoPermessi;
   durataMs?: number;
 }
 
-/** Le impostazioni del lavoro: Claude, Chrome acceso, e ogni altra azione chiesta. */
-const IMPOSTAZIONI: ImpostazioniConversazione = { motore: "claude", permessi: "chiedi", browserChrome: true };
+/**
+ * Le impostazioni del lavoro: Claude e Chrome acceso. In «Automatico» e «Senza permessi» la Home
+ * ha scelto di non essere chiesta, e il lavoro lavora allo stesso modo (ADR 0064); altrimenti ogni
+ * azione nel browser, e ogni altra, si chiede.
+ */
+function impostazioniDelLavoro(permessi: ModoPermessi | undefined): ImpostazioniConversazione {
+  const senzaChiedere = permessi === "automatico" || permessi === "senza-permessi";
+  return { motore: "claude", permessi: senzaChiedere ? permessi : "chiedi", browserChrome: true };
+}
 
 export class LavoriNelBrowser {
   readonly #o: OpzioniLavoriNelBrowser;
@@ -101,7 +111,8 @@ export class LavoriNelBrowser {
       }
     };
     try {
-      porta = this.#o.esecutore(ambiente.id).apriConversazione(idConversazione, ambiente.radiceProgetti, () => undefined, () => IMPOSTAZIONI, alEvento, () => {}, () => []);
+      const impostazioni = impostazioniDelLavoro(this.#o.permessiDellaHome?.());
+      porta = this.#o.esecutore(ambiente.id).apriConversazione(idConversazione, ambiente.radiceProgetti, () => undefined, () => impostazioni, alEvento, () => {}, () => []);
       porta.invia(compito);
     } catch (errore) {
       return { testo: `Il lavoro nel Chrome di «${ambiente.nome}» non è partito: ${errore instanceof Error ? errore.message : String(errore)}`, errore: true };

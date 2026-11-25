@@ -10,6 +10,7 @@ import { test } from "node:test";
 import type { EventoConversazione } from "../protocollo/eventi.ts";
 import { allestisci, avviaNodoAccettato, finche, ID_NODO } from "../prove/banco.ts";
 import { COOKIE_SESSIONE } from "./centro.ts";
+import { LavoriNelBrowser } from "./lavori-nel-browser.ts";
 import { azioniDellaHome } from "./strumenti-home.ts";
 
 const CON_ESTENSIONE = { chrome: true, estensione: true, collegamento: true };
@@ -91,4 +92,23 @@ test("un lavoro della Home nel Chrome di un PC: conversazione a parte, consenso 
   // Ciò che aspettava ancora il proprietario si chiude nella chat della Home.
   assert.ok(nellaHome.some((evento) => evento.tipo === "permesso-deciso" && evento.idPermesso === "p2" && evento.decisione === "negato"));
   await finche(() => nelBrowser.chiusa, "la conversazione sul nodo si chiude");
+});
+
+test("in «Automatico» o «Senza permessi» della Home, il lavoro nel browser parte con lo stesso modo (ADR 0064)", { timeout: 30_000 }, async (t) => {
+  const banco = await allestisci(t);
+  const nodo = await avviaNodoAccettato(t, banco, { chrome: { stato: CON_ESTENSIONE, acceso: true } });
+  for (const [permessi, atteso] of [
+    ["senza-permessi", "senza-permessi"],
+    ["automatico", "automatico"],
+    ["modifiche-libere", "chiedi"],
+  ] as const) {
+    const lavori = new LavoriNelBrowser({ ambienti: banco.ambienti, esecutore: (idAmbiente) => banco.lavori.esecutore(idAmbiente), permessiDellaHome: () => permessi });
+    const quante = nodo.conversazioni.length;
+    const esito = lavori.esegui("PC Windows", "Apri YouTube.", () => {});
+    await finche(() => nodo.conversazioni.length === quante + 1 && nodo.conversazioni.at(-1)?.inviati.length === 1, "parte la conversazione sul nodo");
+    const nelBrowser = nodo.conversazioni.at(-1)!;
+    assert.equal(nelBrowser.configurazione?.impostazioni.permessi, atteso, permessi);
+    nelBrowser.emetti({ tipo: "turno-concluso", riuscito: true, durataMs: 1 });
+    await esito;
+  }
 });

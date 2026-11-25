@@ -2,6 +2,9 @@
 status: accepted
 ---
 
+> Cambiata in parte dall'[ADR 0064](0064-nel-browser-del-pc-il-consenso-segue-il-modo-dei-permessi.md): in «Automatico» e «Senza permessi» il consenso non si chiede più.
+
+
 # Nel browser del PC il consenso lo chiede Shinka, in ogni modo dei permessi
 
 Dal 12 novembre 2026 un progetto su Windows può usare il browser del PC attraverso l'estensione di Claude ([ADR 0006](0006-il-browser-sta-nel-gateway-e-la-password-la-scrive-lui.md)). Lì gli strumenti sono dell'estensione: Shinka non vede che cosa viene cliccato e non può far valere i divieti fissi come nel browser del gateway. L'unico controllo è che ogni azione passi dal proprietario. Per questo il browser del PC c'era solo nei modi "Chiedi sempre" e "Modifiche libere": in "Automatico" e "Senza permessi" l'harness non chiede nulla, e il browser restava spento.

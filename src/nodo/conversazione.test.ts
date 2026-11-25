@@ -151,7 +151,7 @@ test("il browser del PC resta spento finché il proprietario non lo accende nell
   assert.doesNotMatch(JSON.stringify(opzioni.systemPrompt), /claude-in-chrome/);
 });
 
-test("il browser del PC è acceso in ogni modo dei permessi, e ogni sua azione passa dal proprietario", async () => {
+test("il browser del PC: in «Chiedi sempre» e «Modifiche libere» ogni azione passa dal proprietario, negli altri due no (ADR 0064)", async () => {
   const conIlBrowser = (): ConfigurazioneConversazione =>
     configurazioneDiProgetto(
       "/home/node/progetti/videogioco",
@@ -164,8 +164,22 @@ test("il browser del PC è acceso in ogni modo dei permessi, e ogni sua azione p
   const decisione = (esito: unknown): { permissionDecision?: string; permissionDecisionReason?: string } =>
     (esito as { hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } }).hookSpecificOutput ?? {};
   const azione = { hook_event_name: "PreToolUse", tool_name: "mcp__claude-in-chrome__tabs_close_mcp", tool_input: { tabId: 7 }, tool_use_id: "azione-1" } as never;
-  // Anche dove approva un classificatore, o nessuno: lì il consenso lo chiede il controllo, non l'harness.
-  for (const permessi of ["chiedi", "modifiche-libere", "automatico", "senza-permessi"] as const) {
+  // In «Automatico» e «Senza permessi» il proprietario ha scelto di non essere chiesto: l'azione parte.
+  for (const permessi of ["automatico", "senza-permessi"] as const) {
+    const chieste: string[] = [];
+    const chiedi: ChiediConsenso = async (strumento) => {
+      chieste.push(strumento);
+      return { approvato: false, motivo: "no" };
+    };
+    const opzioni = opzioniHarness(conIlBrowser(), "abbonamento", undefined, { permessi, browserChrome: true }, nessunPermesso, [], chiedi);
+    assert.deepEqual(opzioni.extraArgs, { chrome: null }, permessi);
+    const controllo = opzioni.hooks?.PreToolUse?.find((voce) => voce.matcher === "mcp__claude-in-chrome__.*");
+    const libera = decisione(await controllo?.hooks[0]?.(azione, "azione-1", { signal: new AbortController().signal }));
+    assert.equal(libera.permissionDecision, "allow", permessi);
+    assert.deepEqual(chieste, [], permessi);
+  }
+  // Negli altri due il consenso lo chiede il controllo, non l'harness.
+  for (const permessi of ["chiedi", "modifiche-libere"] as const) {
     const chieste: { strumento: string; ingresso: unknown; idAzione: string; motivo: string | undefined }[] = [];
     let risposta: Consenso = { approvato: true };
     const chiedi: ChiediConsenso = async (strumento, ingresso, idAzione, _segnale, motivo) => {

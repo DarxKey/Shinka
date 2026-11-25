@@ -144,7 +144,7 @@ export type ChiediConsenso = (strumento: string, ingresso: unknown, idAzione: st
 export const ATTESA_DEL_CONSENSO_NEL_BROWSER_S = 12 * 60 * 60;
 
 /** Perché un'azione nel browser del PC viene chiesta anche dove il modo dei permessi non chiede nulla. */
-const MOTIVO_DEL_BROWSER = "Nel browser del PC ogni azione passa dal proprietario, in qualunque modo dei permessi.";
+const MOTIVO_DEL_BROWSER = "Nel browser del PC, in «Chiedi sempre» e «Modifiche libere», ogni azione passa dal proprietario.";
 
 export interface OpzioniConversazione {
   /** Come si avvia l'harness. Nei test, uno finto. */
@@ -966,12 +966,14 @@ export const PREFISSO_BROWSER_DEL_PC = "mcp__claude-in-chrome__";
 
 /**
  * Il controllo che precede ogni strumento del browser del PC. Lì dentro Shinka non può far valere
- * i divieti fissi come fa nel browser del gateway: per questo ogni azione passa dal proprietario.
- * Il consenso lo chiede il controllo stesso, e non l'harness, perché deve valere anche nei modi in
- * cui l'harness non chiede nulla: un controllo così l'harness lo rispetta in tutti e quattro.
- * Se non c'è modo di chiedere, o la risposta non arriva in tempo, l'azione non parte.
+ * i divieti fissi come fa nel browser del gateway: per questo, in «Chiedi sempre» e in «Modifiche
+ * libere», ogni azione passa dal proprietario. Il consenso lo chiede il controllo stesso, e non
+ * l'harness: se non c'è modo di chiedere, o la risposta non arriva in tempo, l'azione non parte.
+ * In «Automatico» e «Senza permessi» il proprietario ha scelto di non essere chiesto (ADR 0064):
+ * lì le azioni del browser partono, e i divieti li fanno valere le istruzioni.
  */
-function controlloDelBrowserDelPc(chiediConsenso: ChiediConsenso | undefined): NonNullable<NonNullable<Options["hooks"]>["PreToolUse"]>[number] {
+function controlloDelBrowserDelPc(chiediConsenso: ChiediConsenso | undefined, permessi: ModoPermessi): NonNullable<NonNullable<Options["hooks"]>["PreToolUse"]>[number] {
+  const senzaChiedere = permessi === "automatico" || permessi === "senza-permessi";
   const esito = (permissionDecision: "allow" | "deny", permissionDecisionReason: string) => ({
     hookSpecificOutput: { hookEventName: "PreToolUse" as const, permissionDecision, permissionDecisionReason },
   });
@@ -981,6 +983,9 @@ function controlloDelBrowserDelPc(chiediConsenso: ChiediConsenso | undefined): N
     timeout: ATTESA_DEL_CONSENSO_NEL_BROWSER_S,
     hooks: [
       async (ingresso, idAzione, { signal }) => {
+        if (senzaChiedere && ingresso.hook_event_name === "PreToolUse") {
+          return esito("allow", "In questo modo dei permessi il proprietario ha scelto di non essere chiesto per le azioni nel browser.");
+        }
         if (chiediConsenso === undefined || ingresso.hook_event_name !== "PreToolUse") {
           return esito("deny", "Nel browser del PC ogni azione passa dal proprietario, e qui non c'è modo di chiederglielo.");
         }
@@ -1107,7 +1112,7 @@ export function opzioniHarness(
       PreToolUse: [
         controlloDelleDomande(chiediRisposte, ATTESA_DEL_CONSENSO_NEL_BROWSER_S),
         // Il controllo resta anche con il browser spento nella sessione: se uno strumento del browser comparisse, chiede.
-        ...(cfg.browserDelPc === true ? [controlloDelBrowserDelPc(chiediPerIlBrowser)] : []),
+        ...(cfg.browserDelPc === true ? [controlloDelBrowserDelPc(chiediPerIlBrowser, impostazioni.permessi)] : []),
         ...(primaDellaModifica === undefined ? [] : [versioneDiPrima(primaDellaModifica)]),
       ],
     },
