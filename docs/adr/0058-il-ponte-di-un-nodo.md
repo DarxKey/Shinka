@@ -23,3 +23,4 @@ Il 24 novembre 2026 il proprietario ha chiesto, nel decimo gruppo del suo elenco
 - Il centro vede le macchine dietro il ponte con l'indirizzo del ponte: un modello locale in rete su una di loro (ADR 0053) non si raggiunge da lì.
 - Un nodo di una versione precedente non conosce `ponte`, e la pagina lo dice.
 - Ponti in fila (un ponte dietro un ponte) funzionano allo stesso modo, perché passa solo il collegamento cifrato; non sono provati.
+- Dal 25 novembre 2026 il centro ammette, su un collegamento TLS che chiede il nome dei nodi, solo le rotte dei nodi ([ADR 0065](0065-la-porta-solo-per-i-nodi.md)): prima chi apriva quel TLS a mano attraverso il ponte poteva chiedere anche le pagine e le API, con la password come unica difesa.

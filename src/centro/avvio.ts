@@ -7,6 +7,12 @@
  *   SHINKA_PORTA           porta di ascolto (predefinita: 7850)
  *   SHINKA_PORTA_ANTEPRIMA porta da cui il proprietario vede l'anteprima delle applicazioni dei
  *                          progetti (predefinita: 7852); "no" per non servirla
+ *   SHINKA_PORTA_NODI      la porta solo per i nodi (ADR 0065), da aprire su Internet perché un nodo
+ *                          fuori casa raggiunga il centro: lì passa solo il collegamento cifrato dei
+ *                          nodi, senza interfaccia né API. Se manca, non c'è
+ *   SHINKA_NODI_DA_FUORI   l'indirizzo da cui i nodi raggiungono quella porta da Internet, per
+ *                          esempio http://nodi.esempio.it:7853: i nodi lo ricevono e lo provano
+ *                          quando l'indirizzo di sempre non risponde
  *   SHINKA_COOKIE_SICURO   "1" se l'interfaccia è servita in HTTPS da un altro programma; con
  *                          l'HTTPS di Shinka il cookie è già sicuro per chi entra in HTTPS
  *   SHINKA_HTTPS           "1" per parlare HTTPS sulla stessa porta (e su quella dell'anteprima),
@@ -86,7 +92,7 @@ import { preparaIdentitaPerINodi, type IdentitaPerINodi } from "./identita-per-i
 import { ETICHETTA_STACK } from "../protocollo/stack.ts";
 import { CampionatoreRisorse } from "../nodo/risorse.ts";
 import { RegistroArgomenti } from "./argomenti.ts";
-import { creaCentro } from "./centro.ts";
+import { creaCentro, type NodiDaFuori } from "./centro.ts";
 import { distribuisciSkill } from "./distribuzione-skill.ts";
 import { EsecutoreLocale, EsecutoriRemoti } from "./esecutori.ts";
 import { Estensioni } from "./estensioni.ts";
@@ -130,6 +136,8 @@ import {
 import { serviziVeri } from "./mappa.ts";
 import { TerminaliDeiProgetti } from "./terminali.ts";
 import { ImmaginiEsterne } from "./immagini-esterne.ts";
+import { PortaDeiNodi } from "./porta-dei-nodi.ts";
+import { indirizzoDaFuori } from "../nodo/collegamento.ts";
 
 const dati = resolve(process.env.SHINKA_DATI ?? "dati");
 const indirizzo = process.env.SHINKA_INDIRIZZO ?? "127.0.0.1";
@@ -146,6 +154,12 @@ if (!Number.isInteger(porta) || porta < 1 || porta > 65535) {
   throw new Error(`SHINKA_PORTA non è una porta valida: ${process.env.SHINKA_PORTA}`);
 }
 const portaAnteprima = leggiPortaAnteprima(process.env.SHINKA_PORTA_ANTEPRIMA);
+const portaNodi = leggiPortaNodi(process.env.SHINKA_PORTA_NODI);
+const scrittoDaFuori = process.env.SHINKA_NODI_DA_FUORI?.trim() || undefined;
+const nodiDaFuoriIndirizzo = indirizzoDaFuori(scrittoDaFuori);
+if (scrittoDaFuori !== undefined && nodiDaFuoriIndirizzo === undefined) {
+  throw new Error(`SHINKA_NODI_DA_FUORI non è un indirizzo come http://nodi.esempio.it:7853: ${scrittoDaFuori}`);
+}
 
 // Se il proprietario ha chiesto un ripristino, i dati della copia entrano adesso, prima che
 // qualcuno apra quelli di prima: da qui in poi il centro parte come sempre, con quelli.
@@ -644,7 +658,12 @@ const immaginiEsterne = new ImmaginiEsterne();
 // Gli aggiornamenti di Shinka Desktop: l'ultima versione pubblicata dalle Impostazioni (ADR 0049).
 const desktop = new AggiornamentiDesktop(join(dati, "desktop"));
 
+// La porta solo per i nodi (ADR 0065): si apre dopo il centro, a cui passa ciò che accetta.
+const portaDeiNodi = new PortaDeiNodi();
+const nodiDaFuori: NodiDaFuori = { da: (presa) => portaDeiNodi.da(presa), get porta() { return portaDeiNodi.porta; } };
+
 const centro = await creaCentro({
+  nodiDaFuori,
   desktop,
   collegate,
   accesso,
@@ -688,6 +707,25 @@ const centro = await creaCentro({
   cookieSicuro,
 });
 await centro.listen({ host: indirizzo, port: porta });
+if (portaNodi !== undefined) {
+  if (perINodi === undefined) {
+    console.error("La porta solo per i nodi non si apre: manca il certificato dei nodi.");
+  } else {
+    try {
+      await portaDeiNodi.apri(centro.server, portaNodi, indirizzo);
+      if (nodiDaFuoriIndirizzo !== undefined) {
+        nodiDaFuori.indirizzo = nodiDaFuoriIndirizzo;
+        ambienti.indirizzoDaFuori(nodiDaFuoriIndirizzo);
+      }
+      console.log(
+        `Porta solo per i nodi su ${indirizzo}:${portaNodi}` +
+          (nodiDaFuoriIndirizzo === undefined ? ": nessun indirizzo da Internet per i nodi (SHINKA_NODI_DA_FUORI)." : `, da Internet ${nodiDaFuoriIndirizzo}.`),
+      );
+    } catch (errore) {
+      console.error(`La porta solo per i nodi (${portaNodi}) non si è aperta: ${errore instanceof Error ? errore.message : String(errore)}`);
+    }
+  }
+}
 
 // Telegram: il bot lo tiene il gateway. Da qui passano i messaggi per la Home, gli avvisi e le
 // richieste da approvare. Senza gateway non c'è nemmeno il bot.
@@ -766,8 +804,20 @@ async function spegni(codice = 0): Promise<void> {
   // Così le applicazioni: al prossimo avvio ripartono quelle volute.
   for (const qui of applicazioniDelCentro) qui.spegniTutte();
   await serverAnteprima?.close();
+  await portaDeiNodi.chiudi();
   await centro.close();
   process.exit(codice);
+}
+
+/** La porta solo per i nodi, se è indicata: diversa da quella di Shinka e dell'anteprima. */
+function leggiPortaNodi(scritto: string | undefined): number | undefined {
+  const valore = scritto?.trim();
+  if (valore === undefined || valore === "" || valore === "0" || valore.toLowerCase() === "no") return undefined;
+  const numero = Number(valore);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 65535 || numero === porta || numero === portaAnteprima) {
+    throw new Error(`SHINKA_PORTA_NODI non è una porta valida, o è già di Shinka o dell'anteprima: ${scritto}`);
+  }
+  return numero;
 }
 
 /** La porta dell'anteprima: quella predefinita, quella indicata, oppure nessuna. */

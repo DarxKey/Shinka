@@ -40,6 +40,11 @@ export interface CanaleNodo {
   indirizzo?: string;
   /** Vero se il collegamento arriva al centro cifrato (ADR 0040). */
   cifrato?: boolean;
+  /**
+   * Vero se il collegamento arriva dalla porta solo per i nodi mentre non c'è un invito aperto
+   * (ADR 0065): da Internet entra solo un nodo che il proprietario ha già accettato.
+   */
+  soloConosciuti?: boolean;
 }
 
 interface NodoRegistrato {
@@ -122,6 +127,8 @@ export class RegistroAmbienti {
   readonly #ascoltatoriCollegamenti = new Set<(idNodo: string) => void>();
   /** Vero se il proprietario ha scelto di accettare solo i nodi con il collegamento cifrato. */
   #soloCifrati = false;
+  /** L'indirizzo da cui i nodi raggiungono il centro da Internet (ADR 0065): lo ricevono quando sono accolti. */
+  #daFuori: string | undefined;
 
   private constructor(file: string, delCentro: AmbienteDelCentro, registrati: NodoRegistrato[]) {
     this.#file = file;
@@ -142,6 +149,16 @@ export class RegistroAmbienti {
 
   get soloCifrati(): boolean {
     return this.#soloCifrati;
+  }
+
+  /** Dice ai nodi, quando li accoglie, da dove si raggiunge il centro da Internet. */
+  indirizzoDaFuori(indirizzo: string | undefined): void {
+    this.#daFuori = indirizzo;
+  }
+
+  /** Vero se il proprietario ha accettato questo nodo. */
+  conosce(idNodo: string): boolean {
+    return this.#registrati.has(idNodo);
   }
 
   /**
@@ -205,6 +222,11 @@ export class RegistroAmbienti {
       return "accolto";
     }
 
+    // Da Internet, un nodo che il proprietario non conosce non si mette nemmeno in attesa, se non
+    // mentre c'è un invito aperto: chiunque arrivi alla porta non riempie la pagina di richieste.
+    if (canale.soloConosciuti === true) {
+      return this.#rifiuta(canale, "Da Internet si collega solo un nodo già accettato. Per uno nuovo, prepara il comando dalla pagina Ambienti e lancialo entro un'ora.");
+    }
     const giaInAttesa = this.#inAttesa.get(presentazione.idNodo);
     if (giaInAttesa === undefined && this.#inAttesa.size >= RICHIESTE_MASSIME) {
       return this.#rifiuta(canale, "Troppe richieste di collegamento in attesa. Riprova più tardi.");
@@ -525,7 +547,7 @@ export class RegistroAmbienti {
       cifrato: canale.cifrato === true,
       ...(offline === undefined ? {} : { offline: offline.filter((id) => typeof id === "string").slice(0, 1000) }),
     });
-    canale.invia({ tipo: "accolto", nome: registrato.nome, ...(segretoCambiato ? { segretoCambiato: true as const } : {}) });
+    canale.invia({ tipo: "accolto", nome: registrato.nome, ...(segretoCambiato ? { segretoCambiato: true as const } : {}), ...(this.#daFuori === undefined ? {} : { daFuori: this.#daFuori }) });
     // Il ponte acceso dal proprietario si riapre a ogni collegamento (ADR 0058).
     if (registrato.ponte !== undefined) canale.invia({ tipo: "ponte", porta: registrato.ponte });
     for (const ascoltatore of this.#ascoltatoriCollegamenti) ascoltatore(registrato.id);

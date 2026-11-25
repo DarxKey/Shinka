@@ -2,7 +2,7 @@
 
 ## Specifica funzionale e architetturale
 
-**Versione:** 2.28 | **Data:** 24 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
+**Versione:** 2.32 | **Data:** 25 novembre 2026 | **Stato:** baseline concordata; l'avanzamento degli incrementi è in [STATO.md](STATO.md)
 
 Sostituisce la specifica "Atlas Agent 1.0", conservata in [archivio/atlas-agent-v1.md](archivio/atlas-agent-v1.md). I termini usati qui sono definiti in [GLOSSARY.md](GLOSSARY.md). Le decisioni di fondo sono motivate in [docs/adr/](docs/adr/). Lo stato dei lavori è in [STATO.md](STATO.md).
 
@@ -66,6 +66,8 @@ La versione 2.30 rende il browser del PC accessibile dall'interfaccia e lo dà a
 
 La versione 2.31 cambia ancora la regola del browser del PC: le azioni nel browser chiedono il consenso del proprietario in «Chiedi sempre» e in «Modifiche libere», ma non in «Automatico» e «Senza permessi», dove lui ha scelto di non essere chiesto; lì i divieti nel browser li fanno valere le istruzioni di Claude. Il lavoro della Home nel browser prende il modo della Home. Cambia la sezione 4.7 e la prova A51. La scelta è del proprietario, del 25 novembre 2026, ed è motivata in [docs/adr/0064](docs/adr/0064-nel-browser-del-pc-il-consenso-segue-il-modo-dei-permessi.md).
 
+La versione 2.32 lascia raggiungere il centro da Internet a un nodo fuori casa senza pubblicare l'interfaccia: una porta solo per i nodi, che fa passare soltanto il loro collegamento cifrato, dove un nodo nuovo si presenta solo mentre c'è un invito aperto; i nodi ricevono dal centro l'indirizzo da Internet e lo usano quando quello di sempre non risponde. Sul collegamento dei nodi, anche attraverso un ponte, passano solo le loro rotte. Cambiano le sezioni 3 e 4.3; si aggiunge la prova A97. La scelta è del proprietario, del 25 novembre 2026, ed è motivata in [docs/adr/0065](docs/adr/0065-la-porta-solo-per-i-nodi.md).
+
 ## 1. Cos'è Shinka
 
 Shinka è un'applicazione web personale con un'unica chat, la **Home**, a cui il proprietario chiede qualunque cosa. La Home risponde alle domande e svolge da sé i lavori che si chiudono in una seduta, anche quando producono file. Propone un **progetto** solo per i lavori lunghi. Ricorda ciò che ha fatto: quando il proprietario cambia argomento archivia il precedente, e quando gli viene richiesto qualcosa di già fatto lo ritrova invece di rifarlo. Ogni progetto vive in un **ambiente** scelto dal proprietario: il server Linux del homelab, oppure il PC Windows per i lavori che ne hanno bisogno, come Unity o Blender. Il motore è Claude Code, usato tramite il Claude Agent SDK ufficiale; un'installazione può usare invece Codex, il motore di OpenAI, tramite il suo app-server ufficiale (sezione 4.12). C'è un solo proprietario.
@@ -128,7 +130,7 @@ In ordine ancora da decidere: vista dedicata per rivedere le modifiche ai file, 
 | Solo infrastruttura personale, o un server del lavoro del proprietario per un'installazione al lavoro | Nessun sistema di terzi tra ambienti e host, se non quelli che il proprietario mette nel vault. |
 | Centro in un container su Unraid | Shinka risponde anche a PC spento. Progetti e file di un ambiente spento si possono solo consultare, per ciò che il centro ne conserva. |
 | Un nodo per ambiente | Ogni ambiente ha il proprio login del motore e deve essere acceso mentre vi si lavora. |
-| Accesso solo da VPN privata, più login | L'interfaccia non è mai pubblicata su Internet. |
+| Accesso solo da VPN privata, più login | L'interfaccia non è mai pubblicata su Internet. Su Internet si può aprire solo la porta dei nodi, che non la serve. |
 | Tutto TypeScript | Gli stessi tipi dal motore all'interfaccia, e lo stesso nodo su Linux e su Windows. |
 | Interfaccia nostra, montata con componenti pronti | Librerie con licenza permissiva per chat, terminale e anteprima. Nessun fork di prodotti esistenti. |
 
@@ -160,6 +162,8 @@ Aperto un progetto, il lavoro prosegue lì: la Home ne riferisce e vi inoltra is
 - Una macchina che non raggiunge il centro può collegarsi attraverso un altro nodo, che le fa da ponte: lo accende il proprietario, ambiente per ambiente. Il ponte fa passare solo il collegamento cifrato dei nodi, che non vede, e lo scaricamento dell'installazione di un ambiente nuovo; l'interfaccia e le API di Shinka non passano.
 - Fa eccezione il lavoro offline: quando il centro non si raggiunge, chi sta sulla macchina di un ambiente, con Shinka Desktop, lavora ai progetti di quell'ambiente attraverso il suo nodo, che per questo ascolta solo da quella macchina e solo con un gettone che tiene tra i suoi dati. Offline lavora solo la conversazione principale di un progetto; gli strumenti di Shinka che passano dal centro dicono che manca, salvo leggere le skill, e ricordare in memoria o salvare una skill, che partono verso il centro al ritorno. Le credenziali del vault non arrivano mai al lavoro offline.
 - Il collegamento tra un nodo e il centro è cifrato. Il nodo riconosce il centro dal suo certificato e non parla con chi ne presenta un altro; non torna al collegamento in chiaro una volta che lo ha riconosciuto. Il centro accetta ancora i nodi in chiaro delle versioni di prima, finché il proprietario non sceglie di accettare solo quelli cifrati.
+- Sul collegamento dei nodi passano solo le rotte dei nodi: chi lo apre, anche attraverso un ponte, non raggiunge le pagine, le API né l'entrata con la password.
+- Un nodo fuori casa raggiunge il centro da Internet attraverso la porta solo per i nodi, che il proprietario accende dove gira il centro e apre lui sul suo firewall. Lì passa solo il collegamento cifrato dei nodi; un nodo che il proprietario non ha ancora accettato si presenta solo mentre c'è un invito aperto. Il centro dice ai nodi che accoglie l'indirizzo da Internet, e un nodo che riconosce già il centro lo usa quando quello di sempre non risponde.
 - Ogni ambiente ha una breve descrizione di ciò che offre, per esempio "PC Windows: Unity, Blender". La Home la usa per scegliere dove lavorare e per proporre l'ambiente di un progetto. *(Assunzione, vedi sezione 11.)*
 - La Home agisce in ogni ambiente attivo, con il modo dei permessi che il proprietario ha scelto per lei: può scrivere file ed eseguire comandi sul PC Windows senza che serva un progetto.
 - Il terminale e l'anteprima di un progetto agiscono nel suo ambiente. Le applicazioni con finestra, come Unity e Blender, si vedono sullo schermo di quell'ambiente e non nell'anteprima.
@@ -494,6 +498,7 @@ Ogni incremento deve essere usabile e dimostrabile prima di passare al successiv
 | A94 | Su un altro server il proprietario lancia il comando del fork; più tardi l'originale pubblica una versione nuova | Il fork si avvia con la sua storia, sotto i suoi guardiani; la Home del fork propone la versione nuova, e con il sì il suo progetto Shinka la fonde, rifà le prove e chiede l'installazione; le modifiche fatte nel fork restano |
 | A95 | Il proprietario dà a PC ATES una credenziale per un host che il gateway non raggiunge, poi chiude il vault | Il comando su quell'host lo esegue il nodo di PC ATES e finisce nel registro del gateway; il valore non compare tra i dati del centro; la credenziale del server non si dà a un ambiente; chiuso il vault, il nodo la dimentica |
 | A96 | La Home fa un lavoro nel Chrome di PC ATES, con Chrome acceso per l'ambiente | Ogni azione nel browser chiede il consenso nella chat della Home, e parte solo con il sì; alla fine la Home riceve il risultato e la conversazione sul PC si chiude |
+| A97 | La porta solo per i nodi è aperta su Internet; PC ATES, fuori casa, non raggiunge l'indirizzo di sempre; qualcuno da Internet prova la porta | PC ATES si collega dall'indirizzo da Internet e lavora come a casa; chi prova la porta non vede pagine né API e non arriva all'entrata; un nodo sconosciuto, senza un invito aperto, non compare nemmeno tra le richieste |
 
 ## 10. Regole per chi implementa
 

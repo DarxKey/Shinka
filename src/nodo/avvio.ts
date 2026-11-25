@@ -49,7 +49,7 @@ import {
 } from "../guardiano/guardiano.ts";
 import { inBreve, versioneDi } from "../protocollo/versione.ts";
 import { preparaAggiornamento } from "./aggiornamento.ts";
-import { CollegamentoAlCentro, indirizzoDelCollegamento } from "./collegamento.ts";
+import { CollegamentoAlCentro, indirizzoDaFuori, indirizzoDelCollegamento } from "./collegamento.ts";
 import { EstensioniInAmbiente } from "./estensioni.ts";
 import { custodiaDelSegreto, leggiOCreaIdentita } from "./identita.ts";
 import { LavoroDelNodo } from "./lavoro.ts";
@@ -73,6 +73,8 @@ interface Impostazioni {
   browserDelPc: boolean;
   /** L'impronta del certificato dei nodi del centro, da quando il nodo lo ha riconosciuto o dal comando che lo ha preparato. */
   improntaDelCentro?: string;
+  /** L'indirizzo del centro da Internet, come il centro lo ha detto l'ultima volta (ADR 0065). */
+  centroDaFuori?: string;
 }
 
 const dati = resolve(process.env.SHINKA_DATI_NODO ?? "dati-nodo");
@@ -268,6 +270,13 @@ try {
       writeFileSync(fileImpostazioni, JSON.stringify(impostazioni, null, 2));
       console.log("Riconosciuto il certificato del centro: da qui il nodo parla solo con lui.");
     },
+    ...(impostazioni.centroDaFuori === undefined ? {} : { daFuori: impostazioni.centroDaFuori }),
+    alDaFuori: (indirizzo) => {
+      if (indirizzo === undefined) delete impostazioni.centroDaFuori;
+      else impostazioni.centroDaFuori = indirizzo;
+      writeFileSync(fileImpostazioni, JSON.stringify(impostazioni, null, 2));
+      console.log(indirizzo === undefined ? "Il centro non si raggiunge più da Internet: resta l'indirizzo di sempre." : `Il centro si raggiunge anche da Internet, a ${indirizzo}: lo provo quando ${impostazioni.centro} non risponde.`);
+    },
     alCifrato: (cifrato) => {
       if (!cifrato) console.log("Attenzione: il collegamento con il centro è in chiaro, perché il centro non ha risposto a quello cifrato.");
     },
@@ -392,6 +401,8 @@ async function leggiImpostazioni(): Promise<Impostazioni> {
     descrizione: (values.descrizione ?? salvate.descrizione ?? "").trim(),
     progetti: resolve(values.progetti ?? salvate.progetti ?? join(homedir(), "Shinka", "Progetti")),
     ...(values["dimentica-centro"] === true || typeof salvate.improntaDelCentro !== "string" || salvate.improntaDelCentro === "" ? {} : { improntaDelCentro: salvate.improntaDelCentro }),
+    // L'indirizzo da Internet viene dal centro riconosciuto: chi dimentica il centro dimentica anche lui.
+    ...(values["dimentica-centro"] === true || indirizzoDaFuori(salvate.centroDaFuori) === undefined ? {} : { centroDaFuori: indirizzoDaFuori(salvate.centroDaFuori) }),
   };
 }
 

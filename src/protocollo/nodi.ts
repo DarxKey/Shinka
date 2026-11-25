@@ -294,7 +294,17 @@ export type ComandoPerNodo =
 /** Dal centro al nodo. */
 export type MessaggioCentro =
   /** Il nodo è registrato: il suo ambiente è attivo. */
-  | { tipo: "accolto"; nome: string; /** Vero se il centro ha preso il segreto nuovo del nodo. */ segretoCambiato?: true }
+  | {
+      tipo: "accolto";
+      nome: string;
+      /** Vero se il centro ha preso il segreto nuovo del nodo. */
+      segretoCambiato?: true;
+      /**
+       * L'indirizzo da cui il centro si raggiunge da Internet, sulla sua porta solo per i nodi (ADR 0065):
+       * il nodo lo ricorda e lo prova quando quello di sempre non risponde. Se manca, non c'è.
+       */
+      daFuori?: string;
+    }
   /** Il nodo non è ancora registrato: aspetta il consenso del proprietario. */
   | { tipo: "in-attesa"; codice: string }
   | { tipo: "rifiutato"; motivo: string }

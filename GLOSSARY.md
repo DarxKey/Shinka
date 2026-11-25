@@ -238,6 +238,10 @@ _Avoid_: SDK, bridge, proxy
 Un nodo che lascia collegare al centro, attraverso di sé, una macchina che il centro non raggiunge: fa passare solo il collegamento cifrato dei nodi e lo scaricamento dell'installazione.
 _Avoid_: relay, proxy, gateway
 
+**Porta solo per i nodi**:
+Una porta del centro, accesa dal proprietario, da aprire su Internet perché un nodo fuori casa raggiunga il centro: fa passare solo il collegamento cifrato dei nodi, senza pagine, API né entrata con la password. Il suo indirizzo da Internet il centro lo dice ai nodi che accoglie.
+_Avoid_: porta pubblica, port forwarding, DMZ
+
 **Lavoro offline**:
 Il lavoro su un progetto di un ambiente fatto da quella macchina, con Shinka Desktop, mentre il centro non si raggiunge: lo porta avanti il nodo dell'ambiente, che ne tiene la storia e la consegna al centro quando torna.
 _Avoid_: modalità aereo, sincronizzazione, fork

@@ -74,6 +74,13 @@ export interface ConfigurazioneCollegamento {
   impronta?: string;
   /** Il nodo ha riconosciuto il centro per la prima volta: l'impronta va ricordata. */
   alImpronta?(impronta: string): void;
+  /**
+   * L'indirizzo del centro da Internet, sulla sua porta solo per i nodi (ADR 0065), come il centro
+   * lo ha detto l'ultima volta: il nodo lo prova quando quello di sempre non risponde.
+   */
+  daFuori?: string;
+  /** Il centro ha detto un indirizzo da Internet diverso da quello che il nodo ricordava, o nessuno: va ricordato. */
+  alDaFuori?(indirizzo: string | undefined): void;
   /** Vero quando il collegamento con il centro è cifrato, falso quando è in chiaro: detto a ogni collegamento riuscito. */
   alCifrato?(cifrato: boolean): void;
   nome: string;
@@ -142,15 +149,34 @@ export class CollegamentoAlCentro {
   #impronta: string | undefined;
   /** Le prove del collegamento cifrato andate male di seguito, per un nodo che non ricorda il centro. */
   #proveFallite = 0;
+  /** L'indirizzo del centro da Internet, se il centro ne ha detto uno (ADR 0065). */
+  #daFuori: string | undefined;
+  /** Vero quando il prossimo tentativo va all'indirizzo da Internet. */
+  #provaDaFuori = false;
 
   constructor(cfg: ConfigurazioneCollegamento) {
     this.#cfg = cfg;
     this.#attesaMs = cfg.attesaInizialeMs ?? ATTESA_INIZIALE_MS;
     this.#impronta = cfg.impronta === undefined || improntaPulita(cfg.impronta) === "" ? undefined : improntaPulita(cfg.impronta);
+    this.#daFuori = indirizzoDaFuori(cfg.daFuori);
   }
 
-  #modo(): Modo {
-    if (new URL(this.#cfg.centro).protocol === "https:") return "sito";
+  /** L'indirizzo a cui si collega adesso: quello di sempre, o quello da Internet quando è il suo turno. */
+  get indirizzo(): string {
+    return this.#provaDaFuori && this.#daFuoriUsabile() && this.#daFuori !== undefined ? this.#daFuori : this.#cfg.centro;
+  }
+
+  /**
+   * L'indirizzo da Internet si usa solo riconoscendo il centro: dal certificato del sito, se è
+   * https, o dall'impronta che il nodo ricorda. Mai al primo incontro, né in chiaro.
+   */
+  #daFuoriUsabile(): boolean {
+    if (this.#daFuori === undefined) return false;
+    return new URL(this.#daFuori).protocol === "https:" || this.#impronta !== undefined;
+  }
+
+  #modo(indirizzo: string): Modo {
+    if (new URL(indirizzo).protocol === "https:") return "sito";
     if (this.#impronta !== undefined) return "riconosciuto";
     return this.#proveFallite >= PROVE_CIFRATE ? "in-chiaro" : "primo-incontro";
   }
@@ -174,8 +200,9 @@ export class CollegamentoAlCentro {
 
   #collega(): void {
     this.#cfg.alCambio({ stato: "collegamento" });
-    const modo = this.#modo();
-    const indirizzo = indirizzoDelCollegamento(this.#cfg.centro, modo !== "in-chiaro");
+    const centro = this.indirizzo;
+    const modo = this.#modo(centro);
+    const indirizzo = indirizzoDelCollegamento(centro, modo !== "in-chiaro");
     // Il certificato dei nodi non passa da una CA: lo si chiede per nome e lo si riconosce dall'impronta, qui sotto.
     const perINodi: WebSocket.ClientOptions & { servername: string } = { handshakeTimeout: 20_000, servername: NOME_TLS_DEI_NODI, rejectUnauthorized: false };
     const socket = new WebSocket(indirizzo, modo === "riconosciuto" || modo === "primo-incontro" ? perINodi : { handshakeTimeout: 20_000 });
@@ -270,6 +297,17 @@ export class CollegamentoAlCentro {
           }
         }
         this.#attesaMs = this.#cfg.attesaInizialeMs ?? ATTESA_INIZIALE_MS;
+        // L'indirizzo da Internet lo dice il centro, riconosciuto: il nodo lo ricorda per quando è fuori casa.
+        const daFuori = indirizzoDaFuori(messaggio.daFuori);
+        if (daFuori !== this.#daFuori) {
+          this.#daFuori = daFuori;
+          if (daFuori === undefined) this.#provaDaFuori = false;
+          try {
+            this.#cfg.alDaFuori?.(daFuori);
+          } catch {
+            // Se non si scrive, il nodo lo ricorda finché resta acceso.
+          }
+        }
         this.#cfg.alCifrato?.(modo !== "in-chiaro");
         this.#cfg.alCambio({ stato: "attivo", nome: messaggio.nome });
       } else if (messaggio.tipo === "in-attesa") {
@@ -294,6 +332,8 @@ export class CollegamentoAlCentro {
       if (this.#fermato) return;
       // Al primo incontro, se chi risponde non parla TLS, dopo qualche prova si torna al collegamento in chiaro.
       if (modo === "primo-incontro" && !ascoltato && nonTls) this.#proveFallite += 1;
+      // Un indirizzo che non ha risposto lascia il turno all'altro, se il centro ne ha dato uno da Internet.
+      if (!ascoltato && this.#daFuoriUsabile()) this.#provaDaFuori = !this.#provaDaFuori;
       const attesa = this.#attesaMs;
       this.#attesaMs = Math.min(attesa * 2, this.#cfg.attesaMassimaMs ?? ATTESA_MASSIMA_MS);
       this.#cfg.alCambio({ stato: chiuso ?? "scollegato", riprovaTraMs: attesa });
@@ -330,6 +370,19 @@ export function indirizzoDelCollegamento(centro: string, cifrato = false): strin
   return indirizzo.toString();
 }
 
+/** Un indirizzo del centro da Internet, se è scritto bene: http o https, con un host e nient'altro. */
+export function indirizzoDaFuori(scritto: unknown): string | undefined {
+  if (typeof scritto !== "string" || scritto.length > 300) return undefined;
+  try {
+    const indirizzo = new URL(scritto);
+    if (indirizzo.protocol !== "http:" && indirizzo.protocol !== "https:") return undefined;
+    if (indirizzo.username !== "" || indirizzo.password !== "" || indirizzo.hostname === "") return undefined;
+    return `${indirizzo.protocol}//${indirizzo.host}`;
+  } catch {
+    return undefined;
+  }
+}
+
 function leggiMessaggioCentro(dati: unknown): MessaggioCentro | undefined {
   if (typeof dati !== "string") return undefined;
   let letto: unknown;
@@ -341,7 +394,8 @@ function leggiMessaggioCentro(dati: unknown): MessaggioCentro | undefined {
   if (typeof letto !== "object" || letto === null || !("tipo" in letto)) return undefined;
   const campi = letto as Record<string, unknown>;
   if (campi.tipo === "accolto" && typeof campi.nome === "string") {
-    return { tipo: "accolto", nome: campi.nome, ...(campi.segretoCambiato === true ? { segretoCambiato: true as const } : {}) };
+    const daFuori = indirizzoDaFuori(campi.daFuori);
+    return { tipo: "accolto", nome: campi.nome, ...(campi.segretoCambiato === true ? { segretoCambiato: true as const } : {}), ...(daFuori === undefined ? {} : { daFuori }) };
   }
   if (campi.tipo === "solo-cifrato") return { tipo: "solo-cifrato" };
   if (campi.tipo === "in-attesa" && typeof campi.codice === "string") {

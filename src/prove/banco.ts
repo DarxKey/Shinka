@@ -24,7 +24,8 @@ import { Anteprime } from "../centro/anteprima.ts";
 import { RegistroArgomenti } from "../centro/argomenti.ts";
 import type { Canale } from "../centro/canale.ts";
 import { Home } from "../centro/home.ts";
-import { COOKIE_SESSIONE, creaCentro, type OpzioniCentro } from "../centro/centro.ts";
+import { COOKIE_SESSIONE, creaCentro, type NodiDaFuori, type OpzioniCentro } from "../centro/centro.ts";
+import type { InvitiDegliAmbienti } from "../centro/ambiente-nuovo.ts";
 import { CustodiaImmagini } from "../centro/immagini.ts";
 import { StatoHome } from "../centro/stato-home.ts";
 import type { Allegato } from "../protocollo/allegati.ts";
@@ -349,6 +350,10 @@ export interface Banco {
 
 /** Ciò che un test può chiedere al banco in più del solito. */
 export interface OpzioniBanco {
+  /** La porta solo per i nodi (ADR 0065), come il centro la vede. */
+  nodiDaFuori?: NodiDaFuori;
+  /** Gli inviti per gli ambienti nuovi, per le prove che ne aprono uno. */
+  inviti?: InvitiDegliAmbienti;
   /** Un'installazione nuova: la password non c'è, e il centro aspetta il codice di primo avvio. */
   primoAvvio?: true;
   /** I dati di un altro banco: questo è lo stesso centro dopo un riavvio. */
@@ -797,6 +802,8 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
   await interfaccia.ripristina();
   const catalogoModelli = new CatalogoDeiModelli({ ambienti, delCentro: async () => opzioni.modelliDelCentro ?? [], attesaMs: 2_000 });
   const centro = await creaCentro({
+    ...(opzioni.nodiDaFuori === undefined ? {} : { nodiDaFuori: opzioni.nodiDaFuori }),
+    ...(opzioni.inviti === undefined ? {} : { inviti: opzioni.inviti }),
     interfaccia,
     catalogoModelli,
     ...(opzioni.originale === undefined ? {} : { originale: opzioni.originale }),
@@ -994,7 +1001,7 @@ export async function avviaNodo(
     /** Come le applicazioni del nodo guardano la loro porta e quanto aspettano. */
     applicazioni?: NonNullable<ContestoLavoro["applicazioni"]>;
     /** Ciò che riguarda il collegamento cifrato: l'identità con la sua custodia, l'impronta ricordata, e chi ascolta. */
-    collegamento?: Partial<Pick<ConfigurazioneCollegamento, "identita" | "segreto" | "impronta" | "alImpronta" | "alCifrato">>;
+    collegamento?: Partial<Pick<ConfigurazioneCollegamento, "identita" | "segreto" | "impronta" | "alImpronta" | "alCifrato" | "daFuori" | "alDaFuori">>;
     /** Con il lavoro offline: i suoi dati stanno in questa cartella, che resta tra un avvio e l'altro del nodo. */
     offline?: string;
     /** L'indirizzo con cui il nodo raggiunge il centro, se non è quello diretto: per esempio un ponte. */

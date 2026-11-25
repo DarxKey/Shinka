@@ -274,6 +274,17 @@ function CollegamentoDeiNodi({
           </>
         )}
       </p>
+      <p className="tenue nota-sicurezza" data-parte="porta-dei-nodi">
+        {nodi.porta === undefined ? (
+          "Porta solo per i nodi: spenta. Si accende dove gira il centro, con SHINKA_PORTA_NODI, per far raggiungere il centro da Internet a un nodo fuori casa senza pubblicare l'interfaccia."
+        ) : (
+          <>
+            Porta solo per i nodi: <span className="indirizzo">{nodi.porta}</span>
+            {nodi.daFuori === undefined ? ", senza un indirizzo da Internet per i nodi." : <>, da Internet <span className="indirizzo">{nodi.daFuori}</span>.</>} Lì passa solo il
+            collegamento cifrato dei nodi: pagine, API e password non si raggiungono, e un nodo nuovo si presenta solo mentre c'è un invito aperto.
+          </>
+        )}
+      </p>
     </section>
   );
 }

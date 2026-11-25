@@ -41,6 +41,7 @@ import { cercaNelleConversazioni, type ConversazioneDaCercare } from "./ricerca.
 import { esportaInMarkdown, nomeDellEsportazione } from "./esportazione.ts";
 import { FINE_STORIA, leggiAnteprimaRiavvolgimento, leggiRispostaAlleDomande, type DecisionePermesso, type EventoArchiviato, type EventoConversazione } from "../protocollo/eventi.ts";
 import {
+  NOME_TLS_DEI_NODI,
   PERCORSO_COLLEGAMENTO,
   TEMPO_PER_PRESENTARSI_MS,
   type EsitoSuHost,
@@ -126,6 +127,21 @@ export const PERCORSI_LIBERI = [
   // Gli eventi degli altri sistemi: li manda chi non ha una sessione, e chiedono la chiave di un lavoro programmato.
   PERCORSO_EVENTI,
 ] as const;
+
+/**
+ * Le sole rotte che si raggiungono dal collegamento dei nodi: chi apre TLS chiedendo il nome dei
+ * nodi, attraverso un ponte (ADR 0058) o la porta solo per i nodi (ADR 0065), arriva solo qui.
+ */
+export const PERCORSI_DEI_NODI: readonly string[] = [PERCORSO_COLLEGAMENTO, PERCORSO_PREPARAZIONE, PERCORSO_PACCHETTO_NODO];
+
+/** La porta solo per i nodi, come la vede il centro: da dove ascolta e da dove si raggiunge da Internet. */
+export interface NodiDaFuori {
+  /** Vero se la connessione è arrivata dalla porta solo per i nodi. */
+  da(presa: { remoteAddress?: string | undefined; remotePort?: number | undefined }): boolean;
+  readonly porta: number | undefined;
+  /** L'indirizzo da Internet, se il proprietario lo ha dato: i nodi lo ricevono quando sono accolti. */
+  indirizzo?: string;
+}
 
 export interface RottaRegistrata {
   metodo: string;
@@ -288,6 +304,8 @@ export interface OpzioniCentro {
   registroAccessi?: RegistroAccessi;
   /** Il certificato con cui il centro si fa riconoscere dai nodi: con questo il loro collegamento è cifrato. */
   perINodi?: IdentitaPerINodi;
+  /** La porta solo per i nodi, se è accesa (ADR 0065). */
+  nodiDaFuori?: NodiDaFuori;
   /** Lo sviluppo di Shinka da dentro Shinka. Se manca, in questa installazione non c'è. */
   sviluppo?: SviluppoDiShinka;
   /** Le estensioni di Shinka. Se mancano, in questa installazione non ci sono. */
@@ -386,6 +404,24 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     for (const metodo of [rotta.method].flat()) rotte.push({ metodo, percorso: rotta.url });
   });
   ROTTE_REGISTRATE.set(app, rotte);
+  // Il registro degli accessi: chi entra, da dove, e ciò che arriva senza una sessione.
+  const registroAccessi = opzioni.registroAccessi ?? new RegistroAccessi();
+  const chiDi = (richiesta: FastifyRequest): ChiEntra => ({ da: daDove(richiesta.ip, richiesta.headers["x-forwarded-for"]), programma: programmaDa(richiesta.headers["user-agent"]) });
+
+  // Prima di ogni altra cosa, anche dei file dell'interfaccia: sul collegamento dei nodi passano
+  // solo le loro rotte (ADR 0065).
+  app.addHook("onRequest", async (richiesta, risposta) => {
+    // Sul collegamento dei nodi passano solo le loro rotte: chi chiede il nome dei nodi, da un ponte
+    // o dalla porta solo per i nodi, non raggiunge pagine, API né l'entrata con la password.
+    const presa = richiesta.raw.socket as { servername?: unknown; remoteAddress?: string; remotePort?: number };
+    if (presa.servername === NOME_TLS_DEI_NODI || opzioni.nodiDaFuori?.da(presa) === true) {
+      const percorso = richiesta.url.split("?")[0] ?? "";
+      if (!PERCORSI_DEI_NODI.includes(percorso)) {
+        registroAccessi.annota("fuori-dai-nodi", chiDi(richiesta), { percorso });
+        return risposta.code(403).send({ errore: "Il collegamento dei nodi serve solo ai nodi." });
+      }
+    }
+  });
   await app.register(fastifyCookie);
   // I nodi riferiscono anche testi interi di Claude: serve più spazio di un saluto.
   await app.register(fastifyWebsocket, { options: { maxPayload: MESSAGGIO_MASSIMO_NODO } });
@@ -398,10 +434,6 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
   if (haWeb && opzioni.cartellaWeb !== undefined) {
     await app.register(fastifyStatic, { root: opzioni.cartellaWeb });
   }
-
-  // Il registro degli accessi: chi entra, da dove, e ciò che arriva senza una sessione.
-  const registroAccessi = opzioni.registroAccessi ?? new RegistroAccessi();
-  const chiDi = (richiesta: FastifyRequest): ChiEntra => ({ da: daDove(richiesta.ip, richiesta.headers["x-forwarded-for"]), programma: programmaDa(richiesta.headers["user-agent"]) });
 
   // Chi cerca una pagina che non c'è: da fuori casa, di solito, qualcuno che prova indirizzi a caso.
   app.addHook("onResponse", async (richiesta, risposta) => {
@@ -1658,7 +1690,12 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     ...(accesso.idDelDispositivo(gettoneDi(richiesta.headers.authorization)) === undefined
       ? {}
       : { questoDispositivo: accesso.idDelDispositivo(gettoneDi(richiesta.headers.authorization)) }),
-    nodi: { soloCifrati: ambienti.soloCifrati, ...(perINodi === undefined ? {} : { impronta: perINodi.impronta }) },
+    nodi: {
+      soloCifrati: ambienti.soloCifrati,
+      ...(perINodi === undefined ? {} : { impronta: perINodi.impronta }),
+      ...(opzioni.nodiDaFuori?.porta === undefined ? {} : { porta: opzioni.nodiDaFuori.porta }),
+      ...(opzioni.nodiDaFuori?.indirizzo === undefined ? {} : { daFuori: opzioni.nodiDaFuori.indirizzo }),
+    },
     sessioni: accesso.sessioni(),
     voci: registroAccessi.ultime(300, richiesta.query.solo === "da-guardare"),
   }));
@@ -2740,11 +2777,16 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
         clearTimeout(scadenza);
         const chi = chiDi(richiestaDelNodo);
         const nome = `«${String(messaggio.nome).slice(0, 60)}»`;
+        // Dalla porta solo per i nodi un nodo nuovo entra solo mentre c'è un invito aperto (ADR 0065).
+        const daFuori = opzioni.nodiDaFuori?.da(richiestaDelNodo.raw.socket) === true;
+        const sconosciuto = daFuori && !ambienti.conosce(messaggio.idNodo);
+        if (daFuori && !inviti.aperti()) canale.soloConosciuti = true;
         ambienti
           .presenta(messaggio, canale)
           .then((esito) => {
-            if (esito === "solo-cifrato") registroAccessi.annota("nodo-in-chiaro", chi, { dettaglio: nome });
-            else registroAccessi.annota("nodo-presentato", chi, { dettaglio: `${nome}, ${canale.cifrato === true ? "cifrato" : "in chiaro"}${esito === "accolto" ? "" : esito === "in-attesa" ? ", in attesa del consenso" : ", rifiutato"}` });
+            if (esito === "rifiutato" && sconosciuto && canale.soloConosciuti === true) registroAccessi.annota("nodo-da-fuori-rifiutato", chi, { dettaglio: nome });
+            else if (esito === "solo-cifrato") registroAccessi.annota("nodo-in-chiaro", chi, { dettaglio: nome });
+            else registroAccessi.annota("nodo-presentato", chi, { dettaglio: `${nome}, ${canale.cifrato === true ? "cifrato" : "in chiaro"}${daFuori ? ", da Internet" : ""}${esito === "accolto" ? "" : esito === "in-attesa" ? ", in attesa del consenso" : ", rifiutato"}` });
           })
           .catch(() => socket.close());
       } else if (idNodo === undefined) {

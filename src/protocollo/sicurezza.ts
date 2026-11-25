@@ -35,6 +35,8 @@ export const TIPI_ACCESSO = [
   "desktop-non-pubblicato",
   "richiesta-estensione",
   "richiesta-estensione-rifiutata",
+  "fuori-dai-nodi",
+  "nodo-da-fuori-rifiutato",
 ] as const;
 export type TipoAccesso = (typeof TIPI_ACCESSO)[number];
 
@@ -55,6 +57,8 @@ export const DA_GUARDARE: readonly TipoAccesso[] = [
   "dispositivo-rifiutato",
   "desktop-non-pubblicato",
   "richiesta-estensione-rifiutata",
+  "fuori-dai-nodi",
+  "nodo-da-fuori-rifiutato",
 ];
 
 /** Una riga del registro delle richieste. */
@@ -108,6 +112,10 @@ export interface CollegamentoDeiNodi {
   soloCifrati: boolean;
   /** L'impronta del certificato con cui il centro si fa riconoscere dai nodi; manca se non ne ha uno. */
   impronta?: string;
+  /** La porta solo per i nodi, se è aperta (ADR 0065). */
+  porta?: number;
+  /** L'indirizzo da cui i nodi raggiungono il centro da Internet, se il proprietario lo ha dato. */
+  daFuori?: string;
 }
 
 export interface StatoSicurezza {
@@ -156,6 +164,8 @@ const IN_PAROLE: Record<TipoAccesso, string> = {
   "desktop-non-pubblicato": "Versione di Shinka Desktop non pubblicata",
   "richiesta-estensione": "Richiesta di un'estensione dell'interfaccia",
   "richiesta-estensione-rifiutata": "Richiesta di un'estensione dell'interfaccia, rifiutata",
+  "fuori-dai-nodi": "Richiesta fuori dalle rotte dei nodi, sul loro collegamento: rifiutata",
+  "nodo-da-fuori-rifiutato": "Nodo sconosciuto da Internet, senza un invito aperto: rifiutato",
 };
 
 /** Che cosa è successo, in parole per il proprietario. */

@@ -138,6 +138,12 @@ export class InvitiDegliAmbienti {
     return this.#inviti.get(gettone);
   }
 
+  /** Vero se c'è almeno un invito che vale ancora: allora da Internet può presentarsi un nodo nuovo (ADR 0065). */
+  aperti(): boolean {
+    this.#togliScaduti();
+    return this.#inviti.size > 0;
+  }
+
   #togliScaduti(): void {
     const adesso = this.#adesso();
     for (const [gettone, invito] of this.#inviti) if (invito.scade <= adesso) this.#inviti.delete(gettone);

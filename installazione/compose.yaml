@@ -19,9 +19,13 @@ services:
       SHINKA_GATEWAY_PAGINA: http://${SHINKA_SERVER:?manca l'indirizzo del server: lancia ./installa.sh}:7851
       # Quando una scelta vuole un riavvio (l'HTTPS), il centro si spegne e Docker lo riaccende.
       SHINKA_RIPARTE_DA_SOLO: "1"
+      # La porta solo per i nodi (ADR 0065), per un nodo fuori casa: togli il commento qui e sotto.
+      # SHINKA_PORTA_NODI: "7853"
+      # SHINKA_NODI_DA_FUORI: http://nodi.esempio.it:7853
     ports:
       - "${SHINKA_ASCOLTO:-0.0.0.0}:7850:7850"
       - "${SHINKA_ASCOLTO:-0.0.0.0}:7852:7852"
+      # - "0.0.0.0:7853:7853"
     volumes:
       - centro:/home/node
     mem_limit: 4g
