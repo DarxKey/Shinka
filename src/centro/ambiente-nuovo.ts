@@ -13,7 +13,7 @@
  * ancora in chiaro; il nodo riceve comunque l'impronta, e il suo collegamento è cifrato dal primo.
  */
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { NOME_TLS_DEI_NODI } from "../protocollo/nodi.ts";
@@ -42,6 +42,11 @@ export interface Invito {
   descrizione: string;
   /** Millisecondi dall'epoca. */
   scade: number;
+  /**
+   * Per Windows, che li scarica in chiaro: lo script e il pacchetto fissati quando nasce l'invito.
+   * Il comando porta l'impronta dello script, e lo script quella del pacchetto (ADR 0065).
+   */
+  fissato?: { script: string; pacchetto: PacchettoDelNodo };
 }
 
 /** Ciò che serve del certificato dei nodi per scrivere il comando e lo script. */
@@ -131,6 +136,22 @@ export class InvitiDegliAmbienti {
     return { comando: comandoDiUnaRiga(invito, this.#certificato), sistema, scade: new Date(invito.scade).toISOString() };
   }
 
+  /**
+   * Come `crea`, ma per Windows fissa subito script e pacchetto, e il comando ne porta l'impronta:
+   * scaricati in chiaro, anche da Internet, non si possono cambiare per strada senza che lo script
+   * se ne accorga e si fermi. Per Linux la strada è già cifrata, e non serve.
+   */
+  async creaFissato(richiesta: RichiestaInvito, pacchetto: () => Promise<PacchettoDelNodo>): Promise<InvitoPronto> {
+    const pronto = this.crea(richiesta);
+    if (pronto.sistema !== "windows") return pronto;
+    const invito = [...this.#inviti.values()].at(-1);
+    if (invito === undefined) return pronto;
+    const fissato = await pacchetto();
+    const script = await scriptDiPreparazione(invito, this.#certificato, sha256(fissato.dati));
+    invito.fissato = { script, pacchetto: fissato };
+    return { ...pronto, comando: comandoDiUnaRiga(invito, this.#certificato, sha256(Buffer.from(script, "utf8"))) };
+  }
+
   /** L'invito con questo gettone, se c'è e non è scaduto. Si può usare più volte finché vale: lo script si può rilanciare. */
   valido(gettone: unknown): Invito | undefined {
     if (typeof gettone !== "string" || gettone.length === 0) return undefined;
@@ -168,9 +189,17 @@ function stradaCifrata(centro: string, certificato: CertificatoPerGliInviti): { 
  * Il comando da incollare su quella macchina: scarica lo script e lo esegue. Su Linux, se il centro
  * ha il certificato dei nodi, lo scarica cifrato e solo da chi lo presenta.
  */
-export function comandoDiUnaRiga(invito: Pick<Invito, "centro" | "gettone" | "sistema">, certificato?: CertificatoPerGliInviti): string {
+export function comandoDiUnaRiga(invito: Pick<Invito, "centro" | "gettone" | "sistema">, certificato?: CertificatoPerGliInviti, improntaDelloScript?: string): string {
   const percorso = `${PERCORSO_PREPARAZIONE}?invito=${invito.gettone}`;
-  if (invito.sistema === "windows") return `irm '${invito.centro}${percorso}' | iex`;
+  if (invito.sistema === "windows") {
+    if (improntaDelloScript === undefined) return `irm '${invito.centro}${percorso}' | iex`;
+    // Lo script arriva in chiaro: si esegue solo se è quello che il centro ha preparato per questo comando.
+    return (
+      `$r = iwr -UseBasicParsing '${invito.centro}${percorso}'; $b = $r.RawContentStream.ToArray(); ` +
+      `if (-join ([Security.Cryptography.SHA256]::Create().ComputeHash($b) | % { $_.ToString('x2') }) -eq '${improntaDelloScript}') { iex ([Text.Encoding]::UTF8.GetString($b)) } ` +
+      `else { Write-Host 'Lo script scaricato non è quello preparato da Shinka: non lo eseguo.' -ForegroundColor Red }`
+    );
+  }
   if (certificato === undefined) return `curl -fsSL '${invito.centro}${percorso}' | bash`;
   const strada = stradaCifrata(invito.centro, certificato);
   // -k toglie la verifica della catena, che qui non c'è: a riconoscere il centro è la chiave pretesa.
@@ -188,7 +217,12 @@ function perPowerShell(testo: string): string {
 }
 
 /** Lo script di preparazione per il sistema dell'invito: le scelte in cima, poi il corpo fisso. */
-export async function scriptDiPreparazione(invito: Invito, certificato?: CertificatoPerGliInviti): Promise<string> {
+/** L'impronta SHA-256 in esadecimale minuscolo. */
+function sha256(dati: Buffer): string {
+  return createHash("sha256").update(dati).digest("hex");
+}
+
+export async function scriptDiPreparazione(invito: Invito, certificato?: CertificatoPerGliInviti, improntaDelPacchetto?: string): Promise<string> {
   const pacchetto = `${invito.centro}${PERCORSO_PACCHETTO_NODO}?invito=${invito.gettone}`;
   const impronta = certificato?.impronta ?? "";
   if (invito.sistema === "linux") {
@@ -215,6 +249,7 @@ export async function scriptDiPreparazione(invito: Invito, certificato?: Certifi
     `$SHINKA_CENTRO = ${perPowerShell(invito.centro)}`,
     `$SHINKA_PACCHETTO = ${perPowerShell(pacchetto)}`,
     `$SHINKA_IMPRONTA = ${perPowerShell(impronta)}`,
+    `$SHINKA_PACCHETTO_IMPRONTA = ${perPowerShell(improntaDelPacchetto ?? "")}`,
     `$SHINKA_NOME = ${perPowerShell(invito.nome)}`,
     `$SHINKA_DESCRIZIONE = ${perPowerShell(invito.descrizione)}`,
     corpo.replace(/^﻿/, ""),

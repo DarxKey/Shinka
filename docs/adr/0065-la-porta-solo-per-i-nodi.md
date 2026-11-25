@@ -14,7 +14,7 @@ Il 25 novembre 2026 il proprietario ha chiesto quanto sia sicuro rendere il cent
 - **Una porta a parte, che fa passare solo il collegamento cifrato dei nodi** (`src/centro/porta-dei-nodi.ts`).
   - Si accende dove gira il centro, con `SHINKA_PORTA_NODI`. Il container deve pubblicarla, e il proprietario la apre sul suo firewall.
   - Accetta solo una stretta di mano TLS che chiede il nome dei nodi, `nodi.shinka.invalid`, e passa la connessione al server del centro così com'è, con il suo indirizzo. Il nodo riconosce il centro dall'impronta del certificato dei nodi, da capo a capo, come a casa (ADR 0040).
-  - In chiaro non risponde nulla, nemmeno lo scaricamento dell'installazione. Lo stesso vale per una stretta di mano senza nome o con un altro nome.
+  - In chiaro risponde solo allo scaricamento dello script e del pacchetto di un ambiente nuovo, che chiedono un invito valido. Dopo, sulla stessa connessione, non passa altro. Il resto in chiaro si chiude, e così una stretta di mano senza nome o con un altro nome.
 - **Sul collegamento dei nodi passano solo le loro rotte.** Una richiesta arrivata in TLS con il nome dei nodi, da qualunque porta, raggiunge solo:
   - il collegamento (`/api/nodi/collegamento`);
   - lo script di preparazione;
@@ -31,6 +31,12 @@ Il 25 novembre 2026 il proprietario ha chiesto quanto sia sicuro rendere il cent
   - Se il centro smette di dirlo, il nodo lo dimentica; `--dimentica-centro` lo toglie con l'impronta.
 - **La pagina Sicurezza** dice se la porta è accesa e quale, e ha il campo dell'indirizzo da Internet.
 
+- **L'installer anche da Internet, senza che lo si possa cambiare per strada.** Il proprietario lo ha chiesto dopo la prima versione: preparare un ambiente nuovo con l'indirizzo da Internet. La pagina Ambienti, in «Aggiungi un ambiente», lo propone accanto a quello di casa.
+  - Su Linux il comando scarica già cifrato, riconoscendo il centro dalla sua chiave: passa così com'è.
+  - Su Windows script e pacchetto arrivano in chiaro, perché PowerShell non sa riconoscere un certificato per impronta. Per questo, quando nasce un invito per Windows, il centro fissa lo script e il pacchetto.
+  - Il comando copiato dalla pagina porta l'impronta SHA-256 dello script, ed esegue lo script solo se coincide. Lo script porta quella del pacchetto, e lo controlla prima di aprirlo.
+  - La catena parte dalla pagina, che il proprietario apre da casa o dalla VPN: chi sta in mezzo su Internet vede il codice, ma non lo può cambiare. Il codice non ha segreti, e l'invito vale un'ora.
+
 ## Considered Options
 
 - **Aprire la porta di sempre al solo indirizzo dell'ufficio, dal firewall.** Non costa nulla, ma a quell'indirizzo resta visibile tutta Shinka, e serve un indirizzo fisso.
@@ -41,7 +47,8 @@ Il 25 novembre 2026 il proprietario ha chiesto quanto sia sicuro rendere il cent
 ## Consequences
 
 - Su Internet c'è la stretta di mano TLS del centro e, dentro, il solo collegamento dei nodi. Chi trova la porta non arriva all'entrata con la password e non può bloccarla con tentativi sbagliati.
-- Un nodo nuovo su Windows non si prepara da Internet: il comando di una riga scarica lo script in chiaro, e la porta non lo serve. Si prepara da casa, o attraverso un ponte; poi da fuori entra come gli altri. Su Linux il comando usa già la strada cifrata e funziona anche da qui.
+- Un ambiente nuovo si prepara anche da Internet, su Linux e su Windows. Il comando di Windows è più lungo di prima, ed è provato con PowerShell 5.1: esegue lo script giusto e rifiuta quello cambiato.
+- Un invito per Windows tiene in memoria il suo pacchetto per un'ora: al massimo cinque inviti insieme.
 - Un nodo di una versione precedente non conosce l'indirizzo da Internet: lo impara dopo l'aggiornamento, al primo collegamento da casa.
 - Il centro vede l'indirizzo vero di chi arriva dalla porta, come dalla porta di sempre: nel registro le richieste da Internet hanno il loro indirizzo.
 - La porta, il container e il firewall si preparano fuori dal codice: la porta pubblicata dal container con `SHINKA_PORTA_NODI`, e una regola del firewall verso quella porta, possibilmente solo dagli indirizzi da cui il proprietario lavora.

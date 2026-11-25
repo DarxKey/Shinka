@@ -62,6 +62,11 @@ function Prepara-AmbienteShinka {
       Fallisci "il centro non ha dato il pacchetto ($($_.Exception.Message)). L'invito vale un'ora: se è scaduto, prepara un comando nuovo dalla pagina Ambienti."
       return
     }
+    # Il pacchetto arriva in chiaro: se il comando lo ha fissato, dev'essere proprio quello.
+    if ($SHINKA_PACCHETTO_IMPRONTA -and ((Get-FileHash -Algorithm SHA256 -LiteralPath $archivio).Hash.ToLower() -ne $SHINKA_PACCHETTO_IMPRONTA)) {
+      Fallisci 'il pacchetto scaricato non è quello preparato da Shinka: non lo installo.'
+      return
+    }
     $estratto = Join-Path $provvisoria 'estratto'
     New-Item -ItemType Directory -Path $estratto | Out-Null
     & tar.exe -xzf $archivio -C $estratto

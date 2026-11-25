@@ -35,11 +35,14 @@ async function conLaPorta(t: TestContext, indirizzo?: string | "la-porta"): Prom
   return { banco, portaNodi, inviti };
 }
 
-/** Ciò che risponde una richiesta in chiaro: vuoto se la connessione si chiude senza risposta. */
-function inChiaro(porta: number): Promise<string> {
+/** Ciò che rispondono richieste in chiaro sulla stessa connessione: vuoto se si chiude senza risposta. */
+function inChiaro(porta: number, righe: string[]): Promise<string> {
   return new Promise((fatto) => {
     let risposta = "";
-    const presa = connect({ host: "127.0.0.1", port: porta }, () => presa.write("GET /api/ambienti/preparazione HTTP/1.1\r\nHost: x\r\n\r\n"));
+    const presa = connect({ host: "127.0.0.1", port: porta }, () => {
+      presa.write(righe.map((riga, i) => `${riga} HTTP/1.1\r\nHost: x\r\n${i === righe.length - 1 ? "Connection: close\r\n" : ""}\r\n`).join(""));
+    });
+    setTimeout(() => presa.destroy(), 3_000).unref();
     presa.on("data", (dati) => (risposta += dati.toString()));
     presa.on("error", () => {});
     presa.on("close", () => fatto(risposta));
@@ -83,8 +86,14 @@ test("dalla porta solo per i nodi passa solo il loro collegamento cifrato, e den
   const { banco, portaNodi } = await conLaPorta(t, "http://nodi.esempio.it:7853");
   const portaCentro = (banco.centro.server.address() as AddressInfo).port;
 
-  // In chiaro non risponde nulla, nemmeno lo scaricamento dell'installazione.
-  assert.equal(await inChiaro(portaNodi), "");
+  // In chiaro passa solo lo scaricamento dell'installazione, come lo chiede PowerShell; il resto si chiude.
+  assert.match(await inChiaro(portaNodi, ["GET /api/ambienti/preparazione?invito=sbagliato"]), /^HTTP\/1\.1 200[\s\S]*L'invito non vale più/);
+  assert.equal(await inChiaro(portaNodi, ["GET / "]), "");
+  assert.equal(await inChiaro(portaNodi, ["GET /api/nodi/collegamento"]), "");
+  assert.equal(await inChiaro(portaNodi, ["POST /api/accesso"]), "");
+  // Dopo lo scaricamento, sulla stessa connessione, non si chiede altro.
+  const dopo = await inChiaro(portaNodi, ["GET /api/ambienti/preparazione?invito=x", "GET /api/sicurezza"]);
+  assert.match(dopo, /HTTP\/1\.1 403[\s\S]*serve solo ai nodi/);
   // Senza il nome dei nodi, o con un altro, la stretta di mano non si fa.
   assert.equal(await strettaRiuscita(portaNodi, undefined), false);
   assert.equal(await strettaRiuscita(portaNodi, "shinka.esempio.it"), false);

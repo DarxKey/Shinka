@@ -74,3 +74,36 @@ for (const [nome, larghezza, accesa] of [
     }
   });
 }
+
+test("per un ambiente nuovo la pagina Ambienti propone anche l'indirizzo da Internet", { skip: salta, timeout: 120_000 }, async (t) => {
+  const banco = await allestisci(t, { cartellaWeb });
+  banco.ambienti.indirizzoDaFuori("http://nodi.esempio.it:7853");
+  await banco.centro.listen({ host: "127.0.0.1", port: 0 });
+  const indirizzo = `http://127.0.0.1:${(banco.centro.server.address() as AddressInfo).port}`;
+  const browser = await chromium.launch({
+    chromiumSandbox: disponibile?.recinto !== false,
+    ...(disponibile?.canale === undefined ? {} : { channel: disponibile.canale }),
+    ...(disponibile?.eseguibile === undefined ? {} : { executablePath: disponibile.eseguibile }),
+  });
+  t.after(() => browser.close());
+  const pagina = await browser.newPage({ viewport: { width: 1200, height: 900 }, colorScheme: "light" });
+  await pagina.goto(`${indirizzo}/`);
+  await pagina.fill("#password", PASSWORD);
+  await pagina.click('button[type="submit"]');
+  await pagina.locator("form.scrittura textarea").waitFor();
+  await pagina.locator(".menu-pagine > summary").click();
+  await pagina.locator(".voci-pagine").getByRole("button", { name: /Ambienti/ }).click();
+  const pannello = pagina.getByRole("region", { name: "Ambienti" });
+  await pannello.getByRole("button", { name: "Aggiungi un ambiente" }).click();
+  const campo = pannello.getByLabel("Indirizzo di Shinka visto da quella macchina");
+  assert.equal(await campo.inputValue(), indirizzo);
+  await pannello.getByRole("button", { name: "Da Internet" }).click();
+  assert.equal(await campo.inputValue(), "http://nodi.esempio.it:7853");
+  assert.equal(await pannello.getByRole("button", { name: "Da Internet" }).getAttribute("aria-pressed"), "true");
+  if (FOTO !== undefined) {
+    mkdirSync(FOTO, { recursive: true });
+    await pannello.locator("form").screenshot({ path: join(FOTO, "ambiente-nuovo-da-internet.png") });
+  }
+  await pannello.getByRole("button", { name: "Da casa" }).click();
+  assert.equal(await campo.inputValue(), indirizzo);
+});

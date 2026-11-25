@@ -44,10 +44,10 @@ export function PannelloAmbienti({
           )}
           <ul className="elenco-ambienti">
             {stato.ambienti.map((ambiente) => (
-              <VistaAmbiente key={ambiente.id} ambiente={ambiente} indirizzoNoto={indirizzoNoto(stato)} allaChiusura={allaChiusura} />
+              <VistaAmbiente key={ambiente.id} ambiente={ambiente} indirizzoNoto={indirizzoNoto(stato)} daFuori={stato.daFuori} allaChiusura={allaChiusura} />
             ))}
           </ul>
-          <AggiungiAmbiente indirizzoNoto={indirizzoNoto(stato)} />
+          <AggiungiAmbiente indirizzoNoto={indirizzoNoto(stato)} daFuori={stato.daFuori} />
         </>
       )}
     </section>
@@ -100,7 +100,17 @@ function VistaRichiesta({ richiesta }: { richiesta: RichiestaCollegamento }): Re
   );
 }
 
-function VistaAmbiente({ ambiente, indirizzoNoto, allaChiusura }: { ambiente: Ambiente; indirizzoNoto: string | undefined; allaChiusura: () => void }): ReactNode {
+function VistaAmbiente({
+  ambiente,
+  indirizzoNoto,
+  daFuori,
+  allaChiusura,
+}: {
+  ambiente: Ambiente;
+  indirizzoNoto: string | undefined;
+  daFuori: string | undefined;
+  allaChiusura: () => void;
+}): ReactNode {
   const [daConfermare, setDaConfermare] = useState(false);
   const [reinstalla, setReinstalla] = useState(false);
   const [cambiaAvvio, setCambiaAvvio] = useState(false);
@@ -215,6 +225,7 @@ function VistaAmbiente({ ambiente, indirizzoNoto, allaChiusura }: { ambiente: Am
               descrizione: ambiente.descrizione,
               centro: ambiente.indirizzoDelCentro ?? indirizzoNoto ?? indirizzoProposto(window.location),
             }}
+            daFuori={daFuori}
             allaChiusura={() => setReinstalla(false)}
           />
         ) : (
@@ -283,7 +294,18 @@ interface DatiDelNodo {
  * Un ambiente nuovo: il proprietario sceglie sistema e nome, e incolla su quella macchina il comando
  * che riceve. Con `reinstalla` i campi sono già quelli del nodo, che si ritrova con la sua identità.
  */
-function AggiungiAmbiente({ indirizzoNoto: noto, reinstalla, allaChiusura }: { indirizzoNoto?: string | undefined; reinstalla?: DatiDelNodo; allaChiusura?: () => void }): ReactNode {
+function AggiungiAmbiente({
+  indirizzoNoto: noto,
+  daFuori,
+  reinstalla,
+  allaChiusura,
+}: {
+  indirizzoNoto?: string | undefined;
+  /** L'indirizzo da Internet, sulla porta solo per i nodi (ADR 0065), se c'è. */
+  daFuori?: string | undefined;
+  reinstalla?: DatiDelNodo;
+  allaChiusura?: () => void;
+}): ReactNode {
   const [aperto, setApertoQui] = useState(reinstalla !== undefined);
   const setAperto = (si: boolean): void => {
     setApertoQui(si);
@@ -292,7 +314,9 @@ function AggiungiAmbiente({ indirizzoNoto: noto, reinstalla, allaChiusura }: { i
   const [sistema, setSistema] = useState<"linux" | "windows">(reinstalla?.sistema ?? "linux");
   const [nome, setNome] = useState(reinstalla?.nome ?? "");
   const [descrizione, setDescrizione] = useState(reinstalla?.descrizione ?? "");
-  const [centro, setCentro] = useState(() => reinstalla?.centro ?? noto ?? indirizzoProposto(window.location));
+  // Quello di casa: un nodo che usa già l'indirizzo da Internet non lo dice.
+  const casa = noto !== undefined && noto !== daFuori ? noto : indirizzoProposto(window.location);
+  const [centro, setCentro] = useState(() => reinstalla?.centro ?? casa);
   const [invito, setInvito] = useState<InvitoAmbiente>();
   const [lavoro, setLavoro] = useState(false);
   const [errore, setErrore] = useState<string>();
@@ -399,6 +423,19 @@ function AggiungiAmbiente({ indirizzoNoto: noto, reinstalla, allaChiusura }: { i
           Indirizzo di Shinka visto da quella macchina
           <input value={centro} maxLength={300} onChange={(evento) => setCentro(evento.target.value)} required />
         </label>
+        {daFuori !== undefined && (
+          <div className="pulsanti" data-parte="indirizzo-da-fuori">
+            <button type="button" className="discreto piccolo" aria-pressed={centro.trim() === casa} onClick={() => setCentro(casa)}>
+              Da casa
+            </button>
+            <button type="button" className="discreto piccolo" aria-pressed={centro.trim() === daFuori} onClick={() => setCentro(daFuori)}>
+              Da Internet
+            </button>
+            <span className="tenue">
+              Da Internet passa dalla porta solo per i nodi. Un nodo preparato da casa impara da solo anche questo indirizzo.
+            </span>
+          </div>
+        )}
         <div className="pulsanti">
           <button type="submit" disabled={lavoro || nome.trim() === "" || centro.trim() === ""}>
             Prepara il comando

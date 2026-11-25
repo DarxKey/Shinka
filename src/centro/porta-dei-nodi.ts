@@ -1,8 +1,9 @@
 /**
  * La porta solo per i nodi (ADR 0065): quella che il proprietario può aprire su Internet, perché un
  * nodo fuori casa raggiunga il centro, senza pubblicare l'interfaccia. Accetta soltanto il
- * collegamento cifrato che chiede il nome dei nodi (`nodi.shinka.invalid`). Il resto si chiude:
- * le pagine, le API e l'entrata con la password non si raggiungono da qui.
+ * collegamento cifrato che chiede il nome dei nodi (`nodi.shinka.invalid`) e, in chiaro, lo
+ * scaricamento dello script e del pacchetto di un ambiente nuovo. Il resto si chiude: le pagine,
+ * le API e l'entrata con la password non si raggiungono da qui.
  *
  * Una connessione accettata passa al server del centro così com'è, con il suo indirizzo: lì la
  * stretta di mano si fa con il certificato dei nodi, e dentro si ammettono solo le rotte dei nodi
@@ -12,7 +13,7 @@
 
 import { createServer, type Server, type Socket } from "node:net";
 import { NOME_TLS_DEI_NODI } from "../protocollo/nodi.ts";
-import { nomeChiesto } from "../nodo/ponte.ts";
+import { nomeChiesto, PERCORSO_AMMESSO } from "../nodo/ponte.ts";
 
 /** Quanto può essere lungo il primo messaggio cifrato prima di sapere a chi è rivolto. */
 const SALUTO_MASSIMO = 16 * 1024;
@@ -27,7 +28,8 @@ function chiaveDi(presa: { remoteAddress?: string | undefined; remotePort?: numb
 export class PortaDeiNodi {
   #server: Server | undefined;
   readonly #aperte = new Set<Socket>();
-  readonly #passate = new Set<string>();
+  /** Le connessioni passate al centro, con com'erano: cifrate, o in chiaro per scaricare l'installazione. */
+  readonly #passate = new Map<string, "cifrata" | "in-chiaro">();
 
   /** La porta su cui ascolta, se è aperta. */
   get porta(): number | undefined {
@@ -39,6 +41,12 @@ export class PortaDeiNodi {
   da(presa: { remoteAddress?: string | undefined; remotePort?: number | undefined }): boolean {
     const chiave = chiaveDi(presa);
     return chiave !== undefined && this.#passate.has(chiave);
+  }
+
+  /** Vero se la connessione è arrivata da questa porta in chiaro: lì vale solo lo scaricamento dell'installazione. */
+  inChiaro(presa: { remoteAddress?: string | undefined; remotePort?: number | undefined }): boolean {
+    const chiave = chiaveDi(presa);
+    return chiave !== undefined && this.#passate.get(chiave) === "in-chiaro";
   }
 
   /**
@@ -79,14 +87,24 @@ export class PortaDeiNodi {
       let pezzo: Buffer | null;
       while ((pezzo = presa.read() as Buffer | null) !== null) ricevuti = Buffer.concat([ricevuti, pezzo]);
       if (ricevuti.length === 0) return;
-      // Solo TLS: qui non si parla in chiaro, nemmeno per scaricare l'installazione.
-      if (ricevuti[0] !== 0x16) return void chiudi();
-      const nome = nomeChiesto(ricevuti);
-      if (nome === undefined && ricevuti.length < SALUTO_MASSIMO) return;
-      if (nome !== NOME_TLS_DEI_NODI || chiave === undefined) return void chiudi();
+      let come: "cifrata" | "in-chiaro";
+      if (ricevuti[0] === 0x16) {
+        const nome = nomeChiesto(ricevuti);
+        if (nome === undefined && ricevuti.length < SALUTO_MASSIMO) return;
+        if (nome !== NOME_TLS_DEI_NODI || chiave === undefined) return void chiudi();
+        come = "cifrata";
+      } else {
+        // In chiaro solo lo script e il pacchetto di un ambiente nuovo, come li chiede PowerShell:
+        // il comando di Windows ne porta l'impronta, e lo script quella del pacchetto.
+        const finePrimaRiga = ricevuti.indexOf("\r\n");
+        if (finePrimaRiga < 0 && ricevuti.length < 2048) return;
+        const riga = finePrimaRiga < 0 ? "" : ricevuti.subarray(0, finePrimaRiga).toString("latin1");
+        if (!PERCORSO_AMMESSO.test(riga) || chiave === undefined) return void chiudi();
+        come = "in-chiaro";
+      }
       presa.off("readable", leggi);
       clearTimeout(scadenza);
-      this.#passate.add(chiave);
+      this.#passate.set(chiave, come);
       // Ciò che si è letto torna al suo posto, e il server del centro la prende come una sua: al
       // giro dopo, quando la connessione ha smesso di avvisare questo ascoltatore e avviserà il suo.
       setImmediate(() => {
@@ -124,6 +142,10 @@ export class NodiDaFuoriDelCentro {
 
   da(presa: { remoteAddress?: string | undefined; remotePort?: number | undefined }): boolean {
     return this.#porta.da(presa);
+  }
+
+  inChiaro(presa: { remoteAddress?: string | undefined; remotePort?: number | undefined }): boolean {
+    return this.#porta.inChiaro(presa);
   }
 
   get porta(): number | undefined {

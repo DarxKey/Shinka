@@ -21,7 +21,7 @@ const SALUTO_MASSIMO = 16 * 1024;
 const ATTESA_SALUTO_MS = 10_000;
 
 /** I percorsi in chiaro che il ponte lascia passare: lo script e il pacchetto per un ambiente nuovo. */
-const PERCORSO_AMMESSO = /^GET (\/api\/ambienti\/preparazione(?:\/pacchetto)?(?:\?[A-Za-z0-9=&_%.-]*)?) HTTP\/1\.[01]$/;
+export const PERCORSO_AMMESSO = /^GET (\/api\/ambienti\/preparazione(?:\/pacchetto)?(?:\?[A-Za-z0-9=&_%.-]*)?) HTTP\/1\.[01]$/;
 
 /**
  * Il nome che un client chiede nel suo primo messaggio TLS (SNI). `undefined` se il messaggio non è

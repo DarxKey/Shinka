@@ -134,11 +134,15 @@ export const PERCORSI_LIBERI = [
  * nodi, attraverso un ponte (ADR 0058) o la porta solo per i nodi (ADR 0065), arriva solo qui.
  */
 export const PERCORSI_DEI_NODI: readonly string[] = [PERCORSO_COLLEGAMENTO, PERCORSO_PREPARAZIONE, PERCORSO_PACCHETTO_NODO];
+/** In chiaro, dalla porta solo per i nodi, solo lo script e il pacchetto di un ambiente nuovo. */
+const PERCORSI_DELL_INSTALLAZIONE: readonly string[] = [PERCORSO_PREPARAZIONE, PERCORSO_PACCHETTO_NODO];
 
 /** La porta solo per i nodi, come la vede il centro: da dove ascolta e da dove si raggiunge da Internet. */
 export interface NodiDaFuori {
   /** Vero se la connessione è arrivata dalla porta solo per i nodi. */
   da(presa: { remoteAddress?: string | undefined; remotePort?: number | undefined }): boolean;
+  /** Vero se è arrivata da lì in chiaro: allora vale solo lo scaricamento dell'installazione. */
+  inChiaro?(presa: { remoteAddress?: string | undefined; remotePort?: number | undefined }): boolean;
   readonly porta: number | undefined;
   /** L'indirizzo da Internet che vale adesso, se c'è: i nodi lo ricevono quando sono accolti. */
   readonly indirizzo?: string | undefined;
@@ -421,7 +425,8 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     const presa = richiesta.raw.socket as { servername?: unknown; remoteAddress?: string; remotePort?: number };
     if (presa.servername === NOME_TLS_DEI_NODI || opzioni.nodiDaFuori?.da(presa) === true) {
       const percorso = richiesta.url.split("?")[0] ?? "";
-      if (!PERCORSI_DEI_NODI.includes(percorso)) {
+      const ammessi = opzioni.nodiDaFuori?.inChiaro?.(presa) === true ? PERCORSI_DELL_INSTALLAZIONE : PERCORSI_DEI_NODI;
+      if (!ammessi.includes(percorso)) {
         registroAccessi.annota("fuori-dai-nodi", chiDi(richiesta), { percorso });
         return risposta.code(403).send({ errore: "Il collegamento dei nodi serve solo ai nodi." });
       }
@@ -1863,7 +1868,8 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     async (richiesta, risposta) => {
       if (opzioni.installata === undefined) return risposta.code(404).send({ errore: "Questa installazione non sa preparare un ambiente." });
       try {
-        return inviti.crea(richiesta.body);
+        const installata = opzioni.installata;
+        return await inviti.creaFissato(richiesta.body, () => pacchettoDelNodo(installata));
       } catch (errore) {
         return risposta.code(400).send({ errore: errore instanceof Error ? errore.message : String(errore) });
       }
@@ -1884,15 +1890,17 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     return risposta
       .header("Content-Type", "text/plain; charset=utf-8")
       .header("Cache-Control", "no-store")
-      .send(await scriptDiPreparazione(invito, inviti.certificato));
+      .send(invito.fissato?.script ?? (await scriptDiPreparazione(invito, inviti.certificato)));
   });
 
   // Il nodo e il suo guardiano, per lo script: la versione in funzione al centro.
   app.get<{ Querystring: { invito?: string } }>(PERCORSO_PACCHETTO_NODO, async (richiesta, risposta) => {
-    if (inviti.valido(richiesta.query.invito) === undefined) return risposta.code(403).send({ errore: "L'invito non vale più." });
+    const invito = inviti.valido(richiesta.query.invito);
+    if (invito === undefined) return risposta.code(403).send({ errore: "L'invito non vale più." });
     if (opzioni.installata === undefined) return risposta.code(404).send({ errore: "Questa installazione non sa preparare un ambiente." });
     try {
-      const pacchetto = await pacchettoDelNodo(opzioni.installata);
+      // Per Windows quello fissato con l'invito, di cui lo script conosce l'impronta.
+      const pacchetto = invito.fissato?.pacchetto ?? (await pacchettoDelNodo(opzioni.installata));
       return risposta
         .header("Content-Type", "application/gzip")
         .header("Content-Disposition", `attachment; filename="${pacchetto.nome}"`)

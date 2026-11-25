@@ -375,6 +375,8 @@ export interface RichiestaCollegamento {
 export interface StatoAmbienti {
   ambienti: Ambiente[];
   richieste: RichiestaCollegamento[];
+  /** L'indirizzo da cui i nodi raggiungono il centro da Internet, se c'è (ADR 0065): la pagina lo propone per un ambiente nuovo. */
+  daFuori?: string;
 }
 
 /** Com'è finito un comando che il nodo ha eseguito con una credenziale data al suo ambiente (ADR 0062). */

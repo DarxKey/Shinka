@@ -156,6 +156,7 @@ export class RegistroAmbienti {
     if (indirizzo === this.#daFuori) return;
     this.#daFuori = indirizzo;
     for (const collegato of this.#collegati.values()) collegato.canale.invia(indirizzo === undefined ? { tipo: "da-fuori" } : { tipo: "da-fuori", indirizzo });
+    this.#avvisa();
   }
 
   /** Vero se il proprietario ha accettato questo nodo. */
@@ -489,7 +490,7 @@ export class RegistroAmbienti {
     const richieste = [...this.#inAttesa.values()]
       .map((inAttesa) => inAttesa.richiesta)
       .sort((a, b) => a.quando.localeCompare(b.quando));
-    return { ambienti: [delCentro, ...altri], richieste };
+    return { ambienti: [delCentro, ...altri], richieste, ...(this.#daFuori === undefined ? {} : { daFuori: this.#daFuori }) };
   }
 
   /** Collega un ascoltatore: riceve subito lo stato, poi ogni cambiamento. */

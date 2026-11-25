@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -190,6 +191,43 @@ test("dal centro: il comando lo prepara solo il proprietario; lo script e il pac
 });
 
 const CERTIFICATO = { impronta: "ab".repeat(32), improntaDellaChiave: "SJ3f/UNGwDLPukQpth0uxzQZxMBzBPaZP1/e6aNuIMk=" };
+
+test("per Windows script e pacchetto si fissano con l'invito: il comando porta l'impronta dello script, lo script quella del pacchetto", async (t) => {
+  const banco = await allestisci(t, { installata: versioneFinta() });
+  const cookies = { [COOKIE_SESSIONE]: await banco.entra() };
+  const pronto = await banco.centro.inject({ method: "POST", url: "/api/ambienti/inviti", cookies, payload: { sistema: "windows", centro: "http://nodi.esempio.it:7853", nome: "PC dell'ufficio" } });
+  assert.equal(pronto.statusCode, 200);
+  const comando = pronto.json<{ comando: string }>().comando;
+  const gettone = gettoneDi(comando);
+  const improntaDelloScript = /-eq '([0-9a-f]{64})'/.exec(comando)?.[1];
+  assert.ok(improntaDelloScript !== undefined, comando);
+  assert.match(comando, /^\$r = iwr -UseBasicParsing 'http:\/\/nodi\.esempio\.it:7853\/api\/ambienti\/preparazione\?invito=[A-Za-z0-9_-]+'; /);
+
+  // Lo script servito è proprio quello dell'impronta, anche chiesto due volte.
+  for (let volta = 0; volta < 2; volta++) {
+    const script = await banco.centro.inject({ method: "GET", url: `${PERCORSO_PREPARAZIONE}?invito=${gettone}` });
+    assert.equal(createHash("sha256").update(script.rawPayload).digest("hex"), improntaDelloScript);
+  }
+  const script = (await banco.centro.inject({ method: "GET", url: `${PERCORSO_PREPARAZIONE}?invito=${gettone}` })).body;
+  const improntaDelPacchetto = /\$SHINKA_PACCHETTO_IMPRONTA = '([0-9a-f]{64})'/.exec(script)?.[1];
+  assert.ok(improntaDelPacchetto !== undefined);
+  for (let volta = 0; volta < 2; volta++) {
+    const pacchetto = await banco.centro.inject({ method: "GET", url: `${PERCORSO_PACCHETTO_NODO}?invito=${gettone}` });
+    assert.equal(createHash("sha256").update(pacchetto.rawPayload).digest("hex"), improntaDelPacchetto);
+  }
+
+  // Per Linux la strada è cifrata, e il comando resta quello di sempre.
+  const linux = await banco.centro.inject({ method: "POST", url: "/api/ambienti/inviti", cookies, payload: { sistema: "linux", centro: "http://nodi.esempio.it:7853", nome: "Server" } });
+  assert.match(linux.json<{ comando: string }>().comando, /^curl -fsSLk --pinnedpubkey /);
+});
+
+test("lo script per Windows controlla l'impronta del pacchetto prima di aprirlo", async () => {
+  const corpo = readFileSync(join(import.meta.dirname, "prepara-ambiente.ps1"), "utf8");
+  const controllo = corpo.indexOf("$SHINKA_PACCHETTO_IMPRONTA -and");
+  assert.ok(controllo > corpo.indexOf("-OutFile $archivio") && controllo < corpo.indexOf("tar.exe -xzf"));
+  const senza = await scriptDiPreparazione({ gettone: "G", sistema: "windows", centro: "http://a:1", nome: "X", descrizione: "", scade: 0 });
+  assert.match(senza, /\$SHINKA_PACCHETTO_IMPRONTA = ''/);
+});
 
 test("con il certificato dei nodi il comando per Linux scarica cifrato e pretende la chiave del centro; per Windows resta com'era", () => {
   assert.equal(
