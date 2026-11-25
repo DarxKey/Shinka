@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { applicaLarghezza, CHAT_MINIMA, larghezzaConsentita, leggiLarghezza, PANNELLO_MINIMO, PASSO, salvaLarghezza } from "./larghezza-pannello.ts";
 import { pagineNelPosto, parteCambiata, RiquadroEstensione } from "./Interfaccia.tsx";
 import { useQuadroCorrente } from "./Quadro.tsx";
 import type { StatoAnteprima } from "../../src/protocollo/anteprima.ts";
@@ -6,6 +7,7 @@ import { Anteprima, type RichiestaAnteprima } from "./Anteprima.tsx";
 import { PannelloFile } from "./PannelloFile.tsx";
 import { PannelloModifiche, type TurnoModificato } from "./PannelloModifiche.tsx";
 import { PannelloProcessi } from "./PannelloProcessi.tsx";
+export { apriSchedaDelPannello, ascoltaAperturaDelPannello } from "./apri-pannello.ts";
 import type { FileDeiComandi } from "../../src/protocollo/modifiche.ts";
 
 // Il terminale porta con sé una libreria pesante: si carica solo quando lo si apre.
@@ -17,24 +19,6 @@ export type Scheda = "modifiche" | "file" | "terminale" | "anteprima" | "process
 type SchedaPropria = "modifiche" | "file" | "terminale" | "anteprima" | "processi";
 
 const NOMI_SCHEDE: Record<SchedaPropria, string> = { modifiche: "Modifiche", file: "File", terminale: "Terminale", anteprima: "Anteprima", processi: "Processi" };
-
-/** L'evento con cui una parte della pagina chiede di aprire il pannello di un progetto su una scheda. */
-const APRI_SCHEDA = "shinka:apri-scheda-del-pannello";
-
-/** Apre il pannello del progetto sulla scheda indicata, da qualunque parte della pagina. */
-export function apriSchedaDelPannello(idProgetto: string, scheda: Scheda): void {
-  window.dispatchEvent(new CustomEvent(APRI_SCHEDA, { detail: { idProgetto, scheda } }));
-}
-
-/** Ascolta le richieste di aprire il pannello: chi tiene il pannello lo apre. */
-export function ascoltaAperturaDelPannello(apri: (idProgetto: string, scheda: Scheda) => void): () => void {
-  const ascolta = (evento: Event): void => {
-    const { idProgetto, scheda } = (evento as CustomEvent<{ idProgetto: string; scheda: Scheda }>).detail;
-    apri(idProgetto, scheda);
-  };
-  window.addEventListener(APRI_SCHEDA, ascolta);
-  return () => window.removeEventListener(APRI_SCHEDA, ascolta);
-}
 
 /** I pulsanti in testata al progetto: aprono il pannello sulla scheda scelta, o lo chiudono. */
 export function PulsantiPannello({
@@ -175,6 +159,7 @@ export function PannelloProgetto({
 
   return (
     <aside className="affianco" ref={pannello} aria-label="Modifiche, file, terminale, anteprima e processi del progetto">
+      <SeparatorePannello pannello={pannello} />
       <header className="affianco-testata">
         <div className="schede" role="tablist">
           {(Object.keys(NOMI_SCHEDE) as SchedaPropria[])
@@ -239,5 +224,96 @@ export function PannelloProgetto({
         );
       })}
     </aside>
+  );
+}
+
+/**
+ * Il separatore tra la chat e il pannello: trascinandolo si cambia la larghezza del pannello, con il
+ * doppio clic si torna alla proporzione predefinita, e da tastiera la cambiano le frecce. La larghezza
+ * si ricorda su questo dispositivo. Dove il pannello copre la chat il separatore non c'è.
+ */
+function SeparatorePannello({ pannello }: { pannello: RefObject<HTMLElement | null> }): ReactNode {
+  const [larghezza, setLarghezza] = useState<number>();
+  const [massima, setMassima] = useState<number>();
+  const contenitore = (): HTMLElement | null => pannello.current?.closest<HTMLElement>(".affiancati") ?? null;
+  /** La larghezza del pannello con il suo bordo: quella che la griglia gli dà. */
+  const misuraDelPannello = (): number | undefined => {
+    const larga = pannello.current?.getBoundingClientRect().width;
+    return larga === undefined ? undefined : Math.round(larga);
+  };
+
+  // All'apertura vale la larghezza ricordata, se c'è posto.
+  useEffect(() => {
+    const dove = contenitore();
+    if (dove === null) return;
+    const ricordata = leggiLarghezza();
+    const possibile = ricordata === undefined ? undefined : larghezzaConsentita(ricordata, dove.clientWidth);
+    applicaLarghezza(dove, possibile);
+    setLarghezza(possibile ?? misuraDelPannello());
+    setMassima(dove.clientWidth - CHAT_MINIMA);
+  }, []);
+
+  const imposta = (voluta: number | undefined, ricorda: boolean): void => {
+    const dove = contenitore();
+    if (dove === null) return;
+    const possibile = voluta === undefined ? undefined : larghezzaConsentita(voluta, dove.clientWidth);
+    applicaLarghezza(dove, possibile);
+    setLarghezza(possibile ?? misuraDelPannello());
+    setMassima(dove.clientWidth - CHAT_MINIMA);
+    if (ricorda) salvaLarghezza(possibile);
+  };
+
+  const trascina = (evento: ReactPointerEvent<HTMLDivElement>): void => {
+    if (evento.button !== 0) return;
+    const dove = contenitore();
+    if (dove === null) return;
+    evento.preventDefault();
+    const separatore = evento.currentTarget;
+    separatore.setPointerCapture(evento.pointerId);
+    // Durante il trascinamento l'anteprima non deve prendersi il mouse, e il testo non si seleziona.
+    dove.classList.add("trascinando");
+    const destra = dove.getBoundingClientRect().right;
+    let ultima: number | undefined;
+    const muovi = (mossa: PointerEvent): void => {
+      ultima = destra - mossa.clientX;
+      imposta(ultima, false);
+    };
+    const lascia = (): void => {
+      dove.classList.remove("trascinando");
+      separatore.removeEventListener("pointermove", muovi);
+      separatore.removeEventListener("pointerup", lascia);
+      separatore.removeEventListener("pointercancel", lascia);
+      if (ultima !== undefined) imposta(ultima, true);
+    };
+    separatore.addEventListener("pointermove", muovi);
+    separatore.addEventListener("pointerup", lascia);
+    separatore.addEventListener("pointercancel", lascia);
+  };
+
+  return (
+    <div
+      className="separatore-pannello"
+      data-parte="separatore-pannello"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Larghezza del pannello: trascina, oppure usa le frecce; doppio clic per tornare a quella predefinita"
+      title="Trascina per cambiare la larghezza del pannello; doppio clic per tornare a quella predefinita"
+      tabIndex={0}
+      aria-valuemin={PANNELLO_MINIMO}
+      {...(massima === undefined ? {} : { "aria-valuemax": massima })}
+      {...(larghezza === undefined ? {} : { "aria-valuenow": larghezza })}
+      onPointerDown={trascina}
+      onDoubleClick={() => imposta(undefined, true)}
+      onKeyDown={(evento) => {
+        const attuale = misuraDelPannello() ?? larghezza;
+        if (attuale === undefined) return;
+        // Il pannello sta a destra: la freccia a sinistra lo allarga.
+        if (evento.key === "ArrowLeft") imposta(attuale + PASSO, true);
+        else if (evento.key === "ArrowRight") imposta(attuale - PASSO, true);
+        else if (evento.key === "Home") imposta(undefined, true);
+        else return;
+        evento.preventDefault();
+      }}
+    />
   );
 }

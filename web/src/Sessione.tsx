@@ -4,7 +4,7 @@
  * con la loro uscita) e quanti file sono stati cambiati.
  */
 
-import { apriSchedaDelPannello } from "./Pannello.tsx";
+import { apriSchedaDelPannello } from "./apri-pannello.ts";
 import { progettoDellaConversazione } from "../../src/protocollo/incarichi.ts";
 import { CartelleCollegate } from "./Collegate.tsx";
 import { ChiImplementa } from "./ChiImplementa.tsx";

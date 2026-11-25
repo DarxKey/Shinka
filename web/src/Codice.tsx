@@ -7,6 +7,11 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { useAspetto } from "./aspetto.ts";
 import { copia } from "./copia.ts";
+import { comandoDaEseguire, eUnComando, mandaAlTerminale } from "./comandi-eseguibili.ts";
+import { useBaseDellaChat, useSolaLettura } from "./ContestoChat.ts";
+import { apriSchedaDelPannello } from "./apri-pannello.ts";
+import { useQuadroCorrente } from "./Quadro.tsx";
+import { progettoDellaConversazione } from "../../src/protocollo/incarichi.ts";
 
 /** L'icona del pulsante Copia: due fogli; dopo, un segno di spunta o una croce. */
 function IconaCopia({ fatto }: { fatto: "copiato" | "non-riuscito" | undefined }): ReactNode {
@@ -47,6 +52,51 @@ export function PulsanteCopia({ testo, etichetta = "Copia" }: { testo: string; e
   );
 }
 
+/**
+ * Il pulsante ▶ di un blocco che è un comando, nella chat di un progetto: apre il pannello sul
+ * terminale del progetto e ve lo scrive, con Invio, come se lo battesse il proprietario. Non passa
+ * dai permessi di Claude: è il proprietario a lanciarlo.
+ */
+function PulsanteEsegui({ codice, linguaggio }: { codice: string; linguaggio: string }): ReactNode {
+  const base = useBaseDellaChat();
+  const solaLettura = useSolaLettura();
+  const quadro = useQuadroCorrente();
+  const [fatto, setFatto] = useState<"lanciato" | "non-riuscito">();
+  useEffect(() => {
+    if (fatto === undefined) return;
+    const sveglia = setTimeout(() => setFatto(undefined), 2000);
+    return () => clearTimeout(sveglia);
+  }, [fatto]);
+  const codificato = /^\/api\/progetti\/([^/]+)$/.exec(base)?.[1];
+  if (solaLettura || codificato === undefined || !eUnComando(linguaggio)) return null;
+  const idProgetto = progettoDellaConversazione(decodeURIComponent(codificato));
+  const spento = quadro.progetti?.progetti.find((progetto) => progetto.id === idProgetto)?.condizione === "ambiente-spento";
+  const etichetta = spento
+    ? "L'ambiente del progetto è spento: il terminale non si apre"
+    : fatto === "lanciato"
+      ? "Lanciato nel terminale"
+      : fatto === "non-riuscito"
+        ? "Il terminale non si è aperto"
+        : "Esegui nel terminale del progetto";
+  return (
+    <button
+      type="button"
+      className={fatto === undefined ? "esegui" : `esegui ${fatto}`}
+      aria-label={etichetta}
+      title={etichetta}
+      disabled={spento}
+      onClick={() => {
+        apriSchedaDelPannello(idProgetto, "terminale");
+        void mandaAlTerminale(idProgetto, comandoDaEseguire(codice, linguaggio)).then((riuscito) => setFatto(riuscito ? "lanciato" : "non-riuscito"));
+      }}
+    >
+      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        {fatto === "lanciato" ? <path d="M4.5 10.5l3.5 3.5 7.5-8" /> : fatto === "non-riuscito" ? <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" /> : <path d="M6.5 4.5v11l9-5.5z" />}
+      </svg>
+    </button>
+  );
+}
+
 /** Un blocco di codice: il linguaggio, il pulsante Copia, e il codice con i suoi colori quando sono pronti. */
 export function BloccoCodice({ codice, linguaggio }: { codice: string; linguaggio: string }): ReactNode {
   const [html, setHtml] = useState<string>();
@@ -66,6 +116,7 @@ export function BloccoCodice({ codice, linguaggio }: { codice: string; linguaggi
       <div className="testa-codice">
         <span className="linguaggio">{linguaggio === "" ? "codice" : linguaggio}</span>
         <PulsanteCopia testo={codice} etichetta="Copia il codice" />
+        <PulsanteEsegui codice={codice} linguaggio={linguaggio} />
       </div>
       <pre>
         {html === undefined ? <code>{codice}</code> : <code className="hljs" dangerouslySetInnerHTML={{ __html: html }} />}

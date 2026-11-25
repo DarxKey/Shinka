@@ -2,6 +2,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { registraTerminale } from "./comandi-eseguibili.ts";
 import { SCHEDE_MASSIME, type DalBrowserAlTerminale, type DalTerminaleAlBrowser } from "../../src/protocollo/terminale.ts";
 import { indirizzoDelTerminale } from "./api.ts";
 import { conCtrl } from "./descrivi.ts";
@@ -76,6 +77,8 @@ export function Terminale({ idProgetto, nomeAmbiente, scheda = 1, allaChiusura }
     let dettoChiuso = false;
     let smontato = false;
     let ripresa: ReturnType<typeof setTimeout> | undefined;
+    /** Finché è aperto, il terminale riceve i comandi lanciati dalla chat con ▶. */
+    let smettiDiRicevere: () => void = () => {};
     const manda = (messaggio: DalBrowserAlTerminale): void => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(messaggio));
     };
@@ -109,11 +112,22 @@ export function Terminale({ idProgetto, nomeAmbiente, scheda = 1, allaChiusura }
           terminale.reset();
           terminale.write(messaggio.finora);
           setFase({ fase: "aperto" });
+          smettiDiRicevere();
+          // Un comando lanciato dalla chat: incollato come lo incollerebbe il proprietario (con il
+          // bracketed paste, se la shell lo vuole), poi Invio.
+          smettiDiRicevere = registraTerminale(idProgetto, (testo) => {
+            ctrlAttivo.current = false;
+            setCtrl(false);
+            terminale.paste(testo);
+            manda({ tipo: "scrivi", dati: "\r" });
+            terminale.focus();
+          });
           return;
         case "uscita":
           terminale.write(messaggio.dati);
           return;
         case "chiuso":
+          smettiDiRicevere();
           aperto = false;
           dettoChiuso = true;
           setFase({ fase: "chiuso", motivo: messaggio.motivo, riprova: false });
@@ -121,6 +135,7 @@ export function Terminale({ idProgetto, nomeAmbiente, scheda = 1, allaChiusura }
       }
     };
     socket.onclose = () => {
+      smettiDiRicevere();
       if (smontato || dettoChiuso) return;
       aperto = false;
       // Il telefono che si blocca o la rete che cade chiudono il collegamento, non il terminale.
@@ -149,6 +164,7 @@ export function Terminale({ idProgetto, nomeAmbiente, scheda = 1, allaChiusura }
 
     return () => {
       smontato = true;
+      smettiDiRicevere();
       clearTimeout(ripresa);
       osservatore.disconnect();
       battuto.dispose();

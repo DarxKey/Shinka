@@ -3123,6 +3123,58 @@ button.allega {
   grid-template-columns: minmax(340px, 2fr) minmax(0, 3fr);
 }
 
+/* Con la larghezza scelta trascinando il separatore: la chat di almeno 340 pixel, il pannello di almeno 280. */
+.affiancati.aperto.misurato {
+  grid-template-columns: minmax(340px, 1fr) max(280px, min(var(--larghezza-pannello), calc(100% - 340px)));
+}
+
+/* Mentre si trascina il separatore: niente selezione di testo, e l'anteprima non si prende il mouse. */
+.affiancati.trascinando {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.affiancati.trascinando iframe {
+  pointer-events: none;
+}
+
+/* Il separatore sul bordo sinistro del pannello: sottile, si illumina al passaggio. */
+.affianco {
+  position: relative;
+}
+
+.separatore-pannello {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  z-index: 6;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.separatore-pannello::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+
+.separatore-pannello:hover::after,
+.separatore-pannello:focus-visible::after,
+.affiancati.trascinando .separatore-pannello::after {
+  background: var(--accento);
+}
+
+.separatore-pannello:focus-visible {
+  outline: none;
+}
+
 .pulsanti-pannello {
   display: flex;
   flex: none;
@@ -3345,8 +3397,13 @@ button.tasto.attivo {
 
 /* Dove non c'è posto per due colonne il pannello copre la chat: si chiude per tornarci. */
 @media (max-width: 1100px) {
-  .affiancati.aperto {
+  .affiancati.aperto,
+  .affiancati.aperto.misurato {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .separatore-pannello {
+    display: none;
   }
 
   .affianco {
@@ -3964,6 +4021,11 @@ button.pulsante-invio .in-volo {
   color: var(--tenue);
 }
 
+/* Il linguaggio a sinistra; Copia ed Esegui insieme, a destra. */
+.testa-codice .linguaggio {
+  margin-right: auto;
+}
+
 .blocco-codice pre,
 .riga.claude .blocco-codice pre {
   margin: 0;
@@ -3976,7 +4038,8 @@ button.pulsante-invio .in-volo {
   line-height: 1.55;
 }
 
-button.copia {
+button.copia,
+.testa-codice button.esegui {
   display: inline-grid;
   place-items: center;
   min-width: 28px;
@@ -3988,7 +4051,8 @@ button.copia {
   color: var(--tenue);
 }
 
-button.copia:hover {
+button.copia:hover,
+.testa-codice button.esegui:hover:not(:disabled) {
   border-color: var(--bordo);
   background: var(--superficie);
   color: var(--testo);
@@ -4700,6 +4764,7 @@ button.torna-giu.aspetta {
   .azioni-risposta,
   .azioni-messaggio,
   button.copia,
+  .testa-codice button.esegui,
   .conversazione button.precedenti,
   .attesa-risposta {
     display: none !important;
@@ -5340,9 +5405,21 @@ button.numero-riga:hover {
   }
 }
 
-/* Nel pannello niente allarga la colonna: il codice lungo scorre dentro il suo riquadro. */
+/* Nel pannello niente allarga la colonna: il codice lungo scorre dentro il suo riquadro. Con il
+   pannello stretto le schede scorrono di lato invece di essere tagliate. */
 .affianco-testata .schede {
   flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.affianco-testata .schede::-webkit-scrollbar {
+  display: none;
+}
+
+.affianco-testata button.scheda {
+  flex: none;
 }
 
 .affianco-corpo.scorre {
