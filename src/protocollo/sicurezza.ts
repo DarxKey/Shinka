@@ -116,6 +116,10 @@ export interface CollegamentoDeiNodi {
   porta?: number;
   /** L'indirizzo da cui i nodi raggiungono il centro da Internet, se il proprietario lo ha dato. */
   daFuori?: string;
+  /** Vero se l'indirizzo da Internet l'ha scelto il proprietario dalla pagina, e non viene dalla variabile. */
+  daFuoriScelto?: boolean;
+  /** L'indirizzo dato dove gira il centro (SHINKA_NODI_DA_FUORI), a cui si torna. */
+  daFuoriDiPartenza?: string;
 }
 
 export interface StatoSicurezza {

@@ -14,26 +14,24 @@ import { NOME_TLS_DEI_NODI } from "../protocollo/nodi.ts";
 import type { StatoSicurezza } from "../protocollo/sicurezza.ts";
 import { InvitiDegliAmbienti } from "./ambiente-nuovo.ts";
 import { COOKIE_SESSIONE } from "./centro.ts";
-import { PortaDeiNodi } from "./porta-dei-nodi.ts";
+import { NodiDaFuoriDelCentro, PortaDeiNodi } from "./porta-dei-nodi.ts";
 import { indirizzoDaFuori } from "../nodo/collegamento.ts";
 
-/** Un banco con la porta solo per i nodi aperta, e la sua porta. */
-async function conLaPorta(t: TestContext, indirizzo?: string): Promise<{ banco: Banco; portaNodi: number; inviti: InvitiDegliAmbienti }> {
+/**
+ * Un banco con la porta solo per i nodi aperta, come al centro vero: `indirizzo` è quello di
+ * partenza, `daFuori` sceglie quello da Internet uguale all'indirizzo della porta stessa.
+ */
+async function conLaPorta(t: TestContext, indirizzo?: string | "la-porta"): Promise<{ banco: Banco; portaNodi: number; inviti: InvitiDegliAmbienti }> {
   const porta = new PortaDeiNodi();
   const inviti = new InvitiDegliAmbienti();
-  const banco = await allestisci(t, {
-    inviti,
-    nodiDaFuori: {
-      da: (presa) => porta.da(presa),
-      get porta() {
-        return porta.porta;
-      },
-      ...(indirizzo === undefined ? {} : { indirizzo }),
-    },
-  });
+  let annuncia: (daFuori: string | undefined) => void = () => {};
+  const nodiDaFuori = new NodiDaFuoriDelCentro(porta, indirizzo === "la-porta" ? undefined : indirizzo, (daFuori) => annuncia(daFuori));
+  const banco = await allestisci(t, { inviti, nodiDaFuori });
+  annuncia = (daFuori) => banco.ambienti.indirizzoDaFuori(daFuori);
   await banco.centro.listen({ host: "127.0.0.1", port: 0 });
   const portaNodi = await porta.apri(banco.centro.server, 0, "127.0.0.1");
   t.after(() => porta.chiudi());
+  nodiDaFuori.scegli(indirizzo === "la-porta" ? `http://127.0.0.1:${portaNodi}` : undefined);
   return { banco, portaNodi, inviti };
 }
 
@@ -128,9 +126,8 @@ test("da Internet un nodo sconosciuto si presenta solo mentre c'è un invito ape
 });
 
 test("un nodo accolto riceve l'indirizzo da Internet, e lo usa quando quello di sempre non risponde", { timeout: 30_000 }, async (t) => {
-  const { banco, portaNodi } = await conLaPorta(t);
+  const { banco, portaNodi } = await conLaPorta(t, "la-porta");
   const daFuori = `http://127.0.0.1:${portaNodi}`;
-  banco.ambienti.indirizzoDaFuori(daFuori);
 
   // A casa: il nodo si collega all'indirizzo di sempre, e ricorda quello da Internet con l'impronta.
   const ricordati: (string | undefined)[] = [];
@@ -163,4 +160,35 @@ test("l'indirizzo da Internet si accetta solo scritto bene: http o https, con un
   assert.equal(indirizzoDaFuori("http://io:segreto@nodi.esempio.it"), undefined);
   assert.equal(indirizzoDaFuori("non un indirizzo"), undefined);
   assert.equal(indirizzoDaFuori(42), undefined);
+});
+
+test("l'indirizzo da Internet si cambia dalla pagina Sicurezza, e i nodi collegati lo ricevono subito", { timeout: 30_000 }, async (t) => {
+  const { banco } = await conLaPorta(t, "http://centro-prova.esempio:7853");
+  const cookies = { [COOKIE_SESSIONE]: await banco.entra() };
+  const nodi = async () => (await banco.centro.inject({ method: "GET", url: "/api/sicurezza", cookies })).json<StatoSicurezza>().nodi;
+  const cambia = (nodiDaFuori: string | null) => banco.centro.inject({ method: "PUT", url: "/api/impostazioni", cookies, payload: { nodiDaFuori } });
+  const ricordati: (string | undefined)[] = [];
+  await avviaNodoAccettato(t, banco, { collegamento: { alDaFuori: (indirizzo) => ricordati.push(indirizzo) } });
+  await finche(() => ricordati.length === 1, "il nodo riceve quello di partenza");
+  assert.deepEqual(ricordati, ["http://centro-prova.esempio:7853"]);
+  assert.equal((await nodi())?.daFuoriScelto, undefined);
+
+  // Scritto male non si prende.
+  assert.equal((await cambia("ftp://altro")).statusCode, 400);
+
+  // Uno nuovo: lo vede la pagina, e il nodo collegato lo riceve senza ricollegarsi.
+  assert.equal((await cambia(" http://nodi.esempio.it:9000/ ")).statusCode, 200);
+  await finche(() => ricordati.length === 2, "il nodo riceve quello nuovo");
+  assert.equal(ricordati[1], "http://nodi.esempio.it:9000");
+  assert.deepEqual(await nodi(), { ...(await nodi()), daFuori: "http://nodi.esempio.it:9000", daFuoriScelto: true, daFuoriDiPartenza: "http://centro-prova.esempio:7853" });
+
+  // Vuoto: nessuno, e il nodo lo dimentica. Poi si torna a quello di partenza.
+  await cambia("");
+  await finche(() => ricordati.length === 3, "il nodo lo dimentica");
+  assert.equal(ricordati[2], undefined);
+  assert.equal((await nodi())?.daFuori, undefined);
+  await cambia(null);
+  await finche(() => ricordati.length === 4, "il nodo riceve di nuovo quello di partenza");
+  assert.equal(ricordati[3], "http://centro-prova.esempio:7853");
+  assert.equal((await nodi())?.daFuoriScelto, undefined);
 });

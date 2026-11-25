@@ -679,6 +679,11 @@ export async function accettaSoloNodiCifrati(soloNodiCifrati: boolean): Promise<
   await chiama("PUT", "/api/impostazioni", { soloNodiCifrati });
 }
 
+/** L'indirizzo da Internet per i nodi (ADR 0065): vuoto per nessuno, `null` per quello di partenza. */
+export async function scegliNodiDaFuori(nodiDaFuori: string | null): Promise<void> {
+  await chiama("PUT", "/api/impostazioni", { nodiDaFuori });
+}
+
 /** Nome e descrizione dell'ambiente del centro; `null` torna a quelli di partenza. */
 export async function cambiaAmbienteDelCentro(ambiente: { nome: string | null; descrizione: string | null }): Promise<ImpostazioniViste> {
   return (await chiama("PUT", "/api/impostazioni", { ambiente })) as ImpostazioniViste;

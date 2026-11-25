@@ -21,6 +21,7 @@ import { InvitiDegliAmbienti, PERCORSO_PACCHETTO_NODO, PERCORSO_PREPARAZIONE, pa
 import { leggiEsitoAccessi, leggiRichiestaAccessi, type AccessiDiUnAmbiente, type EsitoAccessi, type ImpostazioniViste } from "../protocollo/accessi.ts";
 import type { AccessiNegliAmbienti } from "./accessi.ts";
 import { DESCRIZIONE_AMBIENTE_MASSIMA, NOME_AMBIENTE_MASSIMO, type ImpostazioniDellInstallazione, type ModificaDellInstallazione } from "./impostazioni-installazione.ts";
+import { indirizzoDaFuori } from "../nodo/collegamento.ts";
 import { motoreConfigurato } from "../nodo/motore.ts";
 import fastifyCookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
@@ -139,8 +140,12 @@ export interface NodiDaFuori {
   /** Vero se la connessione è arrivata dalla porta solo per i nodi. */
   da(presa: { remoteAddress?: string | undefined; remotePort?: number | undefined }): boolean;
   readonly porta: number | undefined;
-  /** L'indirizzo da Internet, se il proprietario lo ha dato: i nodi lo ricevono quando sono accolti. */
-  indirizzo?: string;
+  /** L'indirizzo da Internet che vale adesso, se c'è: i nodi lo ricevono quando sono accolti. */
+  readonly indirizzo?: string | undefined;
+  /** L'indirizzo dato dove gira il centro (SHINKA_NODI_DA_FUORI), a cui si torna. */
+  readonly diPartenza?: string | undefined;
+  /** La scelta della pagina Sicurezza: un indirizzo, vuoto per nessuno, o `undefined` per quello di partenza. */
+  scegli?(scelta: string | undefined): void;
 }
 
 export interface RottaRegistrata {
@@ -1695,6 +1700,8 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
       ...(perINodi === undefined ? {} : { impronta: perINodi.impronta }),
       ...(opzioni.nodiDaFuori?.porta === undefined ? {} : { porta: opzioni.nodiDaFuori.porta }),
       ...(opzioni.nodiDaFuori?.indirizzo === undefined ? {} : { daFuori: opzioni.nodiDaFuori.indirizzo }),
+      ...(opzioni.nodiDaFuori?.diPartenza === undefined ? {} : { daFuoriDiPartenza: opzioni.nodiDaFuori.diPartenza }),
+      ...(opzioni.impostazioni?.scelte.nodiDaFuori === undefined ? {} : { daFuoriScelto: true }),
     },
     sessioni: accesso.sessioni(),
     voci: registroAccessi.ultime(300, richiesta.query.solo === "da-guardare"),
@@ -2064,6 +2071,7 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
           properties: {
             motore: { enum: [...MOTORI, null] },
             soloNodiCifrati: { type: "boolean" },
+            nodiDaFuori: { type: ["string", "null"], maxLength: 300 },
             ambiente: {
               type: "object",
               additionalProperties: false,
@@ -2078,8 +2086,17 @@ export async function creaCentro(opzioni: OpzioniCentro): Promise<FastifyInstanc
     },
     async (richiesta, risposta) => {
       if (opzioni.impostazioni === undefined) return risposta.code(409).send({ errore: "Questa installazione non ha la pagina Impostazioni." });
-      const scelte = await opzioni.impostazioni.cambia(richiesta.body);
+      // L'indirizzo da Internet per i nodi (ADR 0065): scritto bene, o vuoto per nessuno.
+      const daFuori = richiesta.body.nodiDaFuori;
+      const modifica: ModificaDellInstallazione = { ...richiesta.body };
+      if (typeof daFuori === "string" && daFuori.trim() !== "") {
+        const pulito = indirizzoDaFuori(daFuori.trim());
+        if (pulito === undefined) return risposta.code(400).send({ errore: "L'indirizzo da Internet va scritto come http://nome:porta, per esempio http://nodi.esempio.it:7853." });
+        modifica.nodiDaFuori = pulito;
+      } else if (typeof daFuori === "string") modifica.nodiDaFuori = "";
+      const scelte = await opzioni.impostazioni.cambia(modifica);
       if (richiesta.body.soloNodiCifrati !== undefined) ambienti.accettaSoloCifrati(scelte.soloNodiCifrati === true);
+      if (richiesta.body.nodiDaFuori !== undefined) opzioni.nodiDaFuori?.scegli?.(scelte.nodiDaFuori);
       return impostazioniViste();
     },
   );

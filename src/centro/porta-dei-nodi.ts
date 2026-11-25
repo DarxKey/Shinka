@@ -103,3 +103,51 @@ export class PortaDeiNodi {
     presa.on("readable", leggi);
   }
 }
+
+/**
+ * La porta solo per i nodi come la vede il resto del centro: da dove arriva una connessione, la
+ * porta aperta e l'indirizzo da Internet che vale adesso. L'indirizzo è quello scelto dalla pagina
+ * Sicurezza, se c'è (vuoto per nessuno), altrimenti quello dato dove gira il centro; vale solo
+ * mentre la porta è aperta. Quando cambia lo dice ai nodi.
+ */
+export class NodiDaFuoriDelCentro {
+  readonly #porta: PortaDeiNodi;
+  readonly #diPartenza: string | undefined;
+  readonly #avvisa: (indirizzo: string | undefined) => void;
+  #scelta: string | undefined;
+
+  constructor(porta: PortaDeiNodi, diPartenza: string | undefined, avvisa: (indirizzo: string | undefined) => void) {
+    this.#porta = porta;
+    this.#diPartenza = diPartenza;
+    this.#avvisa = avvisa;
+  }
+
+  da(presa: { remoteAddress?: string | undefined; remotePort?: number | undefined }): boolean {
+    return this.#porta.da(presa);
+  }
+
+  get porta(): number | undefined {
+    return this.#porta.porta;
+  }
+
+  get diPartenza(): string | undefined {
+    return this.#diPartenza;
+  }
+
+  get indirizzo(): string | undefined {
+    if (this.#porta.porta === undefined) return undefined;
+    if (this.#scelta !== undefined) return this.#scelta === "" ? undefined : this.#scelta;
+    return this.#diPartenza;
+  }
+
+  /** La scelta della pagina Sicurezza: un indirizzo, vuoto per nessuno, o `undefined` per quello di partenza. */
+  scegli(scelta: string | undefined): void {
+    this.#scelta = scelta;
+    this.#avvisa(this.indirizzo);
+  }
+
+  /** La porta si è aperta, o chiusa: l'indirizzo che vale può essere cambiato. */
+  aggiorna(): void {
+    this.#avvisa(this.indirizzo);
+  }
+}

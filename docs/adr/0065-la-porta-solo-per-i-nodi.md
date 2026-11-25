@@ -23,12 +23,13 @@ Il 25 novembre 2026 il proprietario ha chiesto quanto sia sicuro rendere il cent
   Il resto riceve 403 e finisce nel registro delle richieste come «fuori-dai-nodi», tra ciò che merita uno sguardo. Il controllo è il primo del centro, prima dei file dell'interfaccia. Vale anche per il ponte di un nodo (ADR 0058): il ponte fa passare il TLS dei nodi senza vederci dentro, e prima chi lo apriva a mano poteva chiedere ogni rotta del centro.
 - **Da Internet, un nodo sconosciuto si presenta solo mentre c'è un invito aperto.** Senza un invito aperto, un nodo che il proprietario non ha accettato viene rifiutato prima di mettersi in attesa, e finisce nel registro come «nodo-da-fuori-rifiutato». Gli inviti sono quelli del comando di una riga: valgono un'ora. Così chi trova la porta non riempie la pagina Ambienti di richieste e non occupa i cinque posti in attesa. Un nodo già accettato entra sempre, con il suo segreto.
 - **L'indirizzo da Internet lo dice il centro ai nodi.**
-  - Con `SHINKA_NODI_DA_FUORI` (per esempio `http://nodi.esempio.it:7853`), il centro lo mette nel messaggio `accolto`.
+  - Il proprietario lo scrive nella pagina Sicurezza, e lo può cambiare quando vuole: vuoto per nessuno. `SHINKA_NODI_DA_FUORI` (per esempio `http://nodi.esempio.it:7853`) è solo il valore di partenza, a cui la pagina torna. La scelta sta in `impostazioni.json` (`nodiDaFuori`).
+  - Il centro lo mette nel messaggio `accolto`. Quando cambia lo manda subito ai nodi collegati, con `da-fuori`.
   - Il nodo lo ricorda in `nodo.json` (`centroDaFuori`). Quando l'indirizzo di sempre non risponde, alterna i due tentativo dopo tentativo.
   - Lo usa solo se riconosce già il centro: dall'impronta, o dal certificato del sito se l'indirizzo è `https`. Mai al primo incontro, né in chiaro.
   - Nessuna impostazione nodo per nodo: un nodo che è passato una volta da casa sa già come rientrare da fuori.
   - Se il centro smette di dirlo, il nodo lo dimentica; `--dimentica-centro` lo toglie con l'impronta.
-- **La pagina Sicurezza lo mostra**: se la porta è accesa, quale porta e da quale indirizzo da Internet.
+- **La pagina Sicurezza** dice se la porta è accesa e quale, e ha il campo dell'indirizzo da Internet.
 
 ## Considered Options
 
@@ -43,4 +44,4 @@ Il 25 novembre 2026 il proprietario ha chiesto quanto sia sicuro rendere il cent
 - Un nodo nuovo su Windows non si prepara da Internet: il comando di una riga scarica lo script in chiaro, e la porta non lo serve. Si prepara da casa, o attraverso un ponte; poi da fuori entra come gli altri. Su Linux il comando usa già la strada cifrata e funziona anche da qui.
 - Un nodo di una versione precedente non conosce l'indirizzo da Internet: lo impara dopo l'aggiornamento, al primo collegamento da casa.
 - Il centro vede l'indirizzo vero di chi arriva dalla porta, come dalla porta di sempre: nel registro le richieste da Internet hanno il loro indirizzo.
-- La porta, il container e il firewall si preparano fuori dal codice: la porta pubblicata dal container con `SHINKA_PORTA_NODI` e `SHINKA_NODI_DA_FUORI`, e una regola del firewall verso quella porta, possibilmente solo dagli indirizzi da cui il proprietario lavora.
+- La porta, il container e il firewall si preparano fuori dal codice: la porta pubblicata dal container con `SHINKA_PORTA_NODI`, e una regola del firewall verso quella porta, possibilmente solo dagli indirizzi da cui il proprietario lavora.

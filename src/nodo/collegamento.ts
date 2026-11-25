@@ -298,16 +298,7 @@ export class CollegamentoAlCentro {
         }
         this.#attesaMs = this.#cfg.attesaInizialeMs ?? ATTESA_INIZIALE_MS;
         // L'indirizzo da Internet lo dice il centro, riconosciuto: il nodo lo ricorda per quando è fuori casa.
-        const daFuori = indirizzoDaFuori(messaggio.daFuori);
-        if (daFuori !== this.#daFuori) {
-          this.#daFuori = daFuori;
-          if (daFuori === undefined) this.#provaDaFuori = false;
-          try {
-            this.#cfg.alDaFuori?.(daFuori);
-          } catch {
-            // Se non si scrive, il nodo lo ricorda finché resta acceso.
-          }
-        }
+        this.#ricordaDaFuori(messaggio.daFuori);
         this.#cfg.alCifrato?.(modo !== "in-chiaro");
         this.#cfg.alCambio({ stato: "attivo", nome: messaggio.nome });
       } else if (messaggio.tipo === "in-attesa") {
@@ -317,6 +308,9 @@ export class CollegamentoAlCentro {
         ascoltato = true;
         this.#fermato = true;
         this.#cfg.alCambio({ stato: "rifiutato", motivo: messaggio.motivo });
+      } else if (messaggio.tipo === "da-fuori") {
+        // Il proprietario lo ha cambiato dalla pagina Sicurezza, mentre il nodo era collegato.
+        if (ascoltato) this.#ricordaDaFuori(messaggio.indirizzo);
       } else if (messaggio.tipo === "solo-cifrato") {
         // Il centro non ascolta i collegamenti in chiaro: si torna a provare quello cifrato.
         chiuso = "solo-cifrato";
@@ -344,6 +338,19 @@ export class CollegamentoAlCentro {
     socket.on("error", (errore: unknown) => {
       if (nonParlaTls(errore)) nonTls = true;
     });
+  }
+
+  /** L'indirizzo da Internet detto dal centro: se è cambiato, si ricorda; se manca, si dimentica. */
+  #ricordaDaFuori(scritto: string | undefined): void {
+    const daFuori = indirizzoDaFuori(scritto);
+    if (daFuori === this.#daFuori) return;
+    this.#daFuori = daFuori;
+    if (daFuori === undefined) this.#provaDaFuori = false;
+    try {
+      this.#cfg.alDaFuori?.(daFuori);
+    } catch {
+      // Se non si scrive, il nodo lo ricorda finché resta acceso.
+    }
   }
 
   #manda(messaggio: MessaggioNodo): void {
@@ -398,6 +405,10 @@ function leggiMessaggioCentro(dati: unknown): MessaggioCentro | undefined {
     return { tipo: "accolto", nome: campi.nome, ...(campi.segretoCambiato === true ? { segretoCambiato: true as const } : {}), ...(daFuori === undefined ? {} : { daFuori }) };
   }
   if (campi.tipo === "solo-cifrato") return { tipo: "solo-cifrato" };
+  if (campi.tipo === "da-fuori") {
+    const indirizzo = indirizzoDaFuori(campi.indirizzo);
+    return indirizzo === undefined ? { tipo: "da-fuori" } : { tipo: "da-fuori", indirizzo };
+  }
   if (campi.tipo === "in-attesa" && typeof campi.codice === "string") {
     return { tipo: "in-attesa", codice: campi.codice };
   }

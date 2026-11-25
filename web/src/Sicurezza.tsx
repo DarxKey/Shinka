@@ -17,7 +17,7 @@ import {
   type VoceAccesso,
 } from "../../src/protocollo/sicurezza.ts";
 import type { Ambiente } from "../../src/protocollo/nodi.ts";
-import { accettaSoloNodiCifrati, chiudiLeAltreSessioni, chiudiSessione, leggiSicurezza, togliDispositivo } from "./api.ts";
+import { accettaSoloNodiCifrati, chiudiLeAltreSessioni, chiudiSessione, leggiSicurezza, scegliNodiDaFuori, togliDispositivo } from "./api.ts";
 import { momentoInBreve, oraInBreve } from "./descrivi.ts";
 
 export function PaginaSicurezza({ menu, ambienti }: { menu: ReactNode; ambienti: readonly Ambiente[] }): ReactNode {
@@ -131,6 +131,7 @@ export function PaginaSicurezza({ menu, ambienti }: { menu: ReactNode; ambienti:
                   ambienti={ambienti.filter((ambiente) => !ambiente.delCentro)}
                   lavoro={lavoro}
                   allaScelta={(soloCifrati) => void fai(() => accettaSoloNodiCifrati(soloCifrati))}
+                  allIndirizzo={(indirizzo) => void fai(() => scegliNodiDaFuori(indirizzo))}
                 />
               )}
 
@@ -190,11 +191,14 @@ function CollegamentoDeiNodi({
   ambienti,
   lavoro,
   allaScelta,
+  allIndirizzo,
 }: {
   nodi: NonNullable<StatoSicurezza["nodi"]>;
   ambienti: readonly Ambiente[];
   lavoro: boolean;
   allaScelta: (soloCifrati: boolean) => void;
+  /** Un indirizzo da Internet per i nodi, vuoto per nessuno, o `null` per tornare a quello di partenza. */
+  allIndirizzo: (indirizzo: string | null) => void;
 }): ReactNode {
   const [daConfermare, setDaConfermare] = useState(false);
   const inChiaro = ambienti.filter((ambiente) => ambiente.attivo && ambiente.cifrato === false);
@@ -274,18 +278,63 @@ function CollegamentoDeiNodi({
           </>
         )}
       </p>
-      <p className="tenue nota-sicurezza" data-parte="porta-dei-nodi">
-        {nodi.porta === undefined ? (
-          "Porta solo per i nodi: spenta. Si accende dove gira il centro, con SHINKA_PORTA_NODI, per far raggiungere il centro da Internet a un nodo fuori casa senza pubblicare l'interfaccia."
-        ) : (
-          <>
-            Porta solo per i nodi: <span className="indirizzo">{nodi.porta}</span>
-            {nodi.daFuori === undefined ? ", senza un indirizzo da Internet per i nodi." : <>, da Internet <span className="indirizzo">{nodi.daFuori}</span>.</>} Lì passa solo il
-            collegamento cifrato dei nodi: pagine, API e password non si raggiungono, e un nodo nuovo si presenta solo mentre c'è un invito aperto.
-          </>
-        )}
-      </p>
+      <PortaDeiNodi nodi={nodi} lavoro={lavoro} allIndirizzo={allIndirizzo} />
     </section>
+  );
+}
+
+/** La porta solo per i nodi (ADR 0065): se è accesa, e da quale indirizzo i nodi la raggiungono da Internet. */
+function PortaDeiNodi({ nodi, lavoro, allIndirizzo }: { nodi: NonNullable<StatoSicurezza["nodi"]>; lavoro: boolean; allIndirizzo: (indirizzo: string | null) => void }): ReactNode {
+  const [scritto, setScritto] = useState(nodi.daFuori ?? "");
+  useEffect(() => setScritto(nodi.daFuori ?? ""), [nodi.daFuori]);
+  if (nodi.porta === undefined) {
+    return (
+      <p className="tenue nota-sicurezza" data-parte="porta-dei-nodi">
+        Porta solo per i nodi: spenta. Si accende dove gira il centro, con SHINKA_PORTA_NODI, per far raggiungere il centro da Internet a un nodo fuori casa senza
+        pubblicare l'interfaccia.
+      </p>
+    );
+  }
+  const cambiato = scritto.trim() !== (nodi.daFuori ?? "");
+  return (
+    <form
+      className="modulo-impostazioni"
+      data-parte="porta-dei-nodi"
+      onSubmit={(evento) => {
+        evento.preventDefault();
+        allIndirizzo(scritto.trim());
+      }}
+    >
+      <p className="tenue nota-sicurezza">
+        Porta solo per i nodi: <span className="indirizzo">{nodi.porta}</span>. Lì passa solo il collegamento cifrato dei nodi: pagine, API e password non si
+        raggiungono, e un nodo nuovo si presenta solo mentre c'è un invito aperto.
+      </p>
+      <label>
+        Indirizzo da Internet per i nodi
+        <input
+          value={scritto}
+          maxLength={300}
+          placeholder="Per esempio: http://nodi.esempio.it:7853"
+          onChange={(evento) => setScritto(evento.target.value)}
+        />
+      </label>
+      <p className="tenue">
+        {nodi.daFuori === undefined
+          ? "Nessuno: i nodi usano solo l'indirizzo di sempre."
+          : "I nodi lo ricevono subito, e lo provano quando l'indirizzo di sempre non risponde."}
+        {nodi.daFuoriScelto === true && nodi.daFuoriDiPartenza !== undefined && <> Quello di partenza è {nodi.daFuoriDiPartenza}.</>}
+      </p>
+      <div className="pulsanti">
+        <button type="submit" disabled={lavoro || !cambiato}>
+          Salva
+        </button>
+        {nodi.daFuoriScelto === true && (
+          <button type="button" className="discreto" disabled={lavoro} onClick={() => allIndirizzo(null)}>
+            Torna a quello di partenza
+          </button>
+        )}
+      </div>
+    </form>
   );
 }
 

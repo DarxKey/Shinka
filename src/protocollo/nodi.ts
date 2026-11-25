@@ -313,6 +313,8 @@ export type MessaggioCentro =
    * Non è un rifiuto del nodo: con il collegamento cifrato sarà accolto.
    */
   | { tipo: "solo-cifrato" }
+  /** L'indirizzo del centro da Internet è cambiato (ADR 0065): se manca, non ce n'è più. */
+  | { tipo: "da-fuori"; indirizzo?: string }
   | ComandoPerNodo;
 
 /** Un ambiente come lo vede l'interfaccia. */

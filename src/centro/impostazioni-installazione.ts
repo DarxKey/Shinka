@@ -18,6 +18,11 @@ export interface ScelteDellInstallazione {
   ambiente?: { nome?: string; descrizione?: string };
   /** Vero se il centro accetta solo i nodi con il collegamento cifrato (ADR 0040). */
   soloNodiCifrati?: true;
+  /**
+   * L'indirizzo da cui i nodi raggiungono il centro da Internet (ADR 0065), scelto dalla pagina
+   * Sicurezza; vuoto se il proprietario non ne vuole nessuno. Se manca vale SHINKA_NODI_DA_FUORI.
+   */
+  nodiDaFuori?: string;
 }
 
 /** Che cosa si può cambiare: `null` torna al valore di partenza. */
@@ -25,6 +30,8 @@ export interface ModificaDellInstallazione {
   motore?: Motore | null;
   ambiente?: { nome?: string | null; descrizione?: string | null };
   soloNodiCifrati?: boolean;
+  /** Un indirizzo già controllato, vuoto per nessuno, o `null` per tornare alla variabile. */
+  nodiDaFuori?: string | null;
 }
 
 export const NOME_AMBIENTE_MASSIMO = 60;
@@ -68,6 +75,8 @@ export class ImpostazioniDellInstallazione {
     else if (modifica.motore !== undefined) prossime.motore = modifica.motore;
     if (modifica.soloNodiCifrati === true) prossime.soloNodiCifrati = true;
     else if (modifica.soloNodiCifrati === false) delete prossime.soloNodiCifrati;
+    if (modifica.nodiDaFuori === null) delete prossime.nodiDaFuori;
+    else if (modifica.nodiDaFuori !== undefined) prossime.nodiDaFuori = modifica.nodiDaFuori;
     if (modifica.ambiente !== undefined) {
       const ambiente = { ...prossime.ambiente };
       for (const voce of ["nome", "descrizione"] as const) {
@@ -91,9 +100,10 @@ export class ImpostazioniDellInstallazione {
 
 function leggiScelte(valore: unknown): ScelteDellInstallazione {
   if (typeof valore !== "object" || valore === null) return {};
-  const { motore, ambiente, soloNodiCifrati } = valore as Record<string, unknown>;
+  const { motore, ambiente, soloNodiCifrati, nodiDaFuori } = valore as Record<string, unknown>;
   const scelte: ScelteDellInstallazione = eMotore(motore) ? { motore } : {};
   if (soloNodiCifrati === true) scelte.soloNodiCifrati = true;
+  if (typeof nodiDaFuori === "string" && nodiDaFuori.length <= 300) scelte.nodiDaFuori = nodiDaFuori;
   if (typeof ambiente === "object" && ambiente !== null) {
     const { nome, descrizione } = ambiente as Record<string, unknown>;
     const letto = {

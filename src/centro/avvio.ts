@@ -12,7 +12,8 @@
  *                          nodi, senza interfaccia né API. Se manca, non c'è
  *   SHINKA_NODI_DA_FUORI   l'indirizzo da cui i nodi raggiungono quella porta da Internet, per
  *                          esempio http://nodi.esempio.it:7853: i nodi lo ricevono e lo provano
- *                          quando l'indirizzo di sempre non risponde
+ *                          quando l'indirizzo di sempre non risponde; è il valore di partenza,
+ *                          che il proprietario cambia dalla pagina Sicurezza
  *   SHINKA_COOKIE_SICURO   "1" se l'interfaccia è servita in HTTPS da un altro programma; con
  *                          l'HTTPS di Shinka il cookie è già sicuro per chi entra in HTTPS
  *   SHINKA_HTTPS           "1" per parlare HTTPS sulla stessa porta (e su quella dell'anteprima),
@@ -92,7 +93,7 @@ import { preparaIdentitaPerINodi, type IdentitaPerINodi } from "./identita-per-i
 import { ETICHETTA_STACK } from "../protocollo/stack.ts";
 import { CampionatoreRisorse } from "../nodo/risorse.ts";
 import { RegistroArgomenti } from "./argomenti.ts";
-import { creaCentro, type NodiDaFuori } from "./centro.ts";
+import { creaCentro } from "./centro.ts";
 import { distribuisciSkill } from "./distribuzione-skill.ts";
 import { EsecutoreLocale, EsecutoriRemoti } from "./esecutori.ts";
 import { Estensioni } from "./estensioni.ts";
@@ -136,7 +137,7 @@ import {
 import { serviziVeri } from "./mappa.ts";
 import { TerminaliDeiProgetti } from "./terminali.ts";
 import { ImmaginiEsterne } from "./immagini-esterne.ts";
-import { PortaDeiNodi } from "./porta-dei-nodi.ts";
+import { NodiDaFuoriDelCentro, PortaDeiNodi } from "./porta-dei-nodi.ts";
 import { indirizzoDaFuori } from "../nodo/collegamento.ts";
 
 const dati = resolve(process.env.SHINKA_DATI ?? "dati");
@@ -660,7 +661,9 @@ const desktop = new AggiornamentiDesktop(join(dati, "desktop"));
 
 // La porta solo per i nodi (ADR 0065): si apre dopo il centro, a cui passa ciò che accetta.
 const portaDeiNodi = new PortaDeiNodi();
-const nodiDaFuori: NodiDaFuori = { da: (presa) => portaDeiNodi.da(presa), get porta() { return portaDeiNodi.porta; } };
+// L'indirizzo da Internet: quello scelto dalla pagina Sicurezza, o quello dato qui; i nodi lo ricevono.
+const nodiDaFuori = new NodiDaFuoriDelCentro(portaDeiNodi, nodiDaFuoriIndirizzo, (daFuori) => ambienti.indirizzoDaFuori(daFuori));
+nodiDaFuori.scegli(impostazioniInstallazione.scelte.nodiDaFuori);
 
 const centro = await creaCentro({
   nodiDaFuori,
@@ -713,13 +716,10 @@ if (portaNodi !== undefined) {
   } else {
     try {
       await portaDeiNodi.apri(centro.server, portaNodi, indirizzo);
-      if (nodiDaFuoriIndirizzo !== undefined) {
-        nodiDaFuori.indirizzo = nodiDaFuoriIndirizzo;
-        ambienti.indirizzoDaFuori(nodiDaFuoriIndirizzo);
-      }
+      nodiDaFuori.aggiorna();
       console.log(
         `Porta solo per i nodi su ${indirizzo}:${portaNodi}` +
-          (nodiDaFuoriIndirizzo === undefined ? ": nessun indirizzo da Internet per i nodi (SHINKA_NODI_DA_FUORI)." : `, da Internet ${nodiDaFuoriIndirizzo}.`),
+          (nodiDaFuori.indirizzo === undefined ? ": nessun indirizzo da Internet per i nodi (si dà dalla pagina Sicurezza)." : `, da Internet ${nodiDaFuori.indirizzo}.`),
       );
     } catch (errore) {
       console.error(`La porta solo per i nodi (${portaNodi}) non si è aperta: ${errore instanceof Error ? errore.message : String(errore)}`);

@@ -151,9 +151,11 @@ export class RegistroAmbienti {
     return this.#soloCifrati;
   }
 
-  /** Dice ai nodi, quando li accoglie, da dove si raggiunge il centro da Internet. */
+  /** Dice ai nodi, quando li accoglie, da dove si raggiunge il centro da Internet; a quelli collegati, subito se cambia. */
   indirizzoDaFuori(indirizzo: string | undefined): void {
+    if (indirizzo === this.#daFuori) return;
     this.#daFuori = indirizzo;
+    for (const collegato of this.#collegati.values()) collegato.canale.invia(indirizzo === undefined ? { tipo: "da-fuori" } : { tipo: "da-fuori", indirizzo });
   }
 
   /** Vero se il proprietario ha accettato questo nodo. */
