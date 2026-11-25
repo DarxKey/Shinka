@@ -6,11 +6,12 @@
  * decide ed esegue.
  */
 
+import type { CredenzialiNegliAmbienti } from "./credenziali-negli-ambienti.ts";
 import { GRUPPO_SKILL } from "../protocollo/skill.ts";
 import { eIncarico, progettoDellaConversazione } from "../protocollo/incarichi.ts";
 import type { EsitoStack, RichiestaStack } from "../protocollo/stack.ts";
 import { eStrumentoComune, type EsitoStrumento } from "../protocollo/strumenti.ts";
-import { AZIONI_NEL_SITO, TIPI_IN_CHIARO, type AzioneNelSito, type EsitoBrowser, type TipoInChiaro } from "../protocollo/vault.ts";
+import { AZIONI_NEL_SITO, SECONDI_COMANDO_SU_HOST, TIPI_IN_CHIARO, type AzioneNelSito, type EsitoBrowser, type TipoInChiaro } from "../protocollo/vault.ts";
 import type { Approvazioni } from "./approvazioni.ts";
 import { GatewayAssente, type PortaGateway } from "./gateway.ts";
 import { VoceRifiutata, type Memoria } from "./memoria.ts";
@@ -92,6 +93,7 @@ export class StrumentiComuni {
   readonly #programmati: StrumentiProgrammati | undefined;
   readonly #collegate: StrumentiCollegate | undefined;
   readonly #affidaIncarico: AffidaIncarico | undefined;
+  readonly #negliAmbienti: Pick<CredenzialiNegliAmbienti, "esegui"> | undefined;
 
   constructor(
     memoria: Memoria,
@@ -112,7 +114,10 @@ export class StrumentiComuni {
     collegate?: StrumentiCollegate,
     /** Come chi guida un progetto affida un incarico. */
     affidaIncarico?: AffidaIncarico,
+    /** Come un comando passa dal nodo di un ambiente che ha la credenziale, se il gateway non raggiunge l'host (ADR 0062). */
+    negliAmbienti?: Pick<CredenzialiNegliAmbienti, "esegui">,
   ) {
+    this.#negliAmbienti = negliAmbienti;
     this.#affidaIncarico = affidaIncarico;
     this.#collegate = collegate;
     this.#applicazioni = applicazioni;
@@ -473,11 +478,20 @@ export class StrumentiComuni {
           ? await this.#gateway.decidi(esito.approvazione, "negata")
           : await this.#approvazioni.chiedi(chi.chiave, attesa);
     }
-    if (esito.esito === "da-approvare") return fallito("Il gateway non ha deciso di questo comando: non è stato eseguito.");
+    // Il gateway non raggiunge l'host, ma il proprietario ha dato la credenziale a un ambiente che lo raggiunge (ADR 0062).
+    let passatoDa: string | undefined;
+    if (esito.esito === "da-delegare") {
+      if (this.#negliAmbienti === undefined) return fallito(`Non riuscito: ${esito.motivo} Questa installazione non sa ancora farlo.`);
+      const eseguito = await this.#negliAmbienti.esegui(esito.ambienti, { credenziale, host, comando, conversazione: chi.origine, secondi: durata.secondi ?? SECONDI_COMANDO_SU_HOST });
+      passatoDa = eseguito.ambiente;
+      esito = eseguito;
+    }
+    if (esito.esito === "da-approvare" || esito.esito === "da-delegare") return fallito("Il gateway non ha deciso di questo comando: non è stato eseguito.");
     if (esito.esito !== "eseguito") {
       return fallito(`${esito.esito === "rifiutato" ? "Rifiutato dal gateway" : "Non riuscito"}: ${esito.motivo}`);
     }
     const parti = [
+      passatoDa === undefined ? "" : `Eseguito dal nodo di «${passatoDa}»: il gateway non raggiunge questo host.`,
       esito.scaduto
         ? "Il comando è stato fermato perché durava troppo: ciò che segue è quello che aveva scritto fino a quel momento."
         : `Codice di uscita: ${esito.codice ?? "sconosciuto"}`,

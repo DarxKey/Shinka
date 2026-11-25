@@ -64,6 +64,7 @@ import { apriConversazione, impostaMotorePredefinito, motorePredefinito } from "
 import { AccessiDeiMotori } from "../nodo/accessi.ts";
 import { modelliDeiMotori, modelliDellAmbiente } from "../nodo/sonde-motori.ts";
 import { CatalogoDeiModelli } from "./catalogo-modelli.ts";
+import { CredenzialiNegliAmbienti } from "./credenziali-negli-ambienti.ts";
 import { AccessiNegliAmbienti } from "./accessi.ts";
 import { ImpostazioniDellInstallazione } from "./impostazioni-installazione.ts";
 import { EstensioniInAmbiente } from "../nodo/estensioni.ts";
@@ -300,6 +301,11 @@ const programmati = new LavoriProgrammati({
     }),
 });
 
+// Le credenziali per SSH che il proprietario dà a un ambiente (ADR 0062): il centro le passa ai nodi,
+// sigillate dal gateway, senza poterle leggere.
+const credenzialiNegliAmbienti = new CredenzialiNegliAmbienti({ ambienti, gateway });
+credenzialiNegliAmbienti.avvia();
+
 const comuni = new StrumentiComuni(
   memoria,
   skill,
@@ -318,6 +324,7 @@ const comuni = new StrumentiComuni(
   (chi, nome, argomenti) => programmati.strumento(chi, nome, argomenti),
   (chiave, nome, argomenti) => collegate.strumento(chiave, nome, argomenti),
   (idProgetto, argomenti) => lavori.affidaIncarico(idProgetto, argomenti),
+  credenzialiNegliAmbienti,
 );
 // Gli strumenti della conversazione di un incarico valgono per il suo progetto (ADR 0051).
 const strumentoDiProgetto = (idConversazione: string, nome: unknown, argomenti: unknown) =>
@@ -746,6 +753,7 @@ async function spegni(codice = 0): Promise<void> {
   laHome().chiudi();
   lavori.chiudi();
   estensioniDelCentro.modelliLocali.chiudi();
+  credenzialiNegliAmbienti.chiudi();
   gateway.chiudi();
   // I terminali dell'ambiente del centro vivono in questo processo: si spengono con lui.
   for (const qui of terminaliDelCentro) qui.spegniTutti();

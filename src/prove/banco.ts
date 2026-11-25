@@ -55,7 +55,10 @@ import { distribuisciSkill } from "../centro/distribuzione-skill.ts";
 import { colLavoroOffline } from "../centro/lavoro-offline.ts";
 import type { AggiornamentiDallOriginale } from "../centro/originale.ts";
 import { CatalogoDeiModelli } from "../centro/catalogo-modelli.ts";
+import { CredenzialiNegliAmbienti } from "../centro/credenziali-negli-ambienti.ts";
 import { preparaCartellaProgetti } from "../nodo/cartella-progetti.ts";
+import { CredenzialiDelegate } from "../nodo/credenziali-delegate.ts";
+import { leggiChiavePrivata, nuovaCoppia } from "../protocollo/sigillo.ts";
 import { ProposteRicordate, postiDegliArchivi } from "../centro/proposte-ricordate.ts";
 import { LavoroOffline } from "../nodo/offline.ts";
 import { Memoria } from "../centro/memoria.ts";
@@ -305,6 +308,8 @@ export interface Banco {
   applicazioni: ApplicazioniDeiProgetti;
   /** Le approvazioni dei comandi sugli host, se il banco ha un gateway. */
   approvazioni: Approvazioni | undefined;
+  /** Le credenziali date agli ambienti (ADR 0062), se il banco ha un gateway: i giri li chiede il test. */
+  credenzialiNegliAmbienti: CredenzialiNegliAmbienti | undefined;
   /** Gli elaborati degli argomenti della Home, come li vede il pannello. */
   elaborati: Elaborati;
   /** Il ponte con Telegram, se il test lo ha acceso. */
@@ -563,6 +568,8 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
   let sviluppo: SviluppoDiShinka | undefined;
   const riavvii: number[] = [];
   const fileInstallazione = join(cartella, "installazione.json");
+  // Le credenziali date agli ambienti (ADR 0062), se il banco ha un gateway: i giri li fa il test.
+  const credenzialiNegliAmbienti = opzioni.gateway === undefined ? undefined : new CredenzialiNegliAmbienti({ ambienti, gateway: opzioni.gateway });
   const comuni = new StrumentiComuni(
     memoria,
     skill,
@@ -581,6 +588,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     (chi, nome, argomenti) => programmati.strumento(chi, nome, argomenti),
     (chiave, nome, argomenti) => collegate.strumento(chiave, nome, argomenti),
     (idProgetto, argomenti) => lavori.affidaIncarico(idProgetto, argomenti),
+    credenzialiNegliAmbienti,
   );
   const strumentoDiProgetto = (idConversazione: string, nome: unknown, argomenti: unknown) =>
     comuni.esegui(chiDiUnProgetto(idConversazione, (id) => progetti.trova(id)?.nome), nome, argomenti);
@@ -902,6 +910,7 @@ export async function allestisci(t: TestContext, opzioni: OpzioniBanco = {}): Pr
     anteprime,
     applicazioni,
     approvazioni,
+    credenzialiNegliAmbienti,
     sviluppo,
     elaborati,
     ponte,
@@ -945,6 +954,8 @@ export interface NodoInProva {
   shell: ShellFinta[];
   /** Il lavoro del nodo: per fermarlo come quando il nodo si spegne. */
   lavoro: LavoroDelNodo;
+  /** Le credenziali del vault che il proprietario ha dato a questo ambiente, in memoria (ADR 0062). */
+  credenziali: CredenzialiDelegate;
   /** L'harness finto con cui questo nodo prova le estensioni e guarda ciò che ha già. */
   harness: HarnessDiProva;
   /** Il lavoro offline del nodo, se la prova lo ha chiesto (ADR 0056). */
@@ -994,7 +1005,11 @@ export async function avviaNodo(
   const cartellaSkill = join(banco.cartella, "skill-del-nodo");
   const shell: ShellFinta[] = [];
   const harness = opzioni.harness ?? harnessDiProva();
+  // La chiave del nodo per il vault, e le credenziali che riceve (ADR 0062).
+  const coppiaVault = nuovaCoppia();
+  const credenziali = new CredenzialiDelegate({ privata: leggiChiavePrivata(coppiaVault.privata) });
   const lavoro = new LavoroDelNodo({
+    credenziali,
     radiceProgetti,
     cartellaSkill,
     ...(opzioni.accessi === undefined ? {} : { accessi: opzioni.accessi }),
@@ -1050,6 +1065,7 @@ export async function avviaNodo(
     descrizione: "Unity, Blender",
     sistema: "Windows 11",
     radiceProgetti,
+    chiaveVault: coppiaVault.pubblica,
     ...(opzioni.versione === undefined ? {} : { versione: opzioni.versione }),
     ...(opzioni.aggiorna === undefined ? {} : { siAggiorna: true }),
     ...(opzioni.aggiornamentoFallito === undefined ? {} : { aggiornamentoFallito: () => opzioni.aggiornamentoFallito }),
@@ -1073,7 +1089,7 @@ export async function avviaNodo(
     collegamento.ferma();
   });
   collegamento.avvia();
-  return { collegamento, stati, radiceProgetti, conversazioni, cartellaSkill, shell, lavoro, harness, ...(offline === undefined ? {} : { offline }) };
+  return { collegamento, stati, radiceProgetti, conversazioni, cartellaSkill, shell, lavoro, credenziali, harness, ...(offline === undefined ? {} : { offline }) };
 }
 
 /** Avvia un nodo e lo fa accettare dal proprietario: il suo ambiente è attivo. */

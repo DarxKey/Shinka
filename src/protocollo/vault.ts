@@ -7,6 +7,7 @@
  * le voci inserite così si possono leggere (ADR 0034).
  */
 
+import type { Sigillo } from "./sigillo.ts";
 import type { RecintoStack } from "./stack.ts";
 import type { TelegramDalCentro } from "./telegram.ts";
 import type { AggiornamentoDelGateway } from "./versione.ts";
@@ -90,6 +91,8 @@ export interface CredenzialeInVista {
    * proprietario, e quel sì lo raccoglie il gateway stesso, non il centro.
    */
   server?: true;
+  /** Gli ambienti a cui il proprietario l'ha data (ADR 0062): i loro nodi la usano dove il gateway non arriva. */
+  ambienti?: { id: string; nome: string }[];
 }
 
 /** Ciò che il gateway dice di sé al centro. Le credenziali ci sono solo a vault aperto. */
@@ -151,8 +154,59 @@ export type EsitoUso =
       /** Vero se il sì lo raccoglie il gateway: il centro può solo aspettare, o negare. */
       alGateway?: true;
     }
+  /**
+   * Il gateway non raggiunge l'host, ma il proprietario ha dato la credenziale a questi ambienti
+   * (ADR 0062): il comando, già controllato qui, lo esegue il nodo di uno di loro.
+   */
+  | { esito: "da-delegare"; ambienti: string[]; motivo: string }
   /** Rifiutato dal gateway prima di qualunque collegamento, oppure non riuscito. */
   | { esito: "rifiutato" | "fallito"; motivo: string };
+
+/**
+ * Un ambiente che ha la chiave per ricevere le credenziali del vault (ADR 0062): il suo nodo la
+ * crea al primo avvio e la dice al centro, che la passa al gateway.
+ */
+export interface AmbientePerIlVault {
+  id: string;
+  nome: string;
+  /** La chiave pubblica X25519 del nodo, in SPKI e base64. */
+  chiave: string;
+}
+
+/**
+ * Una credenziale per SSH che il proprietario ha dato a un ambiente (ADR 0062): il nodo la tiene
+ * in memoria, e la usa solo per i suoi host. Viaggia soltanto dentro un sigillo per quel nodo.
+ */
+export interface CredenzialeDelegata {
+  nome: string;
+  tipo: "password" | "chiave";
+  utente: string;
+  /** Gli host come li scrive il vault, `nome:porta`. */
+  host: string[];
+  segreto: string;
+  fraseDellaChiave?: string;
+  /** Per ogni host, l'impronta della sua chiave vista al primo collegamento. */
+  impronte: Record<string, string>;
+}
+
+/** Ciò che il gateway risponde al centro che chiede le credenziali di un ambiente. */
+export type EsitoDelega = { credenziali: number; sigillo?: Sigillo } | { motivo: string };
+
+/** Il comando che il nodo di un ambiente ha eseguito al posto del gateway, riferito al gateway per il registro. */
+export interface UsoDelegato {
+  credenziale: string;
+  host: string;
+  conversazione: string;
+  /** Il nome dell'ambiente da cui è passato. */
+  ambiente: string;
+  comando: string;
+  esito: "eseguito" | "rifiutato" | "fallito";
+  codice?: number | null;
+  durataMs?: number;
+  motivo?: string;
+  /** L'impronta della chiave con cui l'host si è presentato al nodo. */
+  impronta?: string;
+}
 
 /** Il centro chiede le chiavi di un'estensione che sta per partire in un ambiente. */
 export interface RichiestaChiavi {

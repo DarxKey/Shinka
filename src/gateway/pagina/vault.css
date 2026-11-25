@@ -398,3 +398,14 @@ input[type="file"] {
   border: 0;
   padding: 0;
 }
+
+/* Gli ambienti a cui è data una credenziale per SSH (ADR 0062). */
+.ambienti-credenziale {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.ambienti-credenziale p {
+  margin: 0;
+}

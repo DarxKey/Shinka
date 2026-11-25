@@ -34,6 +34,7 @@ import type { EventoConversazione } from "../protocollo/eventi.ts";
 import type { ProgettoDelNodo } from "../protocollo/offline.ts";
 import type { LavoroOffline } from "./offline.ts";
 import { modelliDeiMotori, modelliDellAmbiente, type ModelliDeiMotori } from "./sonde-motori.ts";
+import type { CredenzialiDelegate } from "./credenziali-delegate.ts";
 
 export interface ContestoLavoro {
   /** Cartella in cui nascono le cartelle dei progetti nuovi. */
@@ -72,6 +73,11 @@ export interface ContestoLavoro {
    * scelte del nodo. Senza, il nodo non la sa cambiare da lì.
    */
   cartellaProgetti?: { imposta(percorso: string): Promise<{ percorso: string; riparte: boolean } | { motivo: string }> };
+  /**
+   * Le credenziali per SSH che il proprietario dà a questo ambiente (ADR 0062), tenute in memoria.
+   * Senza, il nodo non ne riceve.
+   */
+  credenziali?: CredenzialiDelegate;
   /** I processi accesi da Shinka qui: per terminarne uno bloccato. */
   processiDiShinka?: { termina(pid: number): Promise<{ riuscita: boolean; testo: string }> };
   /** Su Windows: il collegamento che fa partire il nodo a ogni accesso. Senza, il nodo non lo sa cambiare. */
@@ -249,6 +255,22 @@ export class LavoroDelNodo {
           (esito) => this.#contesto.riferisci({ tipo: "avvio-con-windows-esito", idRichiesta, ...esito }),
           (errore: unknown) => this.#contesto.riferisci({ tipo: "avvio-con-windows-esito", idRichiesta, motivo: errore instanceof Error ? errore.message : String(errore) }),
         );
+        return;
+      }
+      case "credenziali":
+        if (this.#contesto.credenziali?.ricevi(comando.sigillo) === false) console.error("Le credenziali del vault arrivate dal centro non si aprono con la chiave di questo nodo.");
+        return;
+      case "dimentica-credenziali":
+        this.#contesto.credenziali?.dimentica();
+        return;
+      case "esegui-su-host": {
+        const { idRichiesta, credenziale, host, comando: daEseguire, secondi } = comando;
+        const credenziali = this.#contesto.credenziali;
+        if (credenziali === undefined) {
+          this.#contesto.riferisci({ tipo: "esito-su-host", idRichiesta, esito: { esito: "rifiutato", motivo: "Questo nodo non sa usare le credenziali del vault: va aggiornato." } });
+          return;
+        }
+        void credenziali.esegui(credenziale, host, daEseguire, secondi).then((esito) => this.#contesto.riferisci({ tipo: "esito-su-host", idRichiesta, esito }));
         return;
       }
       case "cartella-progetti": {
@@ -466,6 +488,8 @@ export class LavoroDelNodo {
    * I terminali no: restano accesi, e il proprietario li ritrova quando il centro torna.
    */
   chiudiTutto(): void {
+    // Senza centro il nodo non sa se il vault è ancora aperto: le credenziali date all'ambiente si dimenticano.
+    this.#contesto.credenziali?.dimentica();
     // Senza centro chi aveva preso un modello in rete non lo usa più: il server si spegne dopo il solito tempo.
     for (const idPresa of [...this.#preseDaFuori.keys()]) this.#lasciaDaFuori(idPresa);
     this.#anteprima.chiudiTutto();

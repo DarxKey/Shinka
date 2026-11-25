@@ -3,6 +3,7 @@
  * vede degli ambienti. Sono dati semplici, serializzabili in JSON.
  */
 
+import type { Sigillo } from "./sigillo.ts";
 import type { AzioneInAmbiente, EsitoAzione } from "./azioni.ts";
 import type { RichiestaAllaConversazione } from "./modifiche.ts";
 import type { AnteprimaRiavvolgimento, DecisionePermesso, EventoConversazione, RispostaAParte, RispostaAlleDomande } from "./eventi.ts";
@@ -91,6 +92,8 @@ export type RiferitoDalNodo =
    * adesso per usarlo (con il suo guardiano) o lo userà dal prossimo avvio; oppure perché no.
    */
   | { tipo: "cartella-progetti-esito"; idRichiesta: string; percorso?: string; riparte?: boolean; motivo?: string }
+  /** Com'è finito un comando che il nodo ha eseguito con una credenziale data al suo ambiente. */
+  | { tipo: "esito-su-host"; idRichiesta: string; esito: EsitoSuHost }
   /** Com'è andata la scelta di far partire il nodo a ogni accesso a Windows. */
   | { tipo: "avvio-con-windows-esito"; idRichiesta: string; attivo?: boolean; motivo?: string }
   /** Il modello locale in rete chiesto dal centro risponde sulla sua porta, oppure perché no. */
@@ -141,6 +144,11 @@ export type MessaggioNodo =
       avvioConWindows?: boolean;
       /** I progetti con lavoro fatto offline da consegnare (ADR 0056): finché non arriva, il centro non vi scrive. */
       offline?: string[];
+      /**
+       * La chiave pubblica X25519 con cui il nodo riceve le credenziali del vault che il proprietario
+       * gli dà (ADR 0062), in SPKI e base64. Un nodo di prima non la dice, e non ne riceve.
+       */
+      chiaveVault?: string;
     }
   | { tipo: "battito" }
   | RiferitoDalNodo;
@@ -199,6 +207,18 @@ export type ComandoPerNodo =
    * esistono restano dove sono. Un nodo di prima non lo conosce e tace.
    */
   | { tipo: "cartella-progetti"; idRichiesta: string; percorso: string }
+  /**
+   * Le credenziali per SSH che il proprietario ha dato a questo ambiente (ADR 0062), in un sigillo
+   * che solo la chiave del nodo apre: il nodo le tiene in memoria al posto di quelle di prima.
+   */
+  | { tipo: "credenziali"; sigillo: Sigillo }
+  /** Il vault si è chiuso, o all'ambiente non è data più nessuna credenziale: il nodo le dimentica. */
+  | { tipo: "dimentica-credenziali" }
+  /**
+   * Un comando su un host che il gateway non raggiunge, con una credenziale data a questo ambiente:
+   * il gateway lo ha già controllato, il nodo lo ricontrolla e lo esegue.
+   */
+  | { tipo: "esegui-su-host"; idRichiesta: string; credenziale: string; host: string; comando: string; secondi: number }
   /**
    * Il proprietario sta scegliendo il modello di un progetto che nasce qui: i modelli dei motori con
    * un accesso in questo ambiente, e i modelli locali accesi qui. Un nodo di prima non lo conosce e tace.
@@ -331,3 +351,8 @@ export interface StatoAmbienti {
   ambienti: Ambiente[];
   richieste: RichiestaCollegamento[];
 }
+
+/** Com'è finito un comando che il nodo ha eseguito con una credenziale data al suo ambiente (ADR 0062). */
+export type EsitoSuHost =
+  | { esito: "eseguito"; codice: number | null; uscita: string; errori: string; scaduto: boolean; durataMs: number; impronta: string }
+  | { esito: "rifiutato" | "fallito"; motivo: string };

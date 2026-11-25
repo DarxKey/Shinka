@@ -47,11 +47,15 @@ import {
   type RichiestaBrowser,
   type RichiestaChiavi,
   type RichiestaUso,
+  type AmbientePerIlVault,
+  type EsitoDelega,
+  type UsoDelegato,
   type StatoDelGateway,
   type StatoVault,
   type VaultInBreve,
   type VoceRegistro,
 } from "../protocollo/vault.ts";
+import { leggiSigillo } from "../protocollo/sigillo.ts";
 import type { EsitoProposta, PropostaDiVersione } from "../protocollo/versione.ts";
 import { leggiDocker, type DockerDiUnHost } from "../protocollo/risorse.ts";
 
@@ -111,6 +115,12 @@ export interface PortaGateway {
   telegramScaricaFile(idFile: string): Promise<{ dati: Buffer } | { problema: string }>;
   /** Manda un file al proprietario su Telegram. Non lancia mai: l'esito dice com'è andata. */
   telegramInviaFile(file: FileTelegram, contenuto: Buffer): Promise<EsitoTelegram>;
+  /** Gli ambienti che hanno una chiave per ricevere le credenziali (ADR 0062): il gateway li offre al proprietario. */
+  ambientiPerIlVault?(ambienti: AmbientePerIlVault[]): Promise<void>;
+  /** Le credenziali date a un ambiente, in un sigillo per la chiave del suo nodo. Non lancia mai. */
+  delega?(idAmbiente: string, chiave: string): Promise<EsitoDelega>;
+  /** Riferisce al gateway un comando eseguito dal nodo di un ambiente, per il registro. Non lancia mai. */
+  usoDelegato?(uso: UsoDelegato): Promise<void>;
   chiudi(): void;
 }
 
@@ -339,6 +349,36 @@ export class ClienteGateway implements PortaGateway {
       };
     } finally {
       void this.stato();
+    }
+  }
+
+  async ambientiPerIlVault(ambienti: AmbientePerIlVault[]): Promise<void> {
+    try {
+      await this.#chiedi("POST", "/api/ambienti", { ambienti }, ATTESA_MS);
+    } catch {
+      // Il gateway non risponde: glieli si dice al prossimo giro.
+    }
+  }
+
+  async delega(idAmbiente: string, chiave: string): Promise<EsitoDelega> {
+    try {
+      const risposta = await this.#chiedi("POST", "/api/delega", { idAmbiente, chiave }, ATTESA_MS);
+      if (risposta.stato === 404) return { motivo: "Il gateway installato non sa ancora dare le credenziali a un ambiente: va aggiornato." };
+      const esito = risposta.dati as Partial<{ credenziali: number; sigillo: unknown; motivo: string }>;
+      if (risposta.stato !== 200) return { motivo: `Il gateway non ha dato le credenziali (risposta ${risposta.stato}).` };
+      if (typeof esito.motivo === "string") return { motivo: esito.motivo };
+      const sigillo = leggiSigillo(esito.sigillo);
+      return { credenziali: typeof esito.credenziali === "number" ? esito.credenziali : 0, ...(sigillo === undefined ? {} : { sigillo }) };
+    } catch {
+      return { motivo: "Il gateway non risponde." };
+    }
+  }
+
+  async usoDelegato(uso: UsoDelegato): Promise<void> {
+    try {
+      await this.#chiedi("POST", "/api/uso/delegato", uso, ATTESA_MS);
+    } catch {
+      // Il registro di questo comando resta senza la voce: l'esito torna comunque a chi lo ha chiesto.
     }
   }
 

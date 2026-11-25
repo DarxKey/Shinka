@@ -22,7 +22,7 @@
 
 import fastifyCookie from "@fastify/cookie";
 import fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { OPERAZIONI_STACK, type EsitoStack, type RichiestaStack } from "../protocollo/stack.ts";
@@ -60,7 +60,12 @@ import {
   type RichiestaUso,
   type DomandaDelGateway,
   type StatoDelGateway,
+  type AmbientePerIlVault,
+  type CredenzialeDelegata,
+  type EsitoDelega,
+  type UsoDelegato,
 } from "../protocollo/vault.ts";
+import { leggiChiavePubblica, sigilla } from "../protocollo/sigillo.ts";
 import { PESO_MASSIMO, type AggiornamentoDelGateway as StatoAggiornamento, type EsitoProposta } from "../protocollo/versione.ts";
 import type { DockerDiUnHost } from "../protocollo/risorse.ts";
 import type { AggiornamentoDelGateway } from "./aggiornamento.ts";
@@ -258,6 +263,55 @@ function richiestaStack(corpo: Record<string, unknown>): RichiestaStack | undefi
     default:
       return undefined;
   }
+}
+
+/** Gli ambienti che hanno una chiave per ricevere le credenziali (ADR 0062). */
+const CORPO_AMBIENTI = {
+  type: "object",
+  required: ["ambienti"],
+  additionalProperties: false,
+  properties: {
+    ambienti: {
+      type: "array",
+      maxItems: 100,
+      items: {
+        type: "object",
+        required: ["id", "nome", "chiave"],
+        additionalProperties: false,
+        properties: { id: { type: "string", minLength: 1, maxLength: 100 }, nome: { type: "string", maxLength: 200 }, chiave: { type: "string", minLength: 1, maxLength: 200 } },
+      },
+    },
+  },
+};
+
+const CORPO_DELEGA = {
+  type: "object",
+  required: ["idAmbiente", "chiave"],
+  additionalProperties: false,
+  properties: { idAmbiente: { type: "string", minLength: 1, maxLength: 100 }, chiave: { type: "string", minLength: 1, maxLength: 200 } },
+};
+
+const CORPO_USO_DELEGATO = {
+  type: "object",
+  required: ["credenziale", "host", "conversazione", "ambiente", "comando", "esito"],
+  additionalProperties: false,
+  properties: {
+    credenziale: { type: "string", maxLength: 100 },
+    host: { type: "string", maxLength: 300 },
+    conversazione: { type: "string", maxLength: 300 },
+    ambiente: { type: "string", maxLength: 200 },
+    comando: { type: "string", maxLength: 20_000 },
+    esito: { enum: ["eseguito", "rifiutato", "fallito"] },
+    codice: { type: ["integer", "null"] },
+    durataMs: { type: "integer", minimum: 0 },
+    motivo: { type: "string", maxLength: 2000 },
+    impronta: { type: "string", maxLength: 200 },
+  },
+};
+
+/** L'impronta della chiave di un nodo, in breve, perché il proprietario la possa confrontare. */
+function improntaDellaChiave(chiave: string): string {
+  return `SHA256:${createHash("sha256").update(Buffer.from(chiave, "base64")).digest("base64").replace(/=+$/, "").slice(0, 16)}`;
 }
 
 const CORPO_USO = {
@@ -512,6 +566,51 @@ export async function creaGateway(opzioni: OpzioniGateway): Promise<FastifyInsta
   app.post<{ Body: RichiestaUso }>("/api/uso", { schema: { body: CORPO_USO } }, (richiesta) =>
     operazioni.usa(richiesta.body),
   );
+
+  // ── Le credenziali date agli ambienti (ADR 0062) ─────────────────────────────
+  // Il centro dice quali ambienti hanno una chiave per riceverle: il proprietario ne sceglie dalla
+  // pagina del vault, e il gateway fissa la chiave di quel momento. Le credenziali partono solo
+  // dentro un sigillo per quella chiave: il centro le passa al nodo senza poterle leggere.
+  let ambientiNoti: AmbientePerIlVault[] = [];
+  app.post<{ Body: { ambienti: AmbientePerIlVault[] } }>("/api/ambienti", { schema: { body: CORPO_AMBIENTI } }, async (richiesta) => {
+    ambientiNoti = richiesta.body.ambienti.filter((uno) => {
+      try {
+        leggiChiavePubblica(uno.chiave);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    return { ambienti: ambientiNoti.length };
+  });
+
+  app.post<{ Body: { idAmbiente: string; chiave: string } }>("/api/delega", { schema: { body: CORPO_DELEGA } }, async (richiesta): Promise<EsitoDelega> => {
+    const { idAmbiente, chiave } = richiesta.body;
+    let credenziali: CredenzialeDelegata[];
+    try {
+      credenziali = vault.perAmbiente(idAmbiente, chiave);
+    } catch (errore) {
+      if (errore instanceof VaultChiuso) return { motivo: errore.message };
+      throw errore;
+    }
+    if (credenziali.length === 0) return { credenziali: 0 };
+    const nome = ambientiNoti.find((uno) => uno.id === idAmbiente)?.nome ?? idAmbiente;
+    try {
+      await registro.annota({
+        quando: new Date().toISOString(),
+        credenziale: credenziali.map((una) => una.nome).join(", ").slice(0, 100),
+        host: `nodo di «${nome}»`.slice(0, 200),
+        conversazione: "consegna al nodo, in memoria",
+        comando: "consegna delle credenziali date a questo ambiente",
+        esito: "eseguito",
+      });
+    } catch (errore) {
+      console.error(`Registro non scritto (consegna a ${nome}): ${errore instanceof Error ? errore.message : String(errore)}`);
+    }
+    return { credenziali: credenziali.length, sigillo: sigilla(credenziali, chiave) };
+  });
+
+  app.post<{ Body: UsoDelegato }>("/api/uso/delegato", { schema: { body: CORPO_USO_DELEGATO } }, (richiesta) => operazioni.delegato(richiesta.body));
 
   app.post<{ Body: Record<string, unknown> }>("/api/browser", { schema: { body: CORPO_BROWSER } }, async (richiesta): Promise<EsitoBrowser> => {
     const letta = richiestaBrowser(richiesta.body);
@@ -819,6 +918,23 @@ export async function creaGateway(opzioni: OpzioniGateway): Promise<FastifyInsta
     { schema: { body: CORPO_CREDENZIALE } },
     (richiesta, risposta) =>
       conLaCredenziale(risposta, () => vault.sostituisci(richiesta.params.nome, richiesta.body)),
+  );
+
+  // Gli ambienti a cui il proprietario dà una credenziale per SSH (ADR 0062), con l'impronta della chiave del loro nodo.
+  app.get("/vault/ambienti", async () => ({
+    ambienti: ambientiNoti.map(({ id, nome, chiave }) => ({ id, nome, impronta: improntaDellaChiave(chiave) })),
+  }));
+
+  app.post<{ Params: { nome: string }; Body: { ambienti: string[] } }>(
+    "/vault/credenziali/:nome/ambienti",
+    { schema: { body: { type: "object", required: ["ambienti"], additionalProperties: false, properties: { ambienti: { type: "array", maxItems: 50, items: { type: "string", minLength: 1, maxLength: 100 } } } } } },
+    (richiesta, risposta) => {
+      const scelti = ambientiNoti.filter((uno) => richiesta.body.ambienti.includes(uno.id));
+      if (scelti.length !== new Set(richiesta.body.ambienti).size) {
+        return risposta.code(400).send({ errore: "Uno degli ambienti scelti non è collegato, o il suo nodo non sa ancora ricevere le credenziali: va aggiornato." });
+      }
+      return conLaCredenziale(risposta, () => vault.impostaAmbienti(richiesta.params.nome, scelti));
+    },
   );
 
   // Una credenziale in chiaro diventa protetta: da qui Claude non ne legge più il valore. Il contrario non c'è.

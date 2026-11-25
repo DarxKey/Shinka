@@ -13,6 +13,7 @@
  * certificato è quello del sito, e vale la verifica di sempre.
  */
 
+import { leggiSigillo } from "../protocollo/sigillo.ts";
 import { leggiComandoOffline } from "../protocollo/offline.ts";
 import type { IncomingMessage } from "node:http";
 import type { TLSSocket } from "node:tls";
@@ -89,6 +90,8 @@ export interface ConfigurazioneCollegamento {
   avvioConWindows?(): boolean | undefined;
   /** I progetti con lavoro fatto offline da consegnare (ADR 0056). */
   offline?(): string[];
+  /** La chiave pubblica con cui il nodo riceve le credenziali del vault (ADR 0062). */
+  chiaveVault?: string;
   alCambio(stato: StatoCollegamento): void;
   /** Il centro chiede di fare qualcosa in questo ambiente. */
   alComando?(comando: ComandoPerNodo): void;
@@ -230,6 +233,7 @@ export class CollegamentoAlCentro {
         centro: this.#cfg.centro,
         ...(avvioConWindows === undefined ? {} : { avvioConWindows }),
         ...(offline.length === 0 ? {} : { offline }),
+        ...(this.#cfg.chiaveVault === undefined ? {} : { chiaveVault: this.#cfg.chiaveVault }),
       });
       this.#battito = setInterval(() => this.#manda({ tipo: "battito" }), INTERVALLO_BATTITO_MS);
     });
@@ -409,6 +413,21 @@ export function leggiComando(campi: Record<string, unknown>): ComandoPerNodo | u
     case "risorse": {
       const idRichiesta = testo("idRichiesta");
       return idRichiesta === undefined ? undefined : { tipo: "risorse", idRichiesta };
+    }
+    case "credenziali": {
+      const sigillo = leggiSigillo(campi.sigillo);
+      return sigillo === undefined ? undefined : { tipo: "credenziali", sigillo };
+    }
+    case "dimentica-credenziali":
+      return { tipo: "dimentica-credenziali" };
+    case "esegui-su-host": {
+      const idRichiesta = testo("idRichiesta");
+      const credenziale = testo("credenziale");
+      const host = testo("host");
+      const comando = testo("comando");
+      const secondi = typeof campi.secondi === "number" && Number.isFinite(campi.secondi) ? campi.secondi : undefined;
+      if (idRichiesta === undefined || credenziale === undefined || host === undefined || comando === undefined || secondi === undefined) return undefined;
+      return { tipo: "esegui-su-host", idRichiesta, credenziale, host, comando, secondi };
     }
     case "cartella-progetti": {
       const idRichiesta = testo("idRichiesta");

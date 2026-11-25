@@ -19,6 +19,7 @@ import {
   type EsitoAttesa,
   type EsitoUso,
   type RichiestaUso,
+  type UsoDelegato,
   type VoceRegistro,
 } from "../protocollo/vault.ts";
 import { divietoFisso } from "./divieti.ts";
@@ -61,6 +62,12 @@ interface InAttesa {
 /** Per quanto il gateway ricorda com'è finito un comando che aspettava il sì dato a lui. */
 const ESITO_TENUTO_MS = 10 * 60 * 1000;
 
+/**
+ * Per quanto il gateway ricorda di non aver raggiunto un host che un ambiente raggiunge (ADR 0062):
+ * intanto i comandi lì passano subito dal nodo, senza aspettare un altro collegamento che non arriva.
+ */
+const NON_RAGGIUNTO_MS = 30 * 60 * 1000;
+
 export class Operazioni {
   readonly #vault: Vault;
   readonly #registro: Registro;
@@ -69,8 +76,14 @@ export class Operazioni {
   readonly #domande: DomandeAlProprietario | undefined;
   /** Come finiscono i comandi che aspettano il sì dato al gateway: il centro lo viene a chiedere. */
   readonly #esiti = new Map<string, { esito: Promise<EsitoUso>; decisa: Promise<unknown>; decisione?: DecisioneApprovazione }>();
+  /** Gli host che il gateway non ha raggiunto, fino a quando lo si ricorda. */
+  readonly #nonRaggiunti = new Map<string, number>();
 
-  constructor(vault: Vault, registro: Registro, attesaMs: number = APPROVAZIONE_MS, domande?: DomandeAlProprietario) {
+  /** Come si esegue un comando sull'host: nei test se ne mette uno che non lo raggiunge. */
+  readonly #suHost: typeof eseguiSuHost;
+
+  constructor(vault: Vault, registro: Registro, attesaMs: number = APPROVAZIONE_MS, domande?: DomandeAlProprietario, suHost: typeof eseguiSuHost = eseguiSuHost) {
+    this.#suHost = suHost;
     this.#vault = vault;
     this.#registro = registro;
     this.#attesaMs = attesaMs;
@@ -121,7 +134,44 @@ export class Operazioni {
       this.#inAttesa.set(approvazione, { richiesta: { ...richiesta, credenziale: credenziale.nome }, secondi, scade, timer });
       return { esito: "da-approvare", approvazione, scadeIl: new Date(scade).toISOString() };
     }
+    // Un host che il gateway di recente non ha raggiunto, se un ambiente ha la credenziale, passa subito da lì.
+    const ambienti = this.#vault.ambientiDi(credenziale.nome);
+    if (ambienti.length > 0 && (this.#nonRaggiunti.get(this.#chiaveHost(richiesta)) ?? 0) > Date.now()) return this.#daDelegare(ambienti);
     return this.#esegui(richiesta, credenziale, secondi);
+  }
+
+  #chiaveHost(richiesta: RichiestaUso): string {
+    return `${richiesta.credenziale.trim().toLowerCase()} ${richiesta.host.trim().toLowerCase()}`;
+  }
+
+  #daDelegare(ambienti: readonly { id: string; nome: string }[]): EsitoUso {
+    return {
+      esito: "da-delegare",
+      ambienti: ambienti.map((uno) => uno.id),
+      motivo: `Il gateway non raggiunge l'host: il comando passa dal nodo di ${ambienti.map((uno) => `«${uno.nome}»`).join(" o ")}, a cui il proprietario ha dato questa credenziale.`,
+    };
+  }
+
+  /**
+   * Il centro riferisce un comando che il nodo di un ambiente ha eseguito al posto del gateway (ADR
+   * 0062): finisce nel registro come gli altri, e l'impronta dell'host si ricorda se era la prima volta.
+   * Vale solo per un ambiente a cui la credenziale è data.
+   */
+  async delegato(uso: UsoDelegato): Promise<{ annotato: boolean }> {
+    const ambiente = this.#vault.ambientiDi(uso.credenziale).find((uno) => uno.nome === uso.ambiente || uno.id === uso.ambiente);
+    if (ambiente === undefined) return { annotato: false };
+    const richiesta: RichiestaUso = { credenziale: uso.credenziale, host: uso.host, comando: uso.comando, conversazione: uso.conversazione };
+    const motivo = [`Passato dal nodo di «${ambiente.nome}».`, uso.motivo].filter((parte) => parte !== undefined && parte !== "").join(" ");
+    await this.#annota({
+      ...this.#base(richiesta),
+      comando: nascondi(uso.comando.slice(0, COMANDO_SU_HOST_MASSIMO), this.#vault.valoriDaNascondere()),
+      esito: uso.esito,
+      motivo,
+      ...(uso.codice === undefined ? {} : { codice: uso.codice }),
+      ...(uso.durataMs === undefined ? {} : { durataMs: uso.durataMs }),
+    });
+    if (uso.esito === "eseguito" && uso.impronta !== undefined) await this.#vault.annotaUso(uso.credenziale.trim().toLowerCase(), uso.host, uso.impronta);
+    return { annotato: true };
   }
 
   /**
@@ -253,7 +303,7 @@ export class Operazioni {
     const valori = daNascondere(credenziale);
     const scritto = nascondi(richiesta.comando, valori);
     try {
-      const eseguito = await eseguiSuHost(credenziale, richiesta.comando, secondi * 1000);
+      const eseguito = await this.#suHost(credenziale, richiesta.comando, secondi * 1000);
       await this.#vault.annotaUso(credenziale.nome, richiesta.host, eseguito.impronta);
       const motivo = [nota, eseguito.scaduto ? `Fermato dopo ${secondi} secondi.` : undefined].filter((parte) => parte !== undefined).join(" ");
       await this.#annota({
@@ -278,6 +328,12 @@ export class Operazioni {
         errore instanceof ErroreSsh
           ? errore.message
           : `Il comando non è stato eseguito: ${errore instanceof Error ? errore.message : String(errore)}`;
+      // Un host che il gateway non raggiunge, se un ambiente ha la credenziale, passa dal suo nodo (ADR 0062).
+      const ambienti = this.#vault.ambientiDi(credenziale.nome);
+      if (errore instanceof ErroreSsh && errore.causaSsh === "collegamento" && ambienti.length > 0) {
+        this.#nonRaggiunti.set(this.#chiaveHost(richiesta), Date.now() + NON_RAGGIUNTO_MS);
+        return this.#daDelegare(ambienti);
+      }
       // Un host che si presenta con un'altra chiave è un rifiuto del gateway; il resto è un collegamento non riuscito.
       const esito = errore instanceof ErroreSsh && errore.causaSsh === "impronta" ? "rifiutato" : "fallito";
       return this.#rifiuta(richiesta, nascondi(motivo, valori), scritto, esito);

@@ -3,6 +3,7 @@
  * quali sono collegati in questo momento e quali aspettano il suo consenso.
  */
 
+import type { AmbientePerIlVault } from "../protocollo/vault.ts";
 import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
@@ -62,6 +63,8 @@ export interface VersioneDelNodo {
   siAggiorna: boolean;
   /** Su Windows: se parte a ogni accesso; manca se il nodo non lo dice. */
   avvioConWindows?: boolean;
+  /** La chiave con cui il nodo riceve le credenziali del vault (ADR 0062); manca se il nodo non la dice. */
+  chiaveVault?: string;
 }
 
 interface NodoCollegato extends VersioneDelNodo {
@@ -96,6 +99,7 @@ function versioneDichiarata(presentazione: Presentazione): VersioneDelNodo {
     ...(presentazione.versione === undefined ? {} : { versione: presentazione.versione }),
     siAggiorna: presentazione.siAggiorna === true,
     ...(presentazione.avvioConWindows === undefined ? {} : { avvioConWindows: presentazione.avvioConWindows }),
+    ...(presentazione.chiaveVault === undefined ? {} : { chiaveVault: presentazione.chiaveVault }),
   };
 }
 
@@ -311,6 +315,14 @@ export class RegistroAmbienti {
     return this.#collegati.get(idNodo)?.offline ?? [];
   }
 
+  /** Gli ambienti collegati che hanno una chiave per ricevere le credenziali del vault (ADR 0062). */
+  perIlVault(): AmbientePerIlVault[] {
+    return [...this.#collegati].flatMap(([id, collegato]) => {
+      const registrato = this.#registrati.get(id);
+      return collegato.chiaveVault === undefined || registrato === undefined ? [] : [{ id, nome: registrato.nome, chiave: collegato.chiaveVault }];
+    });
+  }
+
   collegati(): string[] {
     return [...this.#collegati.keys()];
   }
@@ -502,6 +514,7 @@ export class RegistroAmbienti {
       ...(dichiarata.versione === undefined ? {} : { versione: dichiarata.versione }),
       siAggiorna: dichiarata.siAggiorna,
       ...(dichiarata.avvioConWindows === undefined ? {} : { avvioConWindows: dichiarata.avvioConWindows }),
+      ...(dichiarata.chiaveVault === undefined ? {} : { chiaveVault: dichiarata.chiaveVault }),
       cifrato: canale.cifrato === true,
       ...(offline === undefined ? {} : { offline: offline.filter((id) => typeof id === "string").slice(0, 1000) }),
     });

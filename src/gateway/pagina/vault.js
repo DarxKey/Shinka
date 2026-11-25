@@ -387,7 +387,61 @@ function moduloCredenziale(daSostituire, allaFine) {
   );
 }
 
-function vistaCredenziale(credenziale, ridisegna) {
+/** Vero per una credenziale che si può dare a un ambiente: per SSH, non quella del server né di un host per gli stack. */
+function siPuoDare(credenziale) {
+  return (credenziale.tipo === "password" || credenziale.tipo === "chiave") && credenziale.server !== true && credenziale.stack === undefined;
+}
+
+/**
+ * Gli ambienti a cui il proprietario dà una credenziale per SSH (ADR 0062): il loro nodo la riceve,
+ * cifrata per lui, la tiene in memoria finché il vault è aperto, e la usa per i suoi host quando il
+ * gateway non li raggiunge. Le conversazioni di quell'ambiente la potrebbero leggere con un comando.
+ */
+function sceltaAmbienti(credenziale, ambienti, ridisegna) {
+  const date = credenziale.ambienti ?? [];
+  const elenco = [...ambienti];
+  // Un ambiente a cui è data ma che adesso non è collegato resta in vista, da togliere.
+  for (const dato of date) if (!elenco.some((uno) => uno.id === dato.id)) elenco.push({ id: dato.id, nome: dato.nome, spento: true });
+  if (elenco.length === 0) return [];
+  const errore = el("span", { classe: "errore", role: "alert" });
+  const caselle = elenco.map((ambiente) => {
+    const casella = el("input", { type: "checkbox" });
+    casella.checked = date.some((dato) => dato.id === ambiente.id);
+    casella.disabled = ambiente.spento === true && !casella.checked;
+    casella.addEventListener("change", async () => {
+      const scelti = caselle.filter((voce) => voce.casella.checked).map((voce) => voce.ambiente.id);
+      for (const voce of caselle) voce.casella.disabled = true;
+      try {
+        await chiama("POST", `/vault/credenziali/${encodeURIComponent(credenziale.nome)}/ambienti`, { ambienti: scelti });
+        await ridisegna();
+      } catch (causa) {
+        errore.textContent = causa instanceof Error ? causa.message : "Non cambiato.";
+        casella.checked = !casella.checked;
+        for (const voce of caselle) voce.casella.disabled = false;
+      }
+    });
+    return { ambiente, casella };
+  });
+  return [
+    el(
+      "div",
+      { classe: "ambienti-credenziale" },
+      el("p", { classe: "tenue" }, "Data anche al nodo di questi ambienti, per gli host che il gateway non raggiunge: la tiene in memoria finché il vault è aperto, e le conversazioni di lì la potrebbero leggere."),
+      ...caselle.map(({ ambiente, casella }) =>
+        el(
+          "label",
+          { classe: "spunta" },
+          casella,
+          ` ${ambiente.nome}`,
+          el("span", { classe: "tenue" }, ambiente.spento === true ? " · non collegato" : ` · chiave ${ambiente.impronta}`),
+        ),
+      ),
+      errore,
+    ),
+  ];
+}
+
+function vistaCredenziale(credenziale, ridisegna, ambienti = []) {
   const corpo = el("div", {});
   const lettura = () => {
     const rimuovi = el("button", { type: "button", classe: "discreto piccolo" }, "Rimuovi");
@@ -467,6 +521,7 @@ function vistaCredenziale(credenziale, ridisegna) {
       ...(credenziale.inChiaro === true
         ? [el("p", { classe: "segno-in-chiaro" }, "In chiaro · Claude ne può leggere il valore")]
         : []),
+      ...(siPuoDare(credenziale) ? sceltaAmbienti(credenziale, ambienti, ridisegna) : []),
       el(
         "p",
         { classe: "tenue" },
@@ -783,6 +838,10 @@ async function vistaAperta() {
     if (causa instanceof Error && causa.stato === 404) return undefined;
     throw causa;
   });
+  // Gli ambienti che possono ricevere una credenziale: un gateway di prima non li conosce.
+  const ambienti = await chiama("GET", "/vault/ambienti")
+    .then((letti) => letti.ambienti)
+    .catch(() => []);
   const esci = el("button", { type: "button", classe: "discreto" }, "Esci");
   esci.addEventListener("click", async () => {
     await chiama("POST", "/vault/uscita").catch(() => {});
@@ -799,12 +858,12 @@ async function vistaAperta() {
     el(
       "p",
       { classe: "tenue" },
-      "Claude usa una credenziale chiedendola per nome, e solo sugli host e nei siti scritti qui: il valore non entra in una conversazione e da questa pagina non si rilegge. Su un host per gli stack di prova gestisce da sé soltanto gli stack creati da Shinka, e per ogni altro comando chiede la tua approvazione. Sul server su cui gira Shinka ogni comando aspetta un sì che dai al gateway, qui o su Telegram. Le eccezioni sono due: la chiave di un'estensione, che viene consegnata al programma di quell'estensione quando parte, negli ambienti scritti accanto; e le credenziali che segni «in chiaro», di prova o a basso rischio, di cui Claude legge il valore. «Esci» lascia il vault aperto per Claude; «Chiudi il vault» lo richiude finché non riscrivi la frase.",
+      "Claude usa una credenziale chiedendola per nome, e solo sugli host e nei siti scritti qui: il valore non entra in una conversazione e da questa pagina non si rilegge. Su un host per gli stack di prova gestisce da sé soltanto gli stack creati da Shinka, e per ogni altro comando chiede la tua approvazione. Sul server su cui gira Shinka ogni comando aspetta un sì che dai al gateway, qui o su Telegram. Le eccezioni sono tre: la chiave di un'estensione, che viene consegnata al programma di quell'estensione quando parte, negli ambienti scritti accanto; le credenziali che segni «in chiaro», di prova o a basso rischio, di cui Claude legge il valore; e le credenziali per SSH che dai a un ambiente, il cui nodo le usa dove il gateway non arriva. «Esci» lascia il vault aperto per Claude; «Chiudi il vault» lo richiude finché non riscrivi la frase.",
     ),
     el("h2", {}, dati.credenziali.length === 0 ? "Credenziali" : `Credenziali (${dati.credenziali.length})`),
     dati.credenziali.length === 0
       ? el("p", { classe: "tenue" }, "Ancora nessuna.")
-      : el("ul", { classe: "credenziali" }, dati.credenziali.map((credenziale) => vistaCredenziale(credenziale, disegna))),
+      : el("ul", { classe: "credenziali" }, dati.credenziali.map((credenziale) => vistaCredenziale(credenziale, disegna, ambienti))),
     el("h2", {}, "Nuova credenziale"),
     el("div", { classe: "scheda" }, moduloCredenziale(undefined, disegna)),
     el("h2", {}, "Copia del vault"),

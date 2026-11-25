@@ -60,6 +60,7 @@ import { preparaCartellaSkill } from "./skill.ts";
 import { sistemaDiQuestaMacchina } from "./sistema.ts";
 import { FILE_STATO_DEL_COLLEGAMENTO, scriviStatoDelCollegamento } from "./stato-del-collegamento.ts";
 import { preparaCartellaProgetti } from "./cartella-progetti.ts";
+import { chiaveDelNodo, CredenzialiDelegate } from "./credenziali-delegate.ts";
 
 interface Impostazioni {
   centro: string;
@@ -118,6 +119,9 @@ try {
   let inAggiornamento = false;
   // I processi che il nodo accende: la pagina dell'ambiente li mostra per progetto, e ne termina uno bloccato.
   const processiDiShinka = new ProcessiDiShinka();
+  // La chiave con cui il nodo riceve le credenziali del vault che il proprietario gli dà (ADR 0062).
+  const chiaveVault = await chiaveDelNodo(join(dati, "chiave-vault.json"));
+  const credenziali = new CredenzialiDelegate({ privata: chiaveVault.privata });
   // Su Windows il proprietario sceglie dalla pagina degli ambienti se il nodo parte a ogni accesso.
   const avvioConWindows = AvvioConWindows.diQuestaMacchina();
   const lavoro = new LavoroDelNodo({
@@ -129,6 +133,8 @@ try {
     // Le risorse di questa macchina: si leggono quando il proprietario guarda la pagina dell'ambiente.
     risorse: new CampionatoreRisorse({ radiceProgetti: impostazioni.progetti, etichettaDiShinka: ETICHETTA_STACK, processiDiShinka }),
     processiDiShinka,
+    // Le credenziali per SSH che il proprietario dà a questo ambiente (ADR 0062): solo in memoria.
+    credenziali,
     // La cartella dei progetti nuovi, scelta dalla pagina degli ambienti: si salva tra le scelte del nodo,
     // e con il guardiano il nodo riparte subito per usarla.
     cartellaProgetti: {
@@ -221,6 +227,7 @@ try {
     nome: impostazioni.nome,
     descrizione: impostazioni.descrizione,
     radiceProgetti: impostazioni.progetti,
+    chiaveVault: chiaveVault.pubblica,
     identita,
     segreto: custodiaDelSegreto(fileIdentita, identita),
     ...(impostazioni.improntaDelCentro === undefined ? {} : { impronta: impostazioni.improntaDelCentro }),

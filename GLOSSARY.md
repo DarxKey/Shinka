@@ -30,6 +30,10 @@ _Avoid_: macchina, PC, host
 Il servizio di Shinka attivo in un ambiente, che vi fa girare le conversazioni dei progetti e lo collega al centro.
 _Avoid_: agent, Windows Agent, Docker Agent, device
 
+**Credenziale data a un ambiente**:
+Una credenziale per SSH che il proprietario, dalla pagina del vault, dà a un ambiente: il nodo di quell'ambiente la riceve dal gateway sigillata per la sua chiave, la tiene solo in memoria finché il vault è aperto, e la usa per gli host che il gateway non raggiunge (ADR 0062).
+_Avoid_: vault del nodo, credenziale copiata, sub-vault
+
 **Credenziale in chiaro**:
 Una credenziale del vault, di prova o a basso rischio, che il proprietario ha segnato così: Claude ne legge il valore per gli host o i siti in cui vale, e ne può proporre di nuove, che entrano nel vault solo con l'approvazione del proprietario. Le altre sono protette: si usano per nome e il loro valore non esce dal gateway.
 _Avoid_: credenziale insicura, password visibile, secret in plaintext

@@ -34,7 +34,9 @@ import {
   SEGRETO_MASSIMO,
   UTENTE_MASSIMO,
   UTENTE_SITO_MASSIMO,
+  type AmbientePerIlVault,
   type CondizioneVault,
+  type CredenzialeDelegata,
   type CredenzialeInVista,
   type TipoCredenziale,
 } from "../protocollo/vault.ts";
@@ -119,6 +121,11 @@ interface Custodita {
   impronte: Record<string, string>;
   inseritaIl: string;
   usataIl?: string;
+  /**
+   * Gli ambienti a cui il proprietario l'ha data (ADR 0062), ciascuno con la chiave del suo nodo
+   * fissata quando l'ha scelto: un nodo con un'altra chiave non la riceve.
+   */
+  ambienti?: AmbientePerIlVault[];
 }
 
 interface Derivazione {
@@ -211,7 +218,16 @@ function inVista(credenziale: Custodita): CredenzialeInVista {
     ...(credenziale.server === true ? { server: true as const } : {}),
     ...(credenziale.estensione === undefined ? {} : { estensione: credenziale.estensione }),
     ...(credenziale.inChiaro === true ? { inChiaro: true as const } : {}),
+    ...(credenziale.ambienti === undefined || credenziale.ambienti.length === 0 ? {} : { ambienti: credenziale.ambienti.map(({ id, nome }) => ({ id, nome })) }),
   };
+}
+
+/**
+ * Vero se una credenziale si può dare a un ambiente (ADR 0062): solo quelle per SSH, e non quella
+ * del server di Shinka né quella di un host per gli stack, che restano sempre e solo nel gateway.
+ */
+export function siPuoDelegare(credenziale: Pick<Custodita, "tipo" | "server" | "stack" | "estensione">): boolean {
+  return (credenziale.tipo === "password" || credenziale.tipo === "chiave") && credenziale.server !== true && credenziale.stack === undefined && credenziale.estensione === undefined;
 }
 
 export class Vault {
@@ -364,9 +380,61 @@ export class Vault {
     }
     this.#unSoloRecinto(accettata);
     this.#unaSolaChiave(accettata);
+    // Gli ambienti a cui era data restano, finché la credenziale si può ancora dare.
+    const ambienti = this.#credenziali[posto]?.ambienti;
+    if (ambienti !== undefined && ambienti.length > 0 && siPuoDelegare(accettata)) accettata.ambienti = ambienti;
     this.#credenziali[posto] = accettata;
     await this.#salva();
     return inVista(accettata);
+  }
+
+  /**
+   * Il proprietario sceglie a quali ambienti dare una credenziale per SSH (ADR 0062), dalla pagina
+   * del vault: con ciascuno si fissa la chiave del suo nodo di adesso. Restituisce nulla se la
+   * credenziale non esiste; lancia `CredenzialeRifiutata` se non è di quelle che si danno.
+   */
+  async impostaAmbienti(nome: string, ambienti: readonly AmbientePerIlVault[]): Promise<CredenzialeInVista | undefined> {
+    this.#aperto();
+    const credenziale = this.#credenziali.find((c) => c.nome === nome);
+    if (credenziale === undefined) return undefined;
+    if (ambienti.length > 0 && !siPuoDelegare(credenziale)) {
+      throw new CredenzialeRifiutata(
+        "Si danno a un ambiente solo le credenziali per SSH, e non quella del server di Shinka né quella di un host per gli stack: quelle restano solo nel gateway.",
+      );
+    }
+    if (ambienti.length === 0) delete credenziale.ambienti;
+    else credenziale.ambienti = ambienti.map(({ id, nome: nomeAmbiente, chiave }) => ({ id, nome: nomeAmbiente, chiave }));
+    await this.#salva();
+    return inVista(credenziale);
+  }
+
+  /**
+   * Le credenziali date a un ambiente, per il suo nodo: solo se la chiave con cui si presenta è
+   * quella fissata dal proprietario. Il vault dev'essere aperto.
+   */
+  perAmbiente(idAmbiente: string, chiave: string): CredenzialeDelegata[] {
+    this.#aperto();
+    return this.#credenziali.flatMap((c) => {
+      if (!siPuoDelegare(c) || !(c.ambienti ?? []).some((uno) => uno.id === idAmbiente && uno.chiave === chiave)) return [];
+      return [
+        {
+          nome: c.nome,
+          tipo: c.tipo as "password" | "chiave",
+          utente: c.utente,
+          host: [...c.host],
+          segreto: c.segreto,
+          ...(c.fraseDellaChiave === undefined ? {} : { fraseDellaChiave: c.fraseDellaChiave }),
+          impronte: { ...c.impronte },
+        },
+      ];
+    });
+  }
+
+  /** Gli ambienti a cui una credenziale è data: i loro nodi la usano dove il gateway non arriva. */
+  ambientiDi(nome: string): AmbientePerIlVault[] {
+    if (this.#chiave === undefined) return [];
+    const credenziale = this.#credenziali.find((c) => c.nome === nome.trim().toLowerCase());
+    return credenziale === undefined || !siPuoDelegare(credenziale) ? [] : [...(credenziale.ambienti ?? [])];
   }
 
   /** Rende protetta una credenziale in chiaro: da qui Claude non ne legge più il valore. Il contrario non si fa. */

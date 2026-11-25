@@ -41,6 +41,7 @@ import { FINE_STORIA, leggiAnteprimaRiavvolgimento, leggiRispostaAlleDomande, ty
 import {
   PERCORSO_COLLEGAMENTO,
   TEMPO_PER_PRESENTARSI_MS,
+  type EsitoSuHost,
   type MessaggioNodo,
 } from "../protocollo/nodi.ts";
 import { IMPEGNI, leggiModelliDisponibili, MODI_PERMESSI, MOTORI, type ModificaImpostazioni, type Motore, type SceltaDelProprietario } from "../protocollo/impostazioni.ts";
@@ -2896,6 +2897,7 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
         ...(typeof campi.centro === "string" && /^https?:\/\/[A-Za-z0-9.\-[\]:]+$/.test(campi.centro) ? { centro: campi.centro } : {}),
         ...(typeof campi.avvioConWindows === "boolean" ? { avvioConWindows: campi.avvioConWindows } : {}),
         ...(Array.isArray(campi.offline) ? { offline: campi.offline.filter((id): id is string => typeof id === "string" && id.length <= 64).slice(0, 1000) } : {}),
+        ...(typeof campi.chiaveVault === "string" && /^[A-Za-z0-9+/=]{20,200}$/.test(campi.chiaveVault) ? { chiaveVault: campi.chiaveVault } : {}),
       };
     }
     case "evento": {
@@ -2967,6 +2969,11 @@ function leggiMessaggioNodo(testo: string): MessaggioNodo | undefined {
       const esito = leggiEsitoAccessi(campi.esito);
       if (idRichiesta === undefined || esito === undefined) return undefined;
       return { tipo: "accessi-esito", idRichiesta, esito };
+    }
+    case "esito-su-host": {
+      const idRichiesta = campo("idRichiesta");
+      const esito = leggiEsitoSuHost(campi.esito);
+      return idRichiesta === undefined || esito === undefined ? undefined : { tipo: "esito-su-host", idRichiesta, esito };
     }
     case "cartella-progetti-esito": {
       const idRichiesta = campo("idRichiesta");
@@ -3142,4 +3149,24 @@ export function numeroDellaChatNellIndirizzo(indirizzo: string): number | undefi
   if (valore === null) return undefined;
   const numero = Number(valore);
   return Number.isInteger(numero) ? numero : -1;
+}
+
+/** Com'è finito un comando eseguito dal nodo di un ambiente, se è detto bene (ADR 0062). */
+function leggiEsitoSuHost(valore: unknown): EsitoSuHost | undefined {
+  if (typeof valore !== "object" || valore === null) return undefined;
+  const campi = valore as Record<string, unknown>;
+  const testo = (campo: unknown, massimo: number): string => (typeof campo === "string" ? campo.slice(0, massimo) : "");
+  if (campi.esito === "eseguito") {
+    return {
+      esito: "eseguito",
+      codice: typeof campi.codice === "number" && Number.isInteger(campi.codice) ? campi.codice : null,
+      uscita: testo(campi.uscita, 40_000),
+      errori: testo(campi.errori, 40_000),
+      scaduto: campi.scaduto === true,
+      durataMs: typeof campi.durataMs === "number" && campi.durataMs >= 0 ? Math.round(campi.durataMs) : 0,
+      impronta: testo(campi.impronta, 200),
+    };
+  }
+  if (campi.esito === "rifiutato" || campi.esito === "fallito") return { esito: campi.esito, motivo: testo(campi.motivo, 2000) || "Il nodo non ha detto perché." };
+  return undefined;
 }

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { nuovaCoppiaDiChiavi } from "../prove/host-di-prova.ts";
 import { CredenzialeRifiutata, UsoRifiutato, Vault, VaultChiuso, type CredenzialeDaCustodire } from "./vault.ts";
+import { nuovaCoppia } from "../protocollo/sigillo.ts";
 
 const FRASE = "una frase di sblocco di prova";
 const VALORE = "V4lore-di-prova-che-non-deve-uscire";
@@ -272,4 +273,39 @@ test("la credenziale del server si dichiara all'inserimento, e vale per tutto ci
     vault.inserisci({ nome: "meteo", tipo: "estensione", utente: "METEO_API_KEY", host: ["Casa"], segreto: "chiave-finta-di-prova", estensione: "meteo", server: true }),
     /non può essere la credenziale del server/,
   );
+});
+
+test("una credenziale per SSH si dà a un ambiente con la chiave del suo nodo: un'altra chiave non la riceve (ADR 0062)", async (t) => {
+  const { vault, file } = await vaultNuovo(t);
+  await vault.imposta(FRASE);
+  const pc = { id: "pc", nome: "PC ATES", chiave: nuovaCoppia().pubblica };
+  await vault.inserisci({ nome: "lab", tipo: "password", utente: "mario", host: ["10.20.0.5:22"], segreto: "segreto-del-lab" });
+  await vault.inserisci({ nome: "server", tipo: "password", utente: "root", host: ["192.168.1.20:22"], segreto: "segreto-del-server", server: true });
+  await vault.inserisci({ nome: "sito", tipo: "sito", utente: "io", host: ["https://esempio.it"], segreto: "segreto-del-sito" });
+
+  assert.equal((await vault.impostaAmbienti("lab", [pc]))?.ambienti?.[0]?.nome, "PC ATES");
+  await assert.rejects(vault.impostaAmbienti("server", [pc]), CredenzialeRifiutata);
+  await assert.rejects(vault.impostaAmbienti("sito", [pc]), CredenzialeRifiutata);
+  assert.equal(await vault.impostaAmbienti("non-esiste", [pc]), undefined);
+
+  assert.deepEqual(vault.perAmbiente("pc", pc.chiave).map((una) => [una.nome, una.segreto, una.host]), [["lab", "segreto-del-lab", ["10.20.0.5:22"]]]);
+  // Un nodo che si presenta con un'altra chiave, o un altro ambiente, non la riceve.
+  assert.deepEqual(vault.perAmbiente("pc", nuovaCoppia().pubblica), []);
+  assert.deepEqual(vault.perAmbiente("altro", pc.chiave), []);
+  assert.deepEqual(vault.ambientiDi("LAB").map((uno) => uno.id), ["pc"]);
+  assert.deepEqual(vault.ambientiDi("server"), []);
+  // Nella vista l'ambiente c'è, la chiave no.
+  assert.equal(JSON.stringify(vault.elenco()).includes(pc.chiave), false);
+
+  // Sostituita, la credenziale resta data a quell'ambiente; riaperto il vault, la scelta c'è ancora.
+  await vault.sostituisci("lab", { nome: "lab", tipo: "password", utente: "mario", host: ["10.20.0.5:22"], segreto: "segreto-nuovo" });
+  vault.chiudi();
+  assert.throws(() => vault.perAmbiente("pc", pc.chiave), VaultChiuso);
+  assert.deepEqual(vault.ambientiDi("lab"), []);
+  const riaperto = await Vault.apri(file, 2 ** 10);
+  assert.equal(await riaperto.sblocca(FRASE), true);
+  assert.equal(riaperto.perAmbiente("pc", pc.chiave)[0]?.segreto, "segreto-nuovo");
+  // Tolta all'ambiente, non la riceve più.
+  await riaperto.impostaAmbienti("lab", []);
+  assert.deepEqual(riaperto.perAmbiente("pc", pc.chiave), []);
 });
