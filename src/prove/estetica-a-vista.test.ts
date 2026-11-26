@@ -7,7 +7,7 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -48,7 +48,27 @@ test("la chat si legge come in Claude: codice, formule, diagrammi, viste, tema e
   assert.equal(await blocco.locator(".linguaggio").textContent(), "ts");
   assert.equal(await blocco.getByRole("button", { name: "Copia il codice" }).count(), 1);
   // Il diagramma e le formule sono disegnati; sotto la risposta c'è Copia.
-  await pagina.locator(".blocco-codice.diagramma .disegno svg").waitFor();
+  await pagina.locator("figure.diagramma .disegno svg").first().waitFor();
+  assert.equal(await pagina.locator("figure.diagramma").count(), 2);
+  // Il riquadro di cifre: il titolo, le righe, il verde e il rosso, la nota sotto (ADR 0066).
+  const riquadro = pagina.locator("figure.riquadro-cifre");
+  assert.equal(await riquadro.locator(".titolo-riquadro").textContent(), "Bilancio complessivo del viaggio");
+  assert.equal(await riquadro.locator(".riga-riquadro").count(), 3);
+  assert.equal(await riquadro.locator(".valore-riquadro.meno").count(), 2);
+  assert.equal(await riquadro.locator(".valore-riquadro.piu").textContent(), "+716,90 €");
+  assert.equal(await riquadro.locator(".nota-riquadro").textContent(), "ha pagato di meno");
+  await riquadro.getByText("Arrotondato solo alla fine dei calcoli.").waitFor();
+  const cartellaImmagini = process.env.SHINKA_PROVA_IMMAGINI;
+  if (cartellaImmagini !== undefined) {
+    mkdirSync(cartellaImmagini, { recursive: true });
+    for (const schema of ["light", "dark"] as const) {
+      await pagina.emulateMedia({ colorScheme: schema });
+      await pagina.waitForTimeout(400);
+      await riquadro.scrollIntoViewIfNeeded();
+      await pagina.locator(".riga.claude").first().screenshot({ path: join(cartellaImmagini, `disegni-${schema}.png`) });
+    }
+    await pagina.emulateMedia({ colorScheme: "light" });
+  }
   await pagina.locator(".riga.claude .katex").first().waitFor();
   assert.equal(await pagina.getByRole("button", { name: "Copia la risposta" }).count(), 1);
   // Le cose da fare in una scheda, e nessuna azione per la lista.

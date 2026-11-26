@@ -6,6 +6,7 @@ import type { EventoConversazione } from "../protocollo/eventi.ts";
 import type { ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
 import { FILE_STATO_DELLO_SVILUPPO, FILE_STATO_PROGETTO, STATO_PROGETTO_MASSIMO } from "../protocollo/progetti.ts";
 import { GRUPPO_SKILL } from "../protocollo/skill.ts";
+import { ISTRUZIONI_DISEGNI } from "../protocollo/disegni.ts";
 import {
   GRUPPO_STRUMENTI,
   nomePerHarness,
@@ -251,6 +252,8 @@ export function configurazioneDiProgetto(
       // Lo stato del progetto lo tiene chi guida; chi svolge un incarico gli riporta.
       ...(incarico ? [ISTRUZIONI_DI_CHI_IMPLEMENTA] : [istruzioniDelloStato(nomeDelloStato)]),
       ...(diShinka ? [ISTRUZIONI_SVILUPPO_DI_SHINKA] : []),
+      // Chi parla con il proprietario può mostrargli un disegno; chi svolge un incarico riporta a chi guida.
+      ...(incarico ? [] : [ISTRUZIONI_DISEGNI]),
       ...(servizi.chiama === undefined
         ? []
         : incarico

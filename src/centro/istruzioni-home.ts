@@ -2,6 +2,7 @@
 
 import type { ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
 import { GRUPPO_SKILL } from "../protocollo/skill.ts";
+import { ISTRUZIONI_DISEGNI } from "../protocollo/disegni.ts";
 import { STRUMENTI_COMUNI_SENZA_RICHIESTA, STRUMENTI_SOLO_DEI_PROGETTI } from "../protocollo/strumenti.ts";
 import { GRUPPO_STRUMENTI_HOME } from "./strumenti-home.ts";
 
@@ -211,7 +212,7 @@ La conversazione con il proprietario è divisa in argomenti: uno solo è aperto,
 - Da Telegram un file si apre sul telefono: quando ti chiede qualcosa da leggere lì, come un itinerario o un documento, preparalo nel formato che gli serve (un PDF, se lo chiede) e mostralo con \`mostra_elaborato\`. Su Telegram una pagina HTML con una mappa si apre vuota: lì le mappe vanno sempre come immagine, con \`disegna_mappa\`, insieme al link a Google Maps.
 - Se ti chiede un file su Telegram mentre ti scrive dall'interfaccia, mandaglielo con \`invia_file_telegram\`.
 - Da Telegram il proprietario può mandarti documenti, foto, video e audio: ti arrivano come un suo messaggio che comincia con 📎, con il nome con cui sono stati salvati nella cartella di questo argomento. Leggili da lì con i tuoi strumenti, e lavoraci come ti chiede.
-- A un messaggio arrivato da Telegram rispondi quindi per intero nel testo finale: breve, leggibile su uno schermo piccolo, senza tabelle. Se il risultato è lungo dai l'essenziale, e di' che il resto è nell'interfaccia.
+- A un messaggio arrivato da Telegram rispondi quindi per intero nel testo finale: breve, leggibile su uno schermo piccolo, senza tabelle, riquadri né diagrammi, che lì non si vedono. Se il risultato è lungo dai l'essenziale, e di' che il resto è nell'interfaccia.
 - La proposta di un progetto e la scelta di dove lavorare su Telegram non arrivano: fai la domanda a parole, oppure di' che la scheda lo aspetta nell'interfaccia. Le domande di \`AskUserQuestion\` invece gli arrivano come messaggio, con le risposte numerate, e lui risponde scrivendo. I permessi, le approvazioni, le proposte di sviluppo di Shinka e quelle di un'estensione invece gli arrivano lì, con un pulsante.
 - Il lavoro dentro i progetti resta nell'interfaccia: da Telegram puoi dire come stanno i progetti. Quando un progetto finisce un lavoro o aspetta una risposta, Shinka lo avvisa da sé.
 
@@ -230,6 +231,7 @@ export function istruzioniHome(ora: Date = new Date(), opzioni: { sviluppo?: boo
   const quando = new Intl.DateTimeFormat("it-IT", { dateStyle: "full", timeStyle: "short" }).format(ora);
   const fuso = Intl.DateTimeFormat().resolvedOptions().timeZone;
   // Lo sviluppo di Shinka sta prima delle regole che valgono sempre, che chiudono le istruzioni.
-  const istruzioni = opzioni.sviluppo === true ? ISTRUZIONI.replace("\n\n## Sempre\n", `\n\n${ISTRUZIONI_SVILUPPO}\n\n## Sempre\n`) : ISTRUZIONI;
+  const conIDisegni = ISTRUZIONI.replace("\n\n## Sempre\n", `\n\n${ISTRUZIONI_DISEGNI.replace(/^# /, "## ")}\n\n## Sempre\n`);
+  const istruzioni = opzioni.sviluppo === true ? conIDisegni.replace("\n\n## Sempre\n", `\n\n${ISTRUZIONI_SVILUPPO}\n\n## Sempre\n`) : conIDisegni;
   return `${istruzioni}\n- All'avvio di questa seduta era ${quando} (fuso ${fuso}). Per l'ora esatta usa il comando \`date\`.`;
 }

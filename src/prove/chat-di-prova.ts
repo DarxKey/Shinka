@@ -40,6 +40,20 @@ flowchart LR
   C -->|no| E[Risposta]
 \`\`\`
 
+\`\`\`riquadro
+# Bilancio complessivo del viaggio
+Tu | −35,17 €
+Bruno | −681,73 € | ha pagato di meno
+Alice | +716,90 €
+> Arrotondato solo alla fine dei calcoli.
+\`\`\`
+
+\`\`\`mermaid
+flowchart LR
+  Tu -- "35,17 €" --> Alice
+  Bruno -- "681,73 €" --> Alice
+\`\`\`
+
 Fonti: [Node.js: fs/promises](https://nodejs.org/api/fs.html), [GNU coreutils: wc](https://www.gnu.org/software/coreutils/wc)
 `;
 
@@ -57,19 +71,19 @@ export function chatDiProva(banco: Pick<Banco, "home">): void {
   home.emetti({ tipo: "turno-concluso", riuscito: true, durataMs: 8000 });
   home.emetti({ tipo: "messaggio-proprietario", id: "m2", testo: "Perfetto. Ora sistema il progetto del blog." });
   home.emetti({ tipo: "turno-iniziato" });
-  home.emetti({
-    tipo: "azione-iniziata",
-    idAzione: "p1",
-    strumento: "TodoWrite",
-    ingresso: {
-      todos: [
-        { content: "Leggere il codice del blog", status: "completed", activeForm: "Leggo il codice del blog" },
-        { content: "Correggere le date", status: "in_progress", activeForm: "Correggo le date" },
-        { content: "Aggiungere le prove", status: "pending", activeForm: "Aggiungo le prove" },
-      ],
-    },
-  });
-  home.emetti({ tipo: "azione-conclusa", idAzione: "p1", esito: "Todos have been modified successfully.", errore: false });
+  // La lista delle cose da fare, con gli strumenti di Claude Code 2.1: un compito per volta.
+  for (const [indice, [testo, inCorso]] of [
+    ["Leggere il codice del blog", "Leggo il codice del blog"],
+    ["Correggere le date", "Correggo le date"],
+    ["Aggiungere le prove", "Aggiungo le prove"],
+  ].entries()) {
+    home.emetti({ tipo: "azione-iniziata", idAzione: `p${indice}`, strumento: "TaskCreate", ingresso: { subject: testo, description: testo, activeForm: inCorso } });
+    home.emetti({ tipo: "azione-conclusa", idAzione: `p${indice}`, esito: `Task #${indice + 1} created successfully: ${testo}`, errore: false });
+  }
+  home.emetti({ tipo: "azione-iniziata", idAzione: "u1", strumento: "TaskUpdate", ingresso: { taskId: "1", status: "completed" } });
+  home.emetti({ tipo: "azione-conclusa", idAzione: "u1", esito: "Updated task #1 status", errore: false });
+  home.emetti({ tipo: "azione-iniziata", idAzione: "u2", strumento: "TaskUpdate", ingresso: { taskId: "2", status: "in_progress" } });
+  home.emetti({ tipo: "azione-conclusa", idAzione: "u2", esito: "Updated task #2 status", errore: false });
   home.emetti({ tipo: "azione-iniziata", idAzione: "a3", strumento: "Edit", ingresso: { file_path: "/progetti/blog/src/date.ts", old_string: "a", new_string: "b" } });
   home.emetti({ tipo: "permesso-richiesto", idPermesso: "a3", idAzione: "a3", strumento: "Edit", ingresso: { file_path: "/progetti/blog/src/date.ts", old_string: "a", new_string: "b" } });
 }

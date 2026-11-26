@@ -760,20 +760,31 @@ pre {
   font-size: 0.86em;
 }
 
+/* Le tabelle come riquadri, con gli angoli arrotondati (ADR 0066). */
 .riga.claude table {
   display: block;
+  width: fit-content;
+  max-width: 100%;
   overflow-x: auto;
   margin: 0 0 1em;
-  border-collapse: collapse;
+  border: 1px solid var(--bordo);
+  border-radius: 14px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--superficie);
   font-family: var(--font-ui);
   font-size: 0.9rem;
 }
 
 .riga.claude th,
 .riga.claude td {
-  padding: 6px var(--s-3);
+  padding: 9px var(--s-4);
   border-bottom: 1px solid var(--bordo);
   text-align: left;
+}
+
+.riga.claude tr:last-child td {
+  border-bottom: none;
 }
 
 .riga.claude th {
@@ -4058,16 +4069,108 @@ button.copia:hover,
   color: var(--testo);
 }
 
-.blocco-codice.diagramma .disegno {
-  overflow-x: auto;
-  padding: var(--s-3);
+/* I disegni nelle risposte (ADR 0066): diagrammi e riquadri di cifre come riquadri arrotondati. */
+figure.diagramma,
+figure.riquadro-cifre {
+  position: relative;
+  margin: 0 0 1em;
+  font-family: var(--font-ui);
+}
+
+figure.diagramma .disegno,
+.corpo-riquadro {
+  position: relative;
+  border: 1px solid var(--bordo);
+  border-radius: 18px;
   background: var(--superficie);
+}
+
+figure.diagramma .disegno {
+  overflow-x: auto;
+  padding: var(--s-5) var(--s-4);
   text-align: center;
 }
 
-.blocco-codice.diagramma svg {
+figure.diagramma svg {
   max-width: 100%;
   height: auto;
+}
+
+/* Il pulsante Copia si vede passandoci sopra, e sempre al telefono, dove non si passa sopra. */
+.copia-riquadro {
+  position: absolute;
+  top: var(--s-2);
+  right: var(--s-2);
+  opacity: 0;
+  transition: opacity var(--durata);
+}
+
+figure.diagramma:hover .copia-riquadro,
+figure.diagramma:focus-within .copia-riquadro {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .copia-riquadro {
+    opacity: 0.7;
+  }
+}
+
+.titolo-riquadro {
+  margin: 0 0 var(--s-2);
+  font-size: 1.15rem;
+  font-weight: 650;
+  color: var(--testo);
+}
+
+.corpo-riquadro {
+  padding: 0 var(--s-5);
+}
+
+.riga-riquadro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-4) 0;
+  border-bottom: 1px solid var(--bordo);
+  font-size: 1.15rem;
+}
+
+.riga-riquadro:last-of-type {
+  border-bottom: none;
+}
+
+.voce-riquadro {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nota-riquadro {
+  font-size: var(--t-ui);
+  color: var(--tenue);
+}
+
+.valore-riquadro {
+  flex: none;
+  font-size: 1.3rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.valore-riquadro.piu {
+  color: var(--bene);
+}
+
+.valore-riquadro.meno {
+  color: var(--male);
+}
+
+.spiegazione-riquadro {
+  margin: var(--s-2) 0 0;
+  font-size: var(--t-ui);
 }
 
 .errore-diagramma {

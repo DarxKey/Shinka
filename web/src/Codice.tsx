@@ -1,6 +1,7 @@
 /**
  * Ciò che nelle risposte di Claude non è solo testo: i blocchi di codice, con il colore della
- * sintassi, il nome del linguaggio e il pulsante Copia, e i diagrammi Mermaid. Le librerie che
+ * sintassi, il nome del linguaggio e il pulsante Copia, i diagrammi Mermaid e i riquadri di cifre,
+ * disegnati come riquadri (ADR 0066). Le librerie che
  * servono si caricano la prima volta che servono: aprire una chat senza codice non le scarica.
  */
 
@@ -12,6 +13,7 @@ import { useBaseDellaChat, useSolaLettura } from "./ContestoChat.ts";
 import { apriSchedaDelPannello } from "./apri-pannello.ts";
 import { useQuadroCorrente } from "./Quadro.tsx";
 import { progettoDellaConversazione } from "../../src/protocollo/incarichi.ts";
+import { leggiRiquadro, LINGUAGGIO_RIQUADRO } from "../../src/protocollo/disegni.ts";
 
 /** L'icona del pulsante Copia: due fogli; dopo, un segno di spunta o una croce. */
 function IconaCopia({ fatto }: { fatto: "copiato" | "non-riuscito" | undefined }): ReactNode {
@@ -111,6 +113,7 @@ export function BloccoCodice({ codice, linguaggio }: { codice: string; linguaggi
     };
   }, [codice, linguaggio]);
   if (linguaggio === "mermaid") return <Diagramma codice={codice} />;
+  if (linguaggio === LINGUAGGIO_RIQUADRO) return <RiquadroDiCifre codice={codice} />;
   return (
     <div className="blocco-codice">
       <div className="testa-codice">
@@ -125,19 +128,115 @@ export function BloccoCodice({ codice, linguaggio }: { codice: string; linguaggi
   );
 }
 
+/** Un riquadro di cifre: un titolo, una riga per voce con la cifra a destra, verde se entra e rossa se esce. */
+function RiquadroDiCifre({ codice }: { codice: string }): ReactNode {
+  const riquadro = leggiRiquadro(codice);
+  return (
+    <figure className="riquadro-cifre">
+      {riquadro.titolo !== undefined && <figcaption className="titolo-riquadro">{riquadro.titolo}</figcaption>}
+      <div className="corpo-riquadro">
+        {riquadro.righe.map((riga, indice) => (
+          <div key={indice} className="riga-riquadro">
+            <div className="voce-riquadro">
+              <span>{riga.voce}</span>
+              {riga.nota !== undefined && <span className="nota-riquadro">{riga.nota}</span>}
+            </div>
+            {riga.valore !== undefined && <span className={riga.segno === undefined ? "valore-riquadro" : `valore-riquadro ${riga.segno}`}>{riga.valore}</span>}
+          </div>
+        ))}
+      </div>
+      {riquadro.note.map((nota, indice) => (
+        <p key={indice} className="tenue spiegazione-riquadro">
+          {nota}
+        </p>
+      ))}
+    </figure>
+  );
+}
+
+/** Un colore del tema di Shinka, letto dalle sue variabili: Mermaid vuole colori veri. */
+function coloreDelTema(nome: string, riserva: string): string {
+  const letto = getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+  return letto === "" ? riserva : letto;
+}
+
+/** L'aspetto dei diagrammi: i colori di Shinka, frecce curve, riquadri arrotondati come nelle risposte di ChatGPT. */
+function temaDeiDiagrammi(scuro: boolean): Record<string, unknown> {
+  const superficie = coloreDelTema("--superficie", scuro ? "#202023" : "#ffffff");
+  const testo = coloreDelTema("--testo", scuro ? "#ececea" : "#1c1c1e");
+  const tenue = coloreDelTema("--tenue", scuro ? "#a3a29e" : "#6b6a68");
+  const bordo = coloreDelTema("--bordo", scuro ? "#323236" : "#e2e1dd");
+  const codice = coloreDelTema("--codice", scuro ? "#29292d" : "#f2f1ee");
+  const accento = coloreDelTema("--grafico", scuro ? "#6590f5" : "#2f5fd0");
+  const bene = coloreDelTema("--bene", scuro ? "#5ecb93" : "#1f7a4d");
+  const male = coloreDelTema("--male", scuro ? "#ff8a80" : "#b3261e");
+  const attesa = coloreDelTema("--attesa", scuro ? "#f0b35a" : "#a85f00");
+  const tavolozza = [accento, bene, attesa, male, tenue, "#9b7bd8", "#3fb3c8", "#d97eb0"];
+  return {
+    theme: "base",
+    // L'aspetto classico: senza le ombre dell'aspetto nuovo di Mermaid 12, e con le frecce curve.
+    look: "classic",
+    // La disposizione di prima (dagre): con quella nuova di Mermaid 12 le frecce vanno a gomito e la curva non vale.
+    layout: "dagre",
+    darkMode: scuro,
+    themeCSS: `.node rect, .node .label-container { rx: 12px; ry: 12px; } .edgeLabel, .edgeLabel p { background-color: ${superficie}; color: ${testo}; } .edgeLabel rect { fill: ${superficie}; }`,
+    themeVariables: {
+      darkMode: scuro,
+      background: superficie,
+      fontFamily: "inherit",
+      fontSize: "15px",
+      primaryColor: codice,
+      primaryBorderColor: bordo,
+      primaryTextColor: testo,
+      secondaryColor: codice,
+      tertiaryColor: superficie,
+      lineColor: bene,
+      textColor: testo,
+      edgeLabelBackground: superficie,
+      clusterBkg: superficie,
+      clusterBorder: bordo,
+      noteBkgColor: codice,
+      noteTextColor: testo,
+      noteBorderColor: bordo,
+      actorBkg: codice,
+      actorBorder: bordo,
+      actorTextColor: testo,
+      signalColor: tenue,
+      signalTextColor: testo,
+      ...Object.fromEntries(tavolozza.map((colore, indice) => [`pie${indice + 1}`, colore])),
+      pieStrokeColor: superficie,
+      pieOuterStrokeColor: bordo,
+      pieTitleTextColor: testo,
+      pieSectionTextColor: scuro ? "#0d1220" : "#ffffff",
+      pieLegendTextColor: testo,
+      xyChart: { backgroundColor: "transparent", titleColor: testo, xAxisLabelColor: tenue, yAxisLabelColor: tenue, xAxisLineColor: bordo, yAxisLineColor: bordo, xAxisTickColor: bordo, yAxisTickColor: bordo, plotColorPalette: tavolozza.join(",") },
+    },
+    flowchart: { curve: "basis", padding: 14, nodeSpacing: 40, rankSpacing: 70 },
+  };
+}
+
 /** Un diagramma Mermaid, disegnato dalla sua libreria; se non si disegna, resta il codice con il perché. */
 function Diagramma({ codice }: { codice: string }): ReactNode {
   const id = `mermaid-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const { tema } = useAspetto();
   const [svg, setSvg] = useState<string>();
   const [errore, setErrore] = useState<string>();
+  // Con il tema automatico il diagramma si ridisegna quando il sistema passa dal chiaro allo scuro.
+  const [sistemaScuro, setSistemaScuro] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches === true);
+  useEffect(() => {
+    const domanda = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (domanda === undefined) return;
+    const cambia = (): void => setSistemaScuro(domanda.matches);
+    domanda.addEventListener("change", cambia);
+    return () => domanda.removeEventListener("change", cambia);
+  }, []);
+  const scuro = tema === "scuro" || (tema === "automatico" && sistemaScuro);
   useEffect(() => {
     let valido = true;
-    const scuro = tema === "scuro" || (tema === "automatico" && window.matchMedia?.("(prefers-color-scheme: dark)").matches === true);
     void import("mermaid")
       .then(async ({ default: mermaid }) => {
         // "strict": niente script né collegamenti attivi nel disegno.
-        mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: scuro ? "dark" : "neutral", fontFamily: "inherit" });
+        mermaid.initialize({ startOnLoad: false, securityLevel: "strict", ...temaDeiDiagrammi(scuro) });
         const { svg: disegnato } = await mermaid.render(id, codice);
         if (valido) setSvg(disegnato);
       })
@@ -147,16 +246,15 @@ function Diagramma({ codice }: { codice: string }): ReactNode {
     return () => {
       valido = false;
     };
-  }, [codice, id, tema]);
+  }, [codice, id, scuro]);
   if (svg !== undefined) {
     return (
-      <div className="blocco-codice diagramma">
-        <div className="testa-codice">
-          <span className="linguaggio">diagramma</span>
-          <PulsanteCopia testo={codice} etichetta="Copia il codice del diagramma" />
-        </div>
+      <figure className="diagramma">
         <div className="disegno" dangerouslySetInnerHTML={{ __html: svg }} />
-      </div>
+        <span className="copia-riquadro">
+          <PulsanteCopia testo={codice} etichetta="Copia il codice del diagramma" />
+        </span>
+      </figure>
     );
   }
   return (

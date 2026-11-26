@@ -22,6 +22,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ambientePerHarness, ambientePerModelloLocale, fonteConfigurata, verificaFonte, type ServerDelModelloLocale } from "../harness/autenticazione.ts";
 import { estensioneDelModello } from "../protocollo/estensioni.ts";
+import { STRUMENTI_DELLA_LISTA } from "../protocollo/cose-da-fare.ts";
 import type { FonteModelliLocali, PresaDelModello } from "./modelli-locali.ts";
 import type {
   DecisionePermesso,
@@ -1005,7 +1006,7 @@ export interface PrimaDegliStrumenti {
 }
 
 /** Gli strumenti dell'harness che non cambiano nessun file: per loro la fotografia dei file non serve. */
-const STRUMENTI_CHE_LEGGONO = new Set(["Read", "Grep", "Glob", "WebSearch", "WebFetch", "TodoWrite", "ToolSearch", "AskUserQuestion"]);
+const STRUMENTI_CHE_LEGGONO = new Set(["Read", "Grep", "Glob", "WebSearch", "WebFetch", "TodoWrite", "ToolSearch", "AskUserQuestion", ...STRUMENTI_DELLA_LISTA]);
 
 /**
  * Il controllo che precede ogni strumento, per il pannello Modifiche: prima del primo che può
@@ -1054,7 +1055,9 @@ export function opzioniHarness(
   return {
     cwd: cfg.cartella,
     // Con questa l'harness dice quando lavora e quando ha finito ("running", "idle"): è la fine vera di un turno.
-    env: { ...(locale === undefined ? ambientePerHarness(fonte) : ambientePerModelloLocale(locale)), CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" },
+    // La lista delle cose da fare di Claude: dalle versioni 2.1 sono gli strumenti Task*, che senza
+    // questa variabile Claude Code non dà, e la scheda delle cose da fare non compariva mai.
+    env: { ...(locale === undefined ? ambientePerHarness(fonte) : ambientePerModelloLocale(locale)), CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1", CLAUDE_CODE_ENABLE_TODO_TOOLS: "1" },
     systemPrompt:
       cfg.istruzioni === "claude-code"
         ? {
@@ -1072,7 +1075,8 @@ export function opzioniHarness(
             snapshot: false,
           },
     tools: cfg.strumenti === "claude-code" ? { type: "preset", preset: "claude_code" } : cfg.strumenti,
-    allowedTools: cfg.strumentiSenzaRichiesta,
+    // La lista delle cose da fare tocca solo sé stessa: non chiede il consenso.
+    allowedTools: [...cfg.strumentiSenzaRichiesta, ...STRUMENTI_DELLA_LISTA],
     canUseTool: chiediPermesso,
     includePartialMessages: true,
     // Prima di ogni modifica l'harness tiene una copia dei file: così si possono riportare a com'erano.

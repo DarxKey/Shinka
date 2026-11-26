@@ -71,7 +71,7 @@ test("barra laterale: Cerca in cima, le pagine nel menu dell'icona, Copia con l'
   await voci.getByRole("link", { name: "Memoria" }).waitFor();
   assert.deepEqual(
     await voci.locator(".voce .nome").allTextContents(),
-    ["Ambienti", "Programmati", "Uso", "Archiviazione", "Elaborati", "Memoria", "Skill", "Estensioni", "Vault", "Impostazioni", "Presentazione"],
+    ["Ambienti", "Programmati", "Uso", "Archiviazione", "Elaborati", "Memoria", "Skill", "Estensioni", "Vault", "Impostazioni", "Sicurezza", "Presentazione"],
   );
   const menuSopra = await voci.boundingBox();
   const iconaDove = await icona.boundingBox();

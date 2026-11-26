@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { STRUMENTI_DELLA_LISTA } from "../protocollo/cose-da-fare.ts";
+import { ISTRUZIONI_DISEGNI } from "../protocollo/disegni.ts";
 import { test } from "node:test";
 import type { ImpostazioniConversazione } from "../protocollo/impostazioni.ts";
 import {
@@ -77,7 +79,7 @@ test("con il modo che chiede, ogni permesso passa dal proprietario", () => {
   const opzioni = opzioniHarness(dellaHome(), "abbonamento", undefined, DELLA_HOME, nessunPermesso);
   assert.equal(opzioni.permissionMode, "default");
   assert.equal(opzioni.canUseTool, nessunPermesso);
-  assert.deepEqual(opzioni.allowedTools, ["WebSearch"]);
+  assert.deepEqual(opzioni.allowedTools, ["WebSearch", ...STRUMENTI_DELLA_LISTA]);
   assert.deepEqual(opzioni.tools, ["Read", "Bash"]);
   assert.equal(opzioni.model, "haiku");
   assert.equal("effort" in opzioni, false);
@@ -101,7 +103,7 @@ test("un progetto lavora con Claude Code completo, nella sua cartella", () => {
   );
   assert.equal(opzioni.cwd, "/home/node/progetti/videogioco");
   // Alle istruzioni di Claude Code si aggiunge solo il compito di tenere lo stato del progetto.
-  assert.deepEqual(opzioni.systemPrompt, { type: "preset", preset: "claude_code", append: ISTRUZIONI_DI_PROGETTO, snapshot: false });
+  assert.deepEqual(opzioni.systemPrompt, { type: "preset", preset: "claude_code", append: `${ISTRUZIONI_DI_PROGETTO}\n\n${ISTRUZIONI_DISEGNI}`, snapshot: false });
   assert.match(ISTRUZIONI_DI_PROGETTO, /STATO\.md/);
   assert.match(ISTRUZIONI_DI_PROGETTO, /mai password, chiavi o altri segreti/);
   assert.deepEqual(opzioni.tools, { type: "preset", preset: "claude_code" });
@@ -117,7 +119,8 @@ test("un progetto lavora con Claude Code completo, nella sua cartella", () => {
 test("un progetto nasce con le modifiche ai file libere e il permesso richiesto per il resto", () => {
   const opzioni = opzioniHarness(delProgetto(), "abbonamento", undefined, IMPOSTAZIONI_DI_PROGETTO, nessunPermesso);
   assert.equal(opzioni.permissionMode, "acceptEdits");
-  assert.deepEqual(opzioni.allowedTools, []);
+  // Solo la lista delle cose da fare, che tocca solo sé stessa.
+  assert.deepEqual(opzioni.allowedTools, STRUMENTI_DELLA_LISTA);
   assert.equal(opzioni.canUseTool, nessunPermesso);
   // Le domande di Claude hanno la loro scheda: nessuno strumento è tolto.
   assert.equal(opzioni.disallowedTools, undefined);
@@ -213,7 +216,7 @@ test("il browser del PC: in «Chiedi sempre» e «Modifiche libere» ogni azione
     assert.equal(chieste.length, 2, permessi);
 
     // Gli strumenti del browser non sono tra quelli che non chiedono consenso.
-    assert.deepEqual(opzioni.allowedTools, [], permessi);
+    assert.deepEqual(opzioni.allowedTools, STRUMENTI_DELLA_LISTA, permessi);
 
     // Senza un modo di chiedere, nel browser del PC non parte nulla.
     const senzaChiedere = opzioniHarness(conIlBrowser(), "abbonamento", undefined, { permessi, browserChrome: true }, nessunPermesso);
@@ -224,7 +227,7 @@ test("il browser del PC: in «Chiedi sempre» e «Modifiche libere» ogni azione
   assert.deepEqual(opzioni.systemPrompt, {
     type: "preset",
     preset: "claude_code",
-    append: ISTRUZIONI_DI_PROGETTO + "\n\n" + ISTRUZIONI_BROWSER_DEL_PC,
+    append: ISTRUZIONI_DI_PROGETTO + "\n\n" + ISTRUZIONI_DISEGNI + "\n\n" + ISTRUZIONI_BROWSER_DEL_PC,
     snapshot: false,
   });
   assert.match(ISTRUZIONI_BROWSER_DEL_PC, /non scrivere mai nomi utente, password o codici/);

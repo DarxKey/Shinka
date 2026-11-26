@@ -536,6 +536,39 @@ test("le cose da fare stanno in una scheda per turno, aggiornata sul posto, con 
   assert.equal(stato.elementi.filter((e) => e.tipo === "cose-da-fare").length, 2);
 });
 
+test("la lista di oggi (TaskCreate, TaskUpdate) sta nella stessa scheda, un compito per volta", () => {
+  const voci = (stato: StatoChat) => (stato.elementi.find((e) => e.tipo === "cose-da-fare" && e.chiave === stato.coseDaFare) as { voci: { testo: string; stato: string }[] } | undefined)?.voci.map((v) => `${v.testo}:${v.stato}`);
+  let stato = applica(statoIniziale, { tipo: "turno-iniziato" });
+  stato = applica(stato, { tipo: "azione-iniziata", idAzione: "c1", strumento: "TaskCreate", ingresso: { subject: "Leggo il codice", description: "…", activeForm: "Leggo il codice" } });
+  stato = applica(stato, { tipo: "azione-conclusa", idAzione: "c1", esito: "Task #1 created successfully: Leggo il codice", errore: false });
+  stato = applica(stato, { tipo: "azione-iniziata", idAzione: "c2", strumento: "TaskCreate", ingresso: { subject: "Scrivo la prova", description: "…" } });
+  stato = applica(stato, { tipo: "azione-conclusa", idAzione: "c2", esito: "Task #2 created successfully: Scrivo la prova", errore: false });
+  stato = applica(stato, { tipo: "azione-iniziata", idAzione: "c3", strumento: "TaskCreate", ingresso: { subject: "Non creato", description: "…" } });
+  stato = applica(stato, { tipo: "azione-conclusa", idAzione: "c3", esito: "errore", errore: true });
+  assert.deepEqual(voci(stato), ["Leggo il codice:da-fare", "Scrivo la prova:da-fare"]);
+  stato = applica(stato, { tipo: "azione-iniziata", idAzione: "u1", strumento: "TaskUpdate", ingresso: { taskId: "1", status: "completed" } });
+  stato = applica(stato, { tipo: "azione-iniziata", idAzione: "u2", strumento: "TaskUpdate", ingresso: { taskId: "2", status: "in_progress" } });
+  stato = applica(stato, { tipo: "azione-iniziata", idAzione: "l1", strumento: "TaskList", ingresso: {} });
+  assert.deepEqual(voci(stato), ["Leggo il codice:fatta", "Scrivo la prova:in-corso"]);
+  // Una scheda sola, e nessuna azione per la lista.
+  assert.equal(stato.elementi.filter((e) => e.tipo === "cose-da-fare").length, 1);
+  assert.equal(stato.elementi.filter((e) => e.tipo === "azione").length, 0);
+
+  // Il turno dopo la lista non finita continua in una scheda nuova; finita del tutto, non si porta oltre.
+  stato = applica(stato, { tipo: "turno-concluso", riuscito: true, durataMs: 10 });
+  stato = applica(stato, { tipo: "turno-iniziato" });
+  stato = applica(stato, { tipo: "azione-iniziata", idAzione: "u3", strumento: "TaskUpdate", ingresso: { taskId: "2", status: "completed" } });
+  assert.deepEqual(voci(stato), ["Leggo il codice:fatta", "Scrivo la prova:fatta"]);
+  stato = applica(stato, { tipo: "turno-concluso", riuscito: true, durataMs: 10 });
+  stato = applica(stato, { tipo: "turno-iniziato" });
+  stato = applica(stato, { tipo: "azione-iniziata", idAzione: "c4", strumento: "TaskCreate", ingresso: { subject: "Altro lavoro", description: "…" } });
+  assert.deepEqual(voci(stato), ["Altro lavoro:da-fare"]);
+  // Un compito tolto sparisce.
+  stato = applica(stato, { tipo: "azione-conclusa", idAzione: "c4", esito: "Task #3 created successfully: Altro lavoro", errore: false });
+  stato = applica(stato, { tipo: "azione-iniziata", idAzione: "u4", strumento: "TaskUpdate", ingresso: { taskId: "3", status: "deleted" } });
+  assert.deepEqual(voci(stato), []);
+});
+
 test("il ragionamento diventa un elemento suo, una volta sola", () => {
   let stato = applica(statoIniziale, { tipo: "ragionamento", idRagionamento: "r1", testo: "Prima guardo." });
   stato = applica(stato, { tipo: "ragionamento", idRagionamento: "r1", testo: "Prima guardo." });

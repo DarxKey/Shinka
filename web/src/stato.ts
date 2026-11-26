@@ -11,6 +11,7 @@ import type { Domanda, EsitoApprovazione, EsitoDomande, EventoConversazione, Fil
 import type { ImpostazioniConversazione, ModelloDisponibile, StatoConversazione } from "../../src/protocollo/impostazioni.ts";
 import type { DecisioneModifiche, FileModificato } from "../../src/protocollo/modifiche.ts";
 import type { Attivita } from "../../src/protocollo/attivita.ts";
+import { AGGIORNA_COMPITO, CREA_COMPITO, numeroDelCompito, STRUMENTI_DELLA_LISTA, STRUMENTO_LISTA_INTERA } from "../../src/protocollo/cose-da-fare.ts";
 
 export type StatoPermesso = "in-attesa" | "approvato" | "negato";
 
@@ -216,8 +217,55 @@ export interface VoceDaFare {
   stato: "da-fare" | "in-corso" | "fatta";
 }
 
-/** Lo strumento con cui Claude tiene la sua lista delle cose da fare. */
-export const STRUMENTO_COSE_DA_FARE = "TodoWrite";
+/** Lo strumento con cui Claude teneva la sua lista delle cose da fare, intera a ogni versione. */
+export const STRUMENTO_COSE_DA_FARE = STRUMENTO_LISTA_INTERA;
+
+/**
+ * Un compito della lista di oggi (TaskCreate, TaskUpdate): `id` arriva con il risultato di
+ * TaskCreate; fino ad allora il compito si riconosce dall'azione che lo ha creato.
+ */
+export interface CompitoDaFare extends VoceDaFare {
+  idAzione: string;
+  id?: string;
+}
+
+/** Un compito nuovo, da TaskCreate; senza titolo non c'è. */
+function compitoCreato(idAzione: string, ingresso: unknown): CompitoDaFare | undefined {
+  const { subject, activeForm } = (ingresso ?? {}) as Record<string, unknown>;
+  if (typeof subject !== "string" || subject.trim() === "") return undefined;
+  return { idAzione, testo: subject, inCorso: typeof activeForm === "string" && activeForm !== "" ? activeForm : subject, stato: "da-fare" };
+}
+
+/** I compiti dopo un TaskUpdate: cambia lo stato, il titolo o la forma in corso; «deleted» lo toglie. */
+function compitiAggiornati(compiti: readonly CompitoDaFare[], ingresso: unknown): CompitoDaFare[] {
+  const { taskId, status, subject, activeForm } = (ingresso ?? {}) as Record<string, unknown>;
+  if (typeof taskId !== "string") return [...compiti];
+  if (status === "deleted") return compiti.filter((compito) => compito.id !== taskId);
+  return compiti.map((compito) =>
+    compito.id !== taskId
+      ? compito
+      : {
+          ...compito,
+          ...(typeof subject === "string" && subject.trim() !== "" ? { testo: subject } : {}),
+          ...(typeof activeForm === "string" && activeForm !== "" ? { inCorso: activeForm } : {}),
+          ...(status === "completed" ? { stato: "fatta" as const } : status === "in_progress" ? { stato: "in-corso" as const } : status === "pending" ? { stato: "da-fare" as const } : {}),
+        },
+  );
+}
+
+/** La scheda delle cose da fare del turno con queste voci: aggiornata sul posto, o una nuova. */
+function conLaScheda(stato: StatoChat, voci: VoceDaFare[], idAzione: string): StatoChat {
+  if (stato.coseDaFare !== undefined && trova(stato, stato.coseDaFare) !== undefined) {
+    return cambia(stato, stato.coseDaFare, (e) => (e.tipo === "cose-da-fare" ? { ...e, voci } : e));
+  }
+  const chiave = `cose-${idAzione}`;
+  return { ...aggiungi(stato, { tipo: "cose-da-fare", chiave, voci, finito: false }), coseDaFare: chiave };
+}
+
+/** I compiti come voci della scheda. */
+function vociDeiCompiti(compiti: readonly CompitoDaFare[]): VoceDaFare[] {
+  return compiti.map(({ testo, inCorso, stato }) => ({ testo, inCorso, stato }));
+}
 
 /** Le voci della lista come le manda Claude; quelle fatte male si saltano. */
 export function vociDaFare(ingresso: unknown): VoceDaFare[] {
@@ -235,6 +283,8 @@ export interface StatoChat {
   elementi: Elemento[];
   /** La scheda delle cose da fare del turno in corso, se Claude ne ha una: le versioni nuove la aggiornano. */
   coseDaFare?: string;
+  /** I compiti della lista di oggi (Task*), che valgono per tutta la conversazione finché non sono fatti tutti. */
+  compiti?: CompitoDaFare[];
   /** Turni cominciati e non ancora conclusi. */
   turniAperti: number;
   /** Le scelte del proprietario su questa conversazione; mancano finché il centro non le manda. */
@@ -321,7 +371,7 @@ export function applica(stato: StatoChat, evento: EventoConversazione): StatoCha
       const posizione = stato.elementi.findIndex((e) => e.tipo === "proprietario" && e.chiave === evento.idMessaggio);
       if (posizione < 0) return stato;
       const riportati = evento.fileRiportati?.length ?? 0;
-      const { coseDaFare: _lista, ...senzaLista } = stato;
+      const { coseDaFare: _lista, compiti: _compiti, ...senzaLista } = stato;
       return {
         ...senzaLista,
         elementi: [
@@ -389,13 +439,17 @@ export function applica(stato: StatoChat, evento: EventoConversazione): StatoCha
       // Lo strumento delle domande si vede come la sua scheda, non come un'azione.
       if (evento.strumento === STRUMENTO_DELLE_DOMANDE) return stato;
       // Così le cose da fare: una scheda per turno, che si aggiorna invece di ripetersi.
-      if (evento.strumento === STRUMENTO_COSE_DA_FARE) {
-        const voci = vociDaFare(evento.ingresso);
-        if (stato.coseDaFare !== undefined && trova(stato, stato.coseDaFare) !== undefined) {
-          return cambia(stato, stato.coseDaFare, (e) => (e.tipo === "cose-da-fare" ? { ...e, voci } : e));
-        }
-        const chiave = `cose-${evento.idAzione}`;
-        return { ...aggiungi(stato, { tipo: "cose-da-fare", chiave, voci, finito: false }), coseDaFare: chiave };
+      if (evento.strumento === STRUMENTO_COSE_DA_FARE) return conLaScheda(stato, vociDaFare(evento.ingresso), evento.idAzione);
+      // La lista di oggi: un compito per volta, nella stessa scheda. Leggerla non si mostra.
+      if (STRUMENTI_DELLA_LISTA.includes(evento.strumento)) {
+        const prima = stato.compiti ?? [];
+        let compiti: CompitoDaFare[] = prima;
+        if (evento.strumento === CREA_COMPITO) {
+          const nuovo = compitoCreato(evento.idAzione, evento.ingresso);
+          if (nuovo !== undefined && !prima.some((compito) => compito.idAzione === evento.idAzione)) compiti = [...prima, nuovo];
+        } else if (evento.strumento === AGGIORNA_COMPITO) compiti = compitiAggiornati(prima, evento.ingresso);
+        if (compiti === prima) return stato;
+        return { ...conLaScheda(stato, vociDeiCompiti(compiti), evento.idAzione), compiti };
       }
       if (trova(stato, evento.idAzione) === undefined) {
         return aggiungi(stato, {
@@ -414,7 +468,14 @@ export function applica(stato: StatoChat, evento: EventoConversazione): StatoCha
       );
     }
 
-    case "azione-conclusa":
+    case "azione-conclusa": {
+      // Il compito appena creato riceve il suo numero; se non è stato creato, sparisce.
+      const creato = stato.compiti?.find((compito) => compito.idAzione === evento.idAzione && compito.id === undefined);
+      if (creato !== undefined && stato.compiti !== undefined) {
+        const numero = evento.errore ? undefined : numeroDelCompito(evento.esito);
+        const compiti = numero === undefined ? stato.compiti.filter((compito) => compito !== creato) : stato.compiti.map((compito) => (compito === creato ? { ...compito, id: numero } : compito));
+        return compiti.length === stato.compiti.length ? { ...stato, compiti } : { ...conLaScheda(stato, vociDeiCompiti(compiti), evento.idAzione), compiti };
+      }
       return cambia(stato, evento.idAzione, (e) =>
         e.tipo === "azione"
           ? {
@@ -427,6 +488,7 @@ export function applica(stato: StatoChat, evento: EventoConversazione): StatoCha
             }
           : e,
       );
+    }
 
     case "permesso-richiesto": {
       const permesso: Permesso = {
@@ -496,6 +558,11 @@ export function applica(stato: StatoChat, evento: EventoConversazione): StatoCha
       const turniAperti = Math.max(0, stato.turniAperti - 1);
       const { coseDaFare: _chiusa, ...senzaLista } = stato;
       stato = senzaLista;
+      // Una lista finita del tutto non si porta nel turno dopo: la prossima ricomincia da capo.
+      if (stato.compiti !== undefined && stato.compiti.every((compito) => compito.stato === "fatta")) {
+        const { compiti: _fatti, ...senzaCompiti } = stato;
+        stato = senzaCompiti;
+      }
       if (evento.interrotto === true) {
         const nota: Elemento = {
           tipo: "nota",

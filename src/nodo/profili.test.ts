@@ -77,3 +77,11 @@ test("scrivere lo stato del progetto non chiede consenso, il resto segue i perme
   assert.equal(consente("Bash", { command: "echo x > STATO.md" }), false);
   assert.equal(consente("Write", "STATO.md"), false);
 });
+
+test("un progetto sa dei disegni nelle risposte; chi svolge un incarico no, perché riporta a chi guida", async (t) => {
+  const cartella = await cartellaDiProgetto(t);
+  const progetto = configurazioneDiProgetto(cartella, undefined, { permessi: "chiedi" }, () => {}, () => {});
+  assert.match(progetto.istruzioniAggiunte ?? "", /# Disegni nelle risposte/);
+  const incarico = configurazioneDiProgetto(cartella, undefined, { permessi: "chiedi" }, () => {}, () => {}, { incarico: true });
+  assert.doesNotMatch(incarico.istruzioniAggiunte ?? "", /# Disegni nelle risposte/);
+});
