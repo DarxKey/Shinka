@@ -85,6 +85,8 @@ export interface VoceProgetto extends Progetto, Partial<IndiceArchivio> {
   offlineInArrivo?: true;
   /** Le chat parallele aperte (ADR 0052), con la condizione di ciascuna. */
   chat?: { numero: number; condizione: CondizioneProgetto }[];
+  /** Quando il proprietario ha scritto l'ultima volta al progetto, in una qualunque delle sue chat. */
+  ultimoMessaggioIl?: string;
 }
 
 /** I progetti. L'elenco è sempre completo: un progetto che non c'è è stato eliminato (ADR 0046). */

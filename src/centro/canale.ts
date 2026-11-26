@@ -54,6 +54,8 @@ export class Canale {
   /** Quante pagine dell'interfaccia stanno seguendo questa conversazione. */
   #pagine = 0;
   #turniAperti = 0;
+  /** Quando il proprietario ha scritto l'ultima volta in questa conversazione. */
+  #ultimoMessaggioIl: string | undefined;
   #versione: string;
   /** Quanti byte ha l'archivio: il file della versione lo ricorda, per accorgersi di cambi fatti da altri. */
   #byte: number;
@@ -64,6 +66,16 @@ export class Canale {
     this.#versione = versione;
     this.#byte = byte;
     for (const { evento } of archiviati) this.#annota(evento);
+    for (let i = archiviati.length - 1; i >= 0; i--) {
+      if (archiviati[i]?.evento.tipo !== "messaggio-proprietario") continue;
+      this.#ultimoMessaggioIl = archiviati[i]?.quando;
+      break;
+    }
+  }
+
+  /** Quando il proprietario ha scritto l'ultima volta in questa conversazione, se ha mai scritto. */
+  get ultimoMessaggioIl(): string | undefined {
+    return this.#ultimoMessaggioIl;
   }
 
   static async apri(file: string): Promise<Canale> {
@@ -113,6 +125,7 @@ export class Canale {
     } else {
       archiviato = { n: this.#archiviati.length + 1, quando, evento };
       this.#archiviati.push(archiviato);
+      if (evento.tipo === "messaggio-proprietario") this.#ultimoMessaggioIl = quando;
       this.#annota(evento);
       const riga = `${JSON.stringify(archiviato)}\n`;
       appendFileSync(this.#file, riga);

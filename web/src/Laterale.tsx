@@ -12,7 +12,7 @@ function EtichetteEstensioni({ id }: { id: string }): ReactNode {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { VoceProgetto } from "../../src/protocollo/progetti.ts";
 import { eliminaProgetto, fissaProgetto, rinominaProgetto } from "./api.ts";
-import { leggiModoGruppi, raggruppaProgetti, scriviModoGruppi, type ModoGruppi } from "./barra.ts";
+import { leggiModoGruppi, leggiModoOrdine, raggruppaProgetti, scriviModoGruppi, scriviModoOrdine, type ModoGruppi, type ModoOrdine } from "./barra.ts";
 import { MenuAspetto } from "./Aspetto.tsx";
 import { condizioneInParole, filtraArgomenti, giornoInBreve, vaultInBreve } from "./descrivi.ts";
 import type { Quadro } from "./Quadro.tsx";
@@ -54,7 +54,8 @@ export function Laterale(proprieta: ProprietaLaterale): ReactNode {
   // Se una chat parallela della Home aspetta il proprietario, la Home aspetta te.
   const condizioneHome = quadro.home?.complessiva ?? quadro.home?.condizione ?? "fermo";
   const [modo, setModo] = useState<ModoGruppi>(leggiModoGruppi);
-  const gruppi = progetti === undefined ? [] : raggruppaProgetti(progetti, modo);
+  const [ordine, setOrdine] = useState<ModoOrdine>(leggiModoOrdine);
+  const gruppi = progetti === undefined ? [] : raggruppaProgetti(progetti, modo, ordine);
 
   return (
     <nav className={aperta ? "laterale aperta" : "laterale"} aria-label="Home e progetti">
@@ -134,7 +135,9 @@ export function Laterale(proprieta: ProprietaLaterale): ReactNode {
         >
           +
         </a>
-        {(progetti?.length ?? 0) > 1 && (
+      </div>
+      {(progetti?.length ?? 0) > 1 && (
+        <div className="scelte-progetti">
           <select
             aria-label="Raggruppa i progetti"
             title="Raggruppa i progetti"
@@ -145,12 +148,26 @@ export function Laterale(proprieta: ProprietaLaterale): ReactNode {
               scriviModoGruppi(scelto);
             }}
           >
-            <option value="nessuno">Tutti insieme</option>
+            <option value="nessuno">Tutti</option>
             <option value="ambiente">Per ambiente</option>
             <option value="stato">Per stato</option>
           </select>
-        )}
-      </div>
+          <select
+            aria-label="Ordina i progetti"
+            title="Ordina i progetti"
+            value={ordine}
+            onChange={(evento) => {
+              const scelto = evento.target.value as ModoOrdine;
+              setOrdine(scelto);
+              scriviModoOrdine(scelto);
+            }}
+          >
+            <option value="ultimo-messaggio">Ultimo messaggio</option>
+            <option value="creazione">Creazione</option>
+            <option value="nome">Nome</option>
+          </select>
+        </div>
+      )}
       <div className="elenco-progetti">
         {progetti === undefined && <p className="tenue">Carico…</p>}
         {progetti?.length === 0 && (

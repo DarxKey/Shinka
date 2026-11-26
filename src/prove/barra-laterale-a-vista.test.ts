@@ -12,7 +12,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { test } from "node:test";
 import { chromium } from "playwright-core";
-import { allestisci, PASSWORD } from "./banco.ts";
+import { allestisci, finche, PASSWORD } from "./banco.ts";
 import { browserDiProva } from "./browser-di-prova.ts";
 import { chatDiProva } from "./chat-di-prova.ts";
 
@@ -111,4 +111,41 @@ test("barra laterale: Cerca in cima, le pagine nel menu dell'icona, Copia con l'
     await barraTelefono.locator(".voci-pagine").waitFor();
     await telefono.screenshot({ path: join(FOTO, "menu-pagine-telefono.png") });
   }
+});
+
+test("i progetti nella barra si ordinano per ultimo messaggio, la scelta predefinita, e il menu Ordina la cambia", { skip: salta, timeout: 120_000 }, async (t) => {
+  const banco = await allestisci(t, { cartellaWeb });
+  const zeta = await banco.lavori.crea("Zeta", "centro", "Un progetto.");
+  await banco.lavori.crea("Alfa", "centro", "Un altro progetto.");
+  await finche(() => banco.conversazioniLocali.length === 2, "le conversazioni partono");
+  // Il proprietario scrive a Zeta, nato prima: con l'ordine per ultimo messaggio va in cima.
+  await new Promise((fatto) => setTimeout(fatto, 10));
+  banco.lavori.invia(zeta.id, "Come va?");
+  await banco.centro.listen({ host: "127.0.0.1", port: 0 });
+  const indirizzo = `http://127.0.0.1:${(banco.centro.server.address() as AddressInfo).port}`;
+  const browser = await chromium.launch({
+    chromiumSandbox: disponibile?.recinto !== false,
+    ...(disponibile?.canale === undefined ? {} : { channel: disponibile.canale }),
+    ...(disponibile?.eseguibile === undefined ? {} : { executablePath: disponibile.eseguibile }),
+  });
+  t.after(() => browser.close());
+  const pagina = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: "light" });
+  await pagina.goto(`${indirizzo}/`);
+  await pagina.fill("#password", PASSWORD);
+  await pagina.click('button[type="submit"]');
+  const barra = pagina.locator("nav.laterale");
+  const nomi = () => barra.locator(".elenco-progetti .riga-progetto .nome").allTextContents();
+  const ordine = barra.getByRole("combobox", { name: "Ordina i progetti" });
+  await ordine.waitFor();
+  assert.equal(await ordine.inputValue(), "ultimo-messaggio");
+  await barra.locator(".elenco-progetti .riga-progetto").nth(1).waitFor();
+  assert.deepEqual((await nomi()).map((nome) => nome.trim()), ["Zeta", "Alfa"]);
+  if (FOTO !== undefined) await barra.locator(".elenco-progetti").evaluate((elenco) => elenco.previousElementSibling?.scrollIntoView());
+  if (FOTO !== undefined) await pagina.screenshot({ path: join(FOTO, "ordina-progetti.png"), clip: { ...(await barra.boundingBox())!, height: 900 } });
+
+  // Per creazione: il più recente in cima. La scelta resta dopo un ricaricamento.
+  await ordine.selectOption("creazione");
+  assert.deepEqual((await nomi()).map((nome) => nome.trim()), ["Alfa", "Zeta"]);
+  await pagina.reload();
+  assert.equal(await barra.getByRole("combobox", { name: "Ordina i progetti" }).inputValue(), "creazione");
 });

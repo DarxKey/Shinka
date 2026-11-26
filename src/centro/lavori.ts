@@ -738,6 +738,7 @@ export class LavoriDeiProgetti {
         ...progetto,
         nomeAmbiente: ambienti.get(progetto.idAmbiente)?.nome ?? "ambiente rimosso",
         condizione: this.#condizione(progetto),
+        ...this.#ultimoMessaggio(progetto.id),
         ...(this.#inConsegna.has(progetto.id) ? { offlineInArrivo: true as const } : {}),
         // Fin dove arriva il suo archivio: chi ne tiene una copia sa se gli manca qualcosa.
         ...this.#canali.get(progetto.id)?.indice,
@@ -751,6 +752,16 @@ export class LavoriDeiProgetti {
             }),
       })),
     };
+  }
+
+  /** Quando il proprietario ha scritto l'ultima volta al progetto, nella principale o in una chat parallela. */
+  #ultimoMessaggio(idProgetto: string): { ultimoMessaggioIl?: string } {
+    let ultimo: string | undefined;
+    for (const idConversazione of this.#conversazioniDi(idProgetto)) {
+      const quando = this.#canali.get(idConversazione)?.ultimoMessaggioIl;
+      if (quando !== undefined && (ultimo === undefined || quando > ultimo)) ultimo = quando;
+    }
+    return ultimo === undefined ? {} : { ultimoMessaggioIl: ultimo };
   }
 
   /** Collega un ascoltatore: riceve subito lo stato, poi ogni cambiamento. */
@@ -926,6 +937,8 @@ export class LavoriDeiProgetti {
       // Chi ascolta il progetto (lavori programmati, avvisi) segue la sua conversazione principale.
       if (principale && !this.#riportando) for (const ascoltatore of this.#ascoltatoriDegliEventi) ascoltatore(idProgetto, archiviato);
       if (
+        // Un messaggio del proprietario sposta il progetto in cima, se l'elenco è per ultimo messaggio.
+        evento.tipo === "messaggio-proprietario" ||
         evento.tipo === "turno-iniziato" ||
         evento.tipo === "turno-concluso" ||
         evento.tipo === "permesso-richiesto" ||

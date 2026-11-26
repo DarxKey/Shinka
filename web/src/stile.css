@@ -5968,7 +5968,7 @@ kbd {
   gap: var(--s-2);
 }
 
-/* Il «+» che apre la scheda di un progetto nuovo: dopo il titolo, prima del raggruppamento. */
+/* Il «+» che apre la scheda di un progetto nuovo, accanto al titolo. */
 .testa-progetti h2 {
   margin-right: auto;
 }
@@ -6003,15 +6003,28 @@ kbd {
   resize: vertical;
 }
 
-.testa-progetti select {
-  max-width: 120px;
-  margin-right: var(--s-2);
-  padding: 0 4px;
+/* Raggruppa e Ordina, su una riga loro sotto il titolo, ciascuno largo quanto la sua voce. */
+.scelte-progetti {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-1);
+  margin: 0 0 var(--s-1);
+}
+
+.scelte-progetti select {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 2px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--tenue);
   font-size: var(--t-piccolo);
+}
+
+/* L'ordine non si stringe: a cedere spazio è il raggruppamento, che ha voci più corte. */
+.scelte-progetti select:last-child {
+  flex: none;
 }
 
 .titolo-gruppo {
